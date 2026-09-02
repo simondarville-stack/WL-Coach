@@ -13,6 +13,11 @@ describe('num', () => {
     expect(num(0.5, 1)).toBe('0,5');
   });
 
+  it('uses a typographic minus, matching the one written by hand elsewhere', () => {
+    expect(num(-0.58)).toBe('\u22120,58');
+    expect(num(-0.58)).not.toContain('-');
+  });
+
   it('renders a missing value as a dash, never as zero', () => {
     expect(num(null)).toBe('—');
     expect(num(undefined)).toBe('—');

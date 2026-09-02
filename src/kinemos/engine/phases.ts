@@ -230,9 +230,33 @@ function findFirstVelocityPeak(
   return best ? { peakIndex: best.peakIndex, troughIndex: best.troughIndex } : null;
 }
 
-/** First time after the apex that the bar has stopped moving. */
-function findSettle(series: KinematicSeries, fromIndex: number, th: PhaseThresholds): number | null {
-  for (let i = fromIndex; i < series.vyMs.length; i++) {
+/**
+ * First time after the catch that the bar has actually stopped.
+ *
+ * The obvious rule — "first frame after the apex where |v| is small" — fires on
+ * the apex itself, because the apex IS where velocity crosses zero. That
+ * collapses the catch to nothing, which is exactly what it did before this
+ * comment existed. So the search steps past the descent first: find the most
+ * negative velocity after the apex (the bar dropping into the receiving
+ * position), and only then look for the bar coming to rest.
+ *
+ * Null when the bar never settles inside the clip — footage cut at the catch,
+ * which is common. The caller falls back to the end of the clip and marks the
+ * edge as a guess.
+ */
+function findSettle(series: KinematicSeries, apexIndex: number, th: PhaseThresholds): number | null {
+  let dropIndex = apexIndex;
+  let dropValue = 0;
+  for (let i = apexIndex; i < series.vyMs.length; i++) {
+    if (series.vyMs[i] < dropValue) {
+      dropValue = series.vyMs[i];
+      dropIndex = i;
+    }
+  }
+  // No descent at all: the clip ends at the apex, so there is nothing to find.
+  if (dropValue > -th.settleMs) return null;
+
+  for (let i = dropIndex; i < series.vyMs.length; i++) {
     if (Math.abs(series.vyMs[i]) < th.settleMs) return series.t[i];
   }
   return null;

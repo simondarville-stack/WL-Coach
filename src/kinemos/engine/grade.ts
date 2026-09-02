@@ -42,6 +42,19 @@
 import type { Calibration } from './calibration';
 import type { FilterSettings } from './signal';
 
+/**
+ * Comma decimals, the convention everywhere in EMOS (CLAUDE.md "Stack").
+ *
+ * A number formatter inside the engine is a small compromise on purity — but
+ * these factors carry display strings by design (a value and the words that
+ * explain it), EMOS is deliberately single-locale, and i18n infrastructure is a
+ * standing anti-goal. The alternative, threading a formatter in from the UI,
+ * would buy nothing this product intends to use.
+ */
+function fmt(value: number, decimals: number): string {
+  return value.toFixed(decimals).replace('.', ',');
+}
+
 export type TrackerTier = 'manual' | 'assisted' | 'marker' | 'ml';
 export type CameraStability = 'tripod' | 'stabilised' | 'handheld' | 'unknown';
 export type DistortionSource = 'none' | 'model' | 'profile';
@@ -220,7 +233,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
     {
       id: 'scale',
       label: 'Scale',
-      value: cal ? `Plate, ${cal.viewingAngleDeg.toFixed(0)}° off` : 'None',
+      value: cal ? `Plate, ${fmt(cal.viewingAngleDeg, 0)}° off` : 'None',
       verdict: !cal
         ? 'weak'
         : cal.confidence === 'ok'
@@ -233,14 +246,14 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
     {
       id: 'resolution',
       label: 'Spatial resolution',
-      value: mmPerPx === null ? '—' : `${mmPerPx.toFixed(1)} mm/px`,
+      value: mmPerPx === null ? '—' : `${fmt(mmPerPx, 1)} mm/px`,
       verdict: mmPerPx === null ? 'weak' : mmPerPx <= 2.5 ? 'good' : mmPerPx <= 5 ? 'fair' : 'weak',
       why: 'How much real distance one pixel covers. This is the single biggest term in the error budget — filming closer beats every other improvement.',
     },
     {
       id: 'rate',
       label: 'Sample rate',
-      value: `${inputs.sampleRateHz.toFixed(0)} Hz${inputs.vfr ? ', variable' : ''}`,
+      value: `${fmt(inputs.sampleRateHz, 0)} Hz${inputs.vfr ? ', variable' : ''}`,
       verdict: inputs.sampleRateHz >= 50 ? 'good' : inputs.sampleRateHz >= 28 ? 'fair' : 'weak',
       why: 'Frame rate buys temporal detail — a 30 fps clip cannot resolve a turnover. It does not buy precision: differentiating over shorter intervals amplifies the same pixel noise more.',
     },
@@ -264,7 +277,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
       id: 'filter',
       label: 'Smoothing',
       value: inputs.filtered
-        ? `${inputs.filter.cutoffHz} Hz Butterworth`
+        ? `${fmt(inputs.filter.cutoffHz, 0)} Hz Butterworth`
         : 'None — raw differentiation',
       verdict: inputs.filtered ? 'good' : 'weak',
       why: 'Differentiating raw marks amplifies every pixel of tremor. Without the low-pass the velocity curve is mostly noise.',
@@ -306,7 +319,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
     factors.push({
       id: 'estimate',
       label: 'Estimated error',
-      value: `±${error.toFixed(3).replace('.', ',')} m/s`,
+      value: `±${fmt(error, 3)} m/s`,
       verdict: error <= GRADE_A_MAX_ERROR_MS ? 'good' : error <= GRADE_B_MAX_ERROR_MS ? 'fair' : 'weak',
       why: 'One standard deviation on peak velocity, from the conditions above. A snatch that makes it at 1,80 and misses at 1,77 needs this under 0,03.',
     });
@@ -316,7 +329,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
 }
 
 function summarise(grade: 'A' | 'B' | 'C', error: number, inputs: GradeInputs): string {
-  const err = `±${error.toFixed(2).replace('.', ',')} m/s`;
+  const err = `±${fmt(error, 2)} m/s`;
   if (!inputs.filtered) {
     return `Grade C — the velocity here is unsmoothed, so it carries the full marking noise. Turn the filter on before quoting a number.`;
   }
@@ -339,7 +352,7 @@ function improvementsFor(inputs: GradeInputs, error: number): string[] {
   }
   if (cal && cal.cmPerPxV * 10 > 2.5) {
     out.push(
-      `Film closer or at higher resolution — one pixel currently covers ${(cal.cmPerPxV * 10).toFixed(1)} mm, and this term dominates the budget.`,
+      `Film closer or at higher resolution — one pixel currently covers ${fmt(cal.cmPerPxV * 10, 1)} mm, and this term dominates the budget.`,
     );
   }
   if (inputs.trackerTier !== 'marker') {
@@ -350,7 +363,7 @@ function improvementsFor(inputs: GradeInputs, error: number): string[] {
   }
   if (cal && cal.viewingAngleDeg > 30) {
     out.push(
-      `Move the camera closer to perpendicular — it is ${cal.viewingAngleDeg.toFixed(0)}° off, past what the flat-plate model covers.`,
+      `Move the camera closer to perpendicular — it is ${fmt(cal.viewingAngleDeg, 0)}° off, past what the flat-plate model covers.`,
     );
   }
   if (inputs.distortionSource === 'none') {

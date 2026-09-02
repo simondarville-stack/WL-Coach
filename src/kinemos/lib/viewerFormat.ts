@@ -12,7 +12,10 @@
  *  a missing value never reads as zero. */
 export function num(value: number | null | undefined, decimals = 2): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
-  return value.toFixed(decimals).replace('.', ',');
+  // A typographic minus, not a hyphen. They sit next to each other on this
+  // screen — a phase's velocity loss beside a chart axis — and the mismatch is
+  // visible at 11 px.
+  return value.toFixed(decimals).replace('.', ',').replace('-', '\u2212');
 }
 
 /** A distance in the viewer's current unit. `calibrated` decides both the

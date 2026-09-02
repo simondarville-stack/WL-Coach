@@ -177,6 +177,46 @@ export async function updateAnalysis(
   if (error) throw error;
 }
 
+/**
+ * Store the analysis-level state the P2 pipeline produces: the mass it used,
+ * how the clip was filmed, the phase edges as the coach has them, and the
+ * metrics and grade that came out.
+ *
+ * The metrics and grade are a CACHE. The track and the calibration are the
+ * source of truth and the viewer recomputes from them on every load; these
+ * columns exist so a trend view can read a season of analyses without running
+ * the pipeline on each one. If they ever disagree with a recomputation, the
+ * recomputation is right.
+ */
+export async function saveAnalysisState(
+  analysisId: string,
+  state: {
+    massKg?: number | null;
+    massSource?: 'logged' | 'manual' | null;
+    camera?: string | null;
+    phaseBoundaries?: unknown;
+    phaseSetId?: string;
+    metrics?: unknown;
+    grade?: 'A' | 'B' | 'C' | null;
+    gradeErrorMs?: number | null;
+    gradeFactors?: unknown;
+  },
+): Promise<void> {
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (state.massKg !== undefined) patch.mass_kg = state.massKg;
+  if (state.massSource !== undefined) patch.mass_source = state.massSource;
+  if (state.camera !== undefined) patch.camera = state.camera;
+  if (state.phaseBoundaries !== undefined) patch.phase_boundaries = state.phaseBoundaries;
+  if (state.phaseSetId !== undefined) patch.phase_set_id = state.phaseSetId;
+  if (state.metrics !== undefined) patch.metrics = state.metrics;
+  if (state.grade !== undefined) patch.grade = state.grade;
+  if (state.gradeErrorMs !== undefined) patch.grade_error_ms = state.gradeErrorMs;
+  if (state.gradeFactors !== undefined) patch.grade_factors = state.gradeFactors;
+
+  const { error } = await supabase.from('kinemos_analyses').update(patch).eq('id', analysisId);
+  if (error) throw error;
+}
+
 /** Remove a rep and everything hanging off it (cascade). Snapshot JPEGs in R2
  *  are the caller's to clean up — this module does not reach into storage. */
 export async function deleteAnalysis(analysisId: string): Promise<void> {

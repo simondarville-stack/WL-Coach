@@ -143,12 +143,12 @@ export function calibrateFromEllipse(
     confidence = 'degenerate';
     reason =
       `The plate is only ${Math.round(2 * a)} px across — one pixel is ` +
-      `${(cmPerPxV * 10).toFixed(0)} mm, so nothing measured here is worth quoting. ` +
+      `${(cmPerPxV * 10).toFixed(0).replace('.', ',')} mm, so nothing measured here is worth quoting. ` +
       'Film closer, or analyse a clip with more resolution.';
   } else if (viewingAngleDeg > MAX_VALID_VIEWING_ANGLE_DEG) {
     confidence = 'wide';
     reason =
-      `The camera is ${viewingAngleDeg.toFixed(0)}° off perpendicular, past the ` +
+      `The camera is ${viewingAngleDeg.toFixed(0).replace('.', ',')}° off perpendicular, past the ` +
       `${MAX_VALID_VIEWING_ANGLE_DEG}° the flat-plate model is good for. Horizontal ` +
       'distances especially are approximate.';
   }

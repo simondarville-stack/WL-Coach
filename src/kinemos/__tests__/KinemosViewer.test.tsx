@@ -125,9 +125,32 @@ describe('KinemosViewer', () => {
     expect(screen.getByText(/26\/08/)).toBeInTheDocument();
   });
 
-  it('does not claim a grade it cannot compute yet', async () => {
+  it('refuses to grade an uncalibrated clip, and says why', async () => {
     renderViewer();
+    // The header carries the glanceable verdict...
     expect(await screen.findByText('NOT GRADED')).toBeInTheDocument();
+    // ...and the rail says what is missing, rather than showing a letter with
+    // nothing behind it.
+    expect(screen.getByText('ungraded')).toBeInTheDocument();
+    expect(screen.getByText(/no scale/i)).toBeInTheDocument();
+  });
+
+  it('explains why there are no velocities yet', async () => {
+    renderViewer();
+    expect(await screen.findByText(/Calibrate against a plate to get velocities/i)).toBeInTheDocument();
+  });
+
+  it('offers the bar mass, and says what it is for', async () => {
+    renderViewer();
+    await screen.findByText('Hang clean');
+    expect(screen.getByText('BAR MASS')).toBeInTheDocument();
+    expect(screen.getByText(/Power needs a mass/i)).toBeInTheDocument();
+  });
+
+  it('lets the coach state how the clip was filmed — half the error budget', async () => {
+    renderViewer();
+    await screen.findByText('Hang clean');
+    expect(screen.getByText('HOW IT WAS FILMED')).toBeInTheDocument();
   });
 
   it('offers every tool in the rail', async () => {

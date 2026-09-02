@@ -6,21 +6,20 @@
  * more than at any figure, so the figures sit beside the video where a glance
  * reaches them without covering it.
  *
- * What is NOT here is as deliberate as what is. There is no velocity, no phase
- * table, no A/B/C grade — those need the P2 pipeline (Butterworth smoothing,
- * phase detection, the grade's inputs) that makes them honest. Differentiating
- * hand-placed clicks would print a velocity to two decimals that is worth about
- * one (docs/KINEMOS_P1_PLAN.md decision 5). What the rail shows instead is
- * everything geometry supports on its own, plus a provenance block that says
- * plainly how far to trust it.
+ * This section covers the GEOMETRY — what the marked path is, in centimetres
+ * or in pixels, and what has been said about it. The measured quantities that
+ * need the P2 pipeline behind them (velocity, phases, power) are `MetricsPanel`
+ * below it, and how far to trust any of it is `GradePanel` below that. Three
+ * panels rather than one because they answer three different questions and a
+ * coach reads them at different moments.
  */
-import { Camera, Plus, Trash2 } from 'lucide-react';
-import { useState, type CSSProperties } from 'react';
-import { Button } from '../../components/ui';
-import type { KinemosAnnotation } from '../../lib/database.types';
-import type { Calibration, PathMetrics } from '../engine/calibration';
-import { distance, drift, num } from '../lib/viewerFormat';
-import type { ViewerTool } from './ViewerStage';
+import { Camera, Plus, Trash2 } from "lucide-react";
+import { useState, type CSSProperties } from "react";
+import { Button } from "../../components/ui";
+import type { KinemosAnnotation } from "../../lib/database.types";
+import type { PathMetrics } from "../engine/calibration";
+import { distance, drift, num } from "../lib/viewerFormat";
+import type { ViewerTool } from "./ViewerStage";
 
 interface ReadoutRailProps {
   repIndices: number[];
@@ -44,11 +43,6 @@ interface ReadoutRailProps {
   onSnapshot: () => void;
   onDeleteAnnotation: (id: string) => void;
   snapshotBusy: boolean;
-
-  calibration: Calibration | null;
-  fps: number;
-  vfr: boolean;
-  codec: string | null;
 }
 
 export function ReadoutRail({
@@ -70,26 +64,27 @@ export function ReadoutRail({
   onSnapshot,
   onDeleteAnnotation,
   snapshotBusy,
-  calibration,
-  fps,
-  vfr,
-  codec,
 }: ReadoutRailProps) {
-  const [noteDraft, setNoteDraft] = useState('');
+  const [noteDraft, setNoteDraft] = useState("");
   const calibrated = metrics.calibrated;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: "flex", flexDirection: "column" }}>
       {/* ── Reps ────────────────────────────────────────────────────────── */}
       <section style={section}>
         <header style={header}>
           <span style={label}>REP</span>
-          <button type="button" onClick={onAddRep} title="Add a rep" style={iconButton}>
+          <button
+            type="button"
+            onClick={onAddRep}
+            title="Add a rep"
+            style={iconButton}
+          >
             <Plus size={13} />
           </button>
         </header>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {repIndices.map(rep => (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {repIndices.map((rep) => (
             <button
               key={rep}
               type="button"
@@ -97,16 +92,22 @@ export function ReadoutRail({
               style={{
                 minWidth: 34,
                 flexGrow: 1,
-                padding: '5px 0',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontVariantNumeric: 'tabular-nums',
-                fontSize: 'var(--text-label)',
+                padding: "5px 0",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontVariantNumeric: "tabular-nums",
+                fontSize: "var(--text-label)",
                 fontWeight: rep === repIndex ? 600 : 400,
-                background: rep === repIndex ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
-                color: rep === repIndex ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                background:
+                  rep === repIndex
+                    ? "var(--color-accent)"
+                    : "var(--color-bg-secondary)",
+                color:
+                  rep === repIndex
+                    ? "var(--color-text-on-accent)"
+                    : "var(--color-text-secondary)",
               }}
             >
               {rep}
@@ -114,8 +115,8 @@ export function ReadoutRail({
           ))}
         </div>
         <p style={hint}>
-          One recording often holds several attempts; every rep keeps its own path and its own
-          numbers.
+          One recording often holds several attempts; every rep keeps its own
+          path and its own numbers.
         </p>
       </section>
 
@@ -124,7 +125,12 @@ export function ReadoutRail({
         <header style={header}>
           <span style={label}>BAR PATH</span>
           {metrics.pointCount > 0 && (
-            <button type="button" onClick={onClearMarks} title="Clear every mark" style={iconButton}>
+            <button
+              type="button"
+              onClick={onClearMarks}
+              title="Clear every mark"
+              style={iconButton}
+            >
               <Trash2 size={13} />
             </button>
           )}
@@ -133,19 +139,22 @@ export function ReadoutRail({
         {metrics.pointCount < 2 ? (
           <p style={hint}>
             {metrics.pointCount === 0
-              ? 'No marks yet. Pick the Mark tool and click the bar end — the playhead steps forward on its own, so it is click, click, click.'
-              : 'One mark down. Keep going — a path needs at least two.'}
+              ? "No marks yet. Pick the Mark tool and click the bar end — the playhead steps forward on its own, so it is click, click, click."
+              : "One mark down. Keep going — a path needs at least two."}
           </p>
         ) : (
           <>
             {!calibrated && (
-              <p style={{ ...hint, color: 'var(--color-warning-text)' }}>
+              <p style={{ ...hint, color: "var(--color-warning-text)" }}>
                 In pixels — no calibration yet.
               </p>
             )}
-            <dl style={{ margin: 0, display: 'grid', gap: 2 }}>
+            <dl style={{ margin: 0, display: "grid", gap: 2 }}>
               <Row term="Marks" value={String(metrics.pointCount)} />
-              <Row term="Time marked" value={`${num(metrics.durationS, 2)} s`} />
+              <Row
+                term="Time marked"
+                value={`${num(metrics.durationS, 2)} s`}
+              />
               <Row term="Rise" value={distance(metrics.riseCm, calibrated)} />
               <Row
                 term="Peak above start"
@@ -157,14 +166,20 @@ export function ReadoutRail({
                 value={distance(metrics.loopWidthCm, calibrated)}
                 hint="Total horizontal spread of the path, end to end."
               />
-              <Row term="Finish" value={drift(metrics.netDriftCm, calibrated)} />
-              <Row term="Path length" value={distance(metrics.pathLengthCm, calibrated)} />
+              <Row
+                term="Finish"
+                value={drift(metrics.netDriftCm, calibrated)}
+              />
+              <Row
+                term="Path length"
+                value={distance(metrics.pathLengthCm, calibrated)}
+              />
             </dl>
           </>
         )}
 
         {markedHere && (
-          <div style={{ marginTop: 'var(--space-sm)' }}>
+          <div style={{ marginTop: "var(--space-sm)" }}>
             <Button size="sm" variant="ghost" onClick={onDeleteMark}>
               Remove the mark on this frame
             </Button>
@@ -173,27 +188,35 @@ export function ReadoutRail({
       </section>
 
       {/* ── Measurement ─────────────────────────────────────────────────── */}
-      {(tool === 'distance' || tool === 'angle') && (
+      {(tool === "distance" || tool === "angle") && (
         <section style={section}>
           <header style={header}>
-            <span style={label}>{tool === 'distance' ? 'DISTANCE' : 'ANGLE'}</span>
+            <span style={label}>
+              {tool === "distance" ? "DISTANCE" : "ANGLE"}
+            </span>
           </header>
           <p style={hint}>
-            {tool === 'distance'
-              ? 'Click two points on the frame.'
-              : 'Click the two arms and then the vertex, in that order.'}
+            {tool === "distance"
+              ? "Click two points on the frame."
+              : "Click the two arms and then the vertex, in that order."}
           </p>
           <div
             style={{
-              fontSize: 'var(--text-section)',
-              fontVariantNumeric: 'tabular-nums',
-              color: 'var(--color-text-primary)',
+              fontSize: "var(--text-section)",
+              fontVariantNumeric: "tabular-nums",
+              color: "var(--color-text-primary)",
             }}
           >
-            {measureValue ?? '—'}
+            {measureValue ?? "—"}
           </div>
           {measureComplete && (
-            <div style={{ display: 'flex', gap: 'var(--space-xs)', marginTop: 'var(--space-sm)' }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--space-xs)",
+                marginTop: "var(--space-sm)",
+              }}
+            >
               <Button size="sm" variant="secondary" onClick={onSaveMeasurement}>
                 Keep it
               </Button>
@@ -220,34 +243,45 @@ export function ReadoutRail({
           </button>
         </header>
 
-        {annotations.length === 0 && <p style={hint}>Nothing saved for this rep yet.</p>}
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6 }}>
-          {annotations.map(a => (
+        {annotations.length === 0 && (
+          <p style={hint}>Nothing saved for this rep yet.</p>
+        )}
+        <ul
+          style={{
+            listStyle: "none",
+            margin: 0,
+            padding: 0,
+            display: "grid",
+            gap: 6,
+          }}
+        >
+          {annotations.map((a) => (
             <li
               key={a.id}
               style={{
-                display: 'flex',
+                display: "flex",
                 gap: 6,
-                alignItems: 'flex-start',
-                fontSize: 'var(--text-caption)',
-                color: 'var(--color-text-secondary)',
+                alignItems: "flex-start",
+                fontSize: "var(--text-caption)",
+                color: "var(--color-text-secondary)",
               }}
             >
               <span
                 style={{
                   flexShrink: 0,
-                  padding: '1px 5px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--color-bg-secondary)',
-                  color: 'var(--color-text-tertiary)',
-                  fontSize: 'var(--text-micro)',
-                  textTransform: 'uppercase',
+                  padding: "1px 5px",
+                  borderRadius: "var(--radius-sm)",
+                  background: "var(--color-bg-secondary)",
+                  color: "var(--color-text-tertiary)",
+                  fontSize: "var(--text-micro)",
+                  textTransform: "uppercase",
                 }}
               >
                 {a.kind}
               </span>
               <span style={{ flexGrow: 1, lineHeight: 1.35 }}>
-                {a.body || (a.frame_index !== null ? `frame ${a.frame_index + 1}` : '—')}
+                {a.body ||
+                  (a.frame_index !== null ? `frame ${a.frame_index + 1}` : "—")}
               </span>
               <button
                 type="button"
@@ -262,156 +296,113 @@ export function ReadoutRail({
         </ul>
 
         <form
-          onSubmit={e => {
+          onSubmit={(e) => {
             e.preventDefault();
             const body = noteDraft.trim();
             if (!body) return;
             onAddNote(body);
-            setNoteDraft('');
+            setNoteDraft("");
           }}
-          style={{ marginTop: 'var(--space-sm)', display: 'flex', gap: 'var(--space-xs)' }}
+          style={{
+            marginTop: "var(--space-sm)",
+            display: "flex",
+            gap: "var(--space-xs)",
+          }}
         >
           <input
             value={noteDraft}
-            onChange={e => setNoteDraft(e.target.value)}
+            onChange={(e) => setNoteDraft(e.target.value)}
             placeholder="Note on this frame…"
             className="emos-input"
-            style={{ flexGrow: 1, minWidth: 0, height: 28, fontSize: 'var(--text-caption)' }}
+            style={{
+              flexGrow: 1,
+              minWidth: 0,
+              height: 28,
+              fontSize: "var(--text-caption)",
+            }}
           />
           <Button size="sm" variant="secondary" type="submit">
             Add
           </Button>
         </form>
       </section>
-
-      {/* ── Provenance ──────────────────────────────────────────────────── */}
-      <section style={{ ...section, borderBottom: 'none' }}>
-        <header style={header}>
-          <span style={label}>HOW FAR TO TRUST THIS</span>
-        </header>
-        <dl style={{ margin: 0, display: 'grid', gap: 2 }}>
-          <Verdict
-            term="Frame rate"
-            value={`${num(fps, 0)} fps${vfr ? ', variable' : ''}`}
-            tag={fps >= 55 ? 'good' : fps >= 28 ? 'fair' : 'weak'}
-          />
-          <Verdict
-            term="Scale"
-            value={calibration ? `Plate, ${num(calibration.viewingAngleDeg, 0)}° off` : 'None'}
-            tag={
-              !calibration
-                ? 'none'
-                : calibration.confidence === 'ok'
-                  ? 'good'
-                  : calibration.confidence === 'wide'
-                    ? 'fair'
-                    : 'weak'
-            }
-          />
-          <Verdict term="Marking" value="By hand" tag="fair" />
-          <Verdict term="Codec" value={codec ?? 'unknown'} tag="none" />
-        </dl>
-        <p style={hint}>
-          The A/B/C grade and the velocity numbers arrive with assisted tracking. Until then these
-          are geometry only — measured, not modelled.
-        </p>
-      </section>
     </div>
   );
 }
 
-function Row({ term, value, hint: title }: { term: string; value: string; hint?: string }) {
+function Row({
+  term,
+  value,
+  hint: title,
+}: {
+  term: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div style={rowStyle} title={title}>
-      <dt style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>{term}</dt>
-      <dd style={{ margin: 0, fontSize: 'var(--text-label)', fontVariantNumeric: 'tabular-nums' }}>
+      <dt
+        style={{
+          fontSize: "var(--text-label)",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        {term}
+      </dt>
+      <dd
+        style={{
+          margin: 0,
+          fontSize: "var(--text-label)",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
         {value}
       </dd>
     </div>
   );
 }
 
-/** A provenance row. The verdict is spelled out in a word as well as coloured —
- *  colour is never the only carrier of meaning (design brief). */
-function Verdict({
-  term,
-  value,
-  tag,
-}: {
-  term: string;
-  value: string;
-  tag: 'good' | 'fair' | 'weak' | 'none';
-}) {
-  const tone =
-    tag === 'good'
-      ? 'var(--color-success-text)'
-      : tag === 'fair'
-        ? 'var(--color-warning-text)'
-        : tag === 'weak'
-          ? 'var(--color-danger-text)'
-          : 'var(--color-text-tertiary)';
-  return (
-    <div style={rowStyle}>
-      <dt style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>{term}</dt>
-      <dd style={{ margin: 0, display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 'var(--text-label)' }}>{value}</span>
-        <span
-          style={{
-            width: 34,
-            textAlign: 'right',
-            fontSize: 'var(--text-micro)',
-            fontWeight: 600,
-            color: tone,
-          }}
-        >
-          {tag === 'none' ? '' : tag}
-        </span>
-      </dd>
-    </div>
-  );
-}
-
 const section: CSSProperties = {
-  padding: 'var(--space-md)',
-  borderBottom: '1px solid var(--color-border-tertiary)',
+  padding: "var(--space-md)",
+  borderBottom: "1px solid var(--color-border-tertiary)",
 };
 
 const header: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: 'var(--space-sm)',
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  marginBottom: "var(--space-sm)",
 };
 
 const label: CSSProperties = {
-  fontSize: 'var(--text-caption)',
-  letterSpacing: '0.04em',
-  color: 'var(--color-text-tertiary)',
+  fontSize: "var(--text-caption)",
+  letterSpacing: "0.04em",
+  color: "var(--color-text-tertiary)",
 };
 
 const hint: CSSProperties = {
-  margin: 'var(--space-sm) 0 0',
-  fontSize: 'var(--text-caption)',
+  margin: "var(--space-sm) 0 0",
+  fontSize: "var(--text-caption)",
   lineHeight: 1.4,
-  color: 'var(--color-text-tertiary)',
+  color: "var(--color-text-tertiary)",
 };
 
 const rowStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'baseline',
-  justifyContent: 'space-between',
+  display: "flex",
+  alignItems: "baseline",
+  justifyContent: "space-between",
   gap: 8,
 };
 
 const iconButton: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   width: 22,
   height: 22,
-  border: 'none',
-  borderRadius: 'var(--radius-sm)',
-  background: 'transparent',
-  color: 'var(--color-text-tertiary)',
-  cursor: 'pointer',
+  border: "none",
+  borderRadius: "var(--radius-sm)",
+  background: "transparent",
+  color: "var(--color-text-tertiary)",
+  cursor: "pointer",
 };

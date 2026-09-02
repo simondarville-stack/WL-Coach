@@ -120,10 +120,40 @@ describe('proposePhases — a lift with a clear double knee bend', () => {
     expect(at('apex')).toBeCloseTo(1.5, 1);
   });
 
+  it('gives the catch a real duration', () => {
+    // The rule that fires on the apex collapses the catch to nothing, because
+    // the apex is where velocity crosses zero. The bar has to be followed
+    // through the descent before "it has stopped" means anything.
+    const settleT = boundaries.find(b => b.rule === 'settle')!.t;
+    const apexT = boundaries.find(b => b.rule === 'apex')!.t;
+    expect(settleT).toBeGreaterThan(apexT + 0.1);
+    expect(settleT).toBeCloseTo(1.9, 0);
+  });
+
   it('keeps boundaries in order', () => {
     for (let i = 1; i < boundaries.length; i++) {
       expect(boundaries[i].t).toBeGreaterThanOrEqual(boundaries[i - 1].t);
     }
+  });
+});
+
+describe('proposePhases — a clip that ends at the apex', () => {
+  // Footage cut the moment the bar is overhead: there is no descent, so there
+  // is nothing to settle from. The engine must say it guessed rather than
+  // reporting an edge it did not find.
+  const cutShort = (t: number) =>
+    t < 0.4 ? 0 : t < 1.5 ? 1.85 * Math.sin((Math.PI * (t - 0.4)) / 1.1) : 0;
+  const clipped = computeKinematics(syntheticLift(FPS, cutShort), cal, { massKg: 100 })!;
+  const { boundaries, fullyDetected } = proposePhases(clipped);
+
+  it('falls back rather than inventing a settle', () => {
+    expect(fullyDetected).toBe(false);
+    expect(boundaries[boundaries.length - 1].source).toBe('fallback');
+  });
+
+  it('still closes the phase set at the end of the clip', () => {
+    const last = boundaries[boundaries.length - 1];
+    expect(last.t).toBeCloseTo(clipped.t[clipped.t.length - 1], 2);
   });
 });
 

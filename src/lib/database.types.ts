@@ -1254,8 +1254,41 @@ export interface KinemosAnalysis {
   mass_source: 'logged' | 'manual' | null;
   status: string;
   notes: string | null;
+
+  /** Phase edges as the coach has them: engine proposals until one is dragged,
+   *  and each carries where it came from — see engine/phases.ts. */
+  phase_boundaries: KinemosPhaseBoundaryRow[] | null;
+  /** Which phase model segmented this rep. Coaches disagree about how a lift
+   *  divides, so "second pull" only means something alongside the set that
+   *  defined it. */
+  phase_set_id: string;
+  /** Computed metrics. A cache of what the engine derives from the track and
+   *  the calibration, not a source of truth — recomputed on every load, stored
+   *  so a trend view can read a season without re-running the pipeline. */
+  metrics: Record<string, unknown> | null;
+
+  grade: 'A' | 'B' | 'C' | null;
+  /** The error estimate behind the letter. Stored with it, because a grade
+   *  without its number is decoration. */
+  grade_error_ms: number | null;
+  grade_factors: Record<string, unknown>[] | null;
+
+  /** How the clip was filmed. The coach's to state until a stabiliser can
+   *  infer it, and worth about half the error budget. */
+  camera: 'tripod' | 'stabilised' | 'handheld' | 'unknown' | null;
+
   created_at: string;
   updated_at: string;
+}
+
+/** One stored phase edge. Mirrors `PhaseBoundary` in engine/phases.ts; kept
+ *  structurally separate so the database shape and the engine's own type can
+ *  diverge without one silently reinterpreting the other. */
+export interface KinemosPhaseBoundaryRow {
+  phaseId: string | null;
+  t: number;
+  rule: string;
+  source: 'detected' | 'fallback' | 'coach';
 }
 
 /** The px→cm record: the coach's confirmed plate ellipse plus the scales

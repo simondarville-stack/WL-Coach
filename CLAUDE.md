@@ -77,10 +77,13 @@ All modules are **active** — nothing is currently disabled or hidden:
   added in 0.6.0.
 - **KinEMOS** (`src/kinemos/*`) — the kinematic-analysis module: video library
   at `/kinemos` (0.78.0) and the manual analysis viewer at
-  `/kinemos/analysis/:kind/:id` (0.79.0). `src/kinemos/engine/*` is a pure
-  core — no React, no Supabase, no EMOS imports. Design and phase plan in
-  `docs/KINEMOS_DESIGN.md`; per-phase scope in `docs/KINEMOS_P0_PLAN.md` and
-  `docs/KINEMOS_P1_PLAN.md`.
+  `/kinemos/analysis/:kind/:id` (0.79.0), plus the measurement pipeline —
+  filtering, velocity, phases, power and the A/B/C quality grade (0.80.0).
+  `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
+  imports. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
+  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md` and `_P2_PLAN.md`.
+  `verify/*.html` are browser harnesses (frame-server checks, a design bench
+  for the analysis panels) — open them under `npm run dev`.
 
 **Deletion policy:** shipped code and database tables are never deleted
 without explicit instruction. **Carve-out for failed experiments:** once the
