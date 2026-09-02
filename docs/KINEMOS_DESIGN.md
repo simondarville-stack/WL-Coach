@@ -433,8 +433,12 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   **decode stall that had shipped with the frame server in 0.79.0**: overlapping
   `getCanvas` calls stop resolving past a few dozen and never reject, freezing
   the picture under a transport that carries on. Fixed with a serial decode
-  queue; see the P3 plan. Trends and the model lift stay deferred; sharing,
-  talkover and the calibration tiers are untouched.
+  queue; see the P3 plan. *P3b (metric trends) shipped in 0.84.0* once §13 Q3
+  was decided: one metric catalogue in the engine, a read-only adapter that
+  projects stored analyses for the trend view and for the Analysis module's
+  measures, and a TRENDS view in the viewer that never shows velocity without
+  load. The model lift stays deferred; sharing, talkover and the calibration
+  tiers are untouched.
 - **P4 — Intelligence.** `kinemos-research` repo: literature, benchmarking on
   labelled clips, consented flywheel data collection wired in-product;
   ML-assisted detection/tracking (toward zero-click and server-side
@@ -463,6 +467,9 @@ dedicated `git worktree` (shared-working-tree hazard).
    exercise, date, metric id, value, plus the grade as a quality flag — so
    trend views and Soll-Ist can chart peak velocity per phase or power next
    to load and volume without the Analysis code importing the engine.
+   *Built in 0.84.0 (P3b): `analysisAdapter.ts` projects the records,
+   `analysisMetrics.ts` declares the measures, `factFetch` carries the values
+   on a KinEMOS fact row that counts nothing towards training totals.*
    Rationale: the engine stays pure (§4 rule 1), the schema needs no
    surgery, and a KinEMOS metric definition can change without a migration
    of Analysis facts. Revisit only if a coach-defined Analysis metric ever

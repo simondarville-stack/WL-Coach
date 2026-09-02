@@ -81,7 +81,10 @@ All modules are **active** — nothing is currently disabled or hidden:
   filtering, velocity, phases, power and the A/B/C quality grade (0.80.0) — and
   assisted bar tracking, anchor-and-supervise, in pure TypeScript (0.81.0), and
   lift-vs-lift comparison inside the viewer — charts 0.82.0, synced
-  side-by-side playback 0.83.0.
+  side-by-side playback 0.83.0 — and metric trends (0.84.0): a TRENDS view in
+  the viewer plus KinEMOS measures inside the Analysis builder, both read
+  through `src/kinemos/lib/analysisAdapter.ts` (design §13 Q3: metrics stay
+  adjacent, Analysis never imports the engine).
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
   in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and

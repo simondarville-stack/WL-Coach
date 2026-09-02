@@ -6,8 +6,9 @@
 0.81.x).
 
 > **Status: P3a SHIPPED** — the charts in 0.82.0, synced side-by-side playback
-> in 0.83.0. The rest of P3 — trends, talkover, sharing, overlay export, the
-> calibration tiers — is not started.
+> in 0.83.0. **P3b SHIPPED** — metric trends in 0.84.0 (§5 below). The rest
+> of P3 — model lift, talkover, sharing, overlay export, the calibration
+> tiers — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made
@@ -199,7 +200,8 @@ Deliberately deferred, in the order they are likely to be picked up:
 - **Synced side-by-side playback.** Design §8 pairs it with the path overlay.
   Deferred because it needs two frame servers and two decoders live at once,
   and the overlay carries most of the value on its own.
-- **Metric trends over time.** Gated on design §13 open question 3.
+- **Metric trends over time.** Was gated on design §13 open question 3;
+  decided 02/09/2026 and shipped as P3b (§5).
 - **Model-lift comparison.** Third in the design's own ordering; wants a notion
   of a reference lift that does not exist yet.
 - **Talkover recording, sharing, overlay export.** The rest of P3.
@@ -207,3 +209,87 @@ Deliberately deferred, in the order they are likely to be picked up:
   design plan; unrelated to comparison and independently schedulable.
 - **Comparing more than two lifts.** Three curves on one chart is a different
   design problem, and no coach has asked yet.
+
+---
+
+## 5. P3b — Metric trends (shipped 0.84.0)
+
+Design §8's second comparison need: *"is the second pull getting faster over
+the block"*. Unblocked by the §13 Q3 decision — KinEMOS metrics stay adjacent
+to the Analysis registry, and Analysis reads them through an adapter.
+
+### Architecture decisions
+
+1. **One metric catalogue.** `engine/metricCatalogue.ts` is the single list of
+   what KinEMOS measures — id, label, unit, decimals, which way is up, why it
+   matters, and a reader that pulls the value off a computed lift. The delta
+   table (`compareMetrics`) now maps over it instead of carrying its own copy,
+   and the trend view and the Analysis measures list exactly the same set
+   (CLAUDE.md core principle 3).
+2. **The cache column has a schema.** `kinemos_analyses.metrics` was a bare
+   `LiftMetrics`; it is now `LiftMetrics` plus the rep summary under
+   `schema: 1` (`toStoredMetrics` / `fromStoredMetrics`). A row from before the
+   number reads as schema 0 with no summary, so peak height, loop width and
+   duration are null on it rather than zero, and a future change to what is
+   stored can be told apart from a season of older rows instead of drawn
+   through as one line. No migration: the column was already JSONB and every
+   reader is lenient about shape and strict about numbers.
+3. **Trends read the cache; comparison recomputes.** Unchanged from P2's
+   intent: a trend over a season must not run the pipeline per rep, and a
+   comparison the coach is looking at must agree with the viewer beside it.
+   A rep with no stored number is *counted* in the trend view's caption, not
+   hidden — the missing ones are usually the oldest, and a rising line that
+   starts where the data starts is a different claim from one that starts
+   where the athlete started.
+4. **Velocity is never shown without load.** The time view stacks a load panel
+   under the metric on the same time axis — two panels, one scale each, never
+   two y-axes on one plot — and the load view puts the metric against the
+   kilograms directly. Quality rides on the mark's shape (A filled, B ring,
+   C diamond, ungraded cross), never on colour alone.
+5. **A KinEMOS rep counts nothing towards training totals in Analysis.** It is
+   the set the log already counted, seen on video. Its fact row carries zero
+   sets, zero reps, no kilogram load and `countsTowardsTotals: false`; only
+   its `custom['kinemos:*']` values are readable, through measures registered
+   at runtime beside the coach's own — nothing KinEMOS is in the registry's
+   seed, as Q3 was decided.
+
+### What shipped
+
+**Engine (pure)** — `engine/metricCatalogue.ts`: `METRIC_CATALOGUE`,
+`metricById`, `toStoredMetrics`, `fromStoredMetrics`, `STORED_METRICS_SCHEMA`.
+`compare.ts` refactored onto it; its 28 tests unchanged and green.
+
+**Adapter (`src/kinemos/lib/analysisAdapter.ts`)** — `projectLiftRecords`
+(analyses ⋈ library → one flat record per rep with a value per catalogue
+metric, grade, error, load, mass, schema), `factsFrom` (long form),
+`filterLiftRecords`, `loadKinemosLiftRecords`. `analysisMetrics.ts` —
+`kinemosAnalysisMetrics()`: one Analysis `BaseMetricDef` per catalogue metric
+(default aggregation by the metric's own sense of "up": max, min or mean) plus
+an analysed-rep count and the estimated velocity error behind the grade.
+
+**Viewer (`components/TrendsView.tsx`)** — a TRENDS toggle beside COMPARE.
+Metric picker, this-exercise / all-exercises, over-time / against-load, 3–12
+months or all. Hover reads the rep out in the header; click opens it. A
+dense table of every rep in view underneath.
+
+**Analysis module** — `buildFacts` gained a KinEMOS stream (fed by `fetchFacts`
+through the adapter; a KinEMOS read failure leaves the training facts intact),
+`AnalysisModule` registers the measures at runtime, `format.ts` knows m/s, cm,
+W and s. A coach can now put "Second pull (KinEMOS)" in a pivot next to max
+load and tonnage, per week or per date.
+
+**Tests** — catalogue round trip and leniency (9), adapter projection and
+filters (10), Trends view words and modes (9), KinEMOS fact stream and
+measures (8).
+
+### Not in P3b
+
+- **Recomputing stale caches in bulk.** A rep analysed under an older filter
+  default keeps its old numbers until it is reopened. The schema stamp makes
+  that visible; a "recompute this athlete" job is a later slice.
+- **Trend lines in the athlete app.** The adapter makes it a projection
+  question; the surface is a product decision.
+- **Load–velocity profile fitting.** The against-load view shows the points;
+  fitting a line and deriving a minimum-velocity threshold is P5's
+  VBT→planner work (design §12).
+

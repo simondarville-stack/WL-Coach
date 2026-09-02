@@ -21,6 +21,15 @@
 // unit-testable with fixtures; `fetchFacts` only does the queries.
 
 import { supabase } from '../supabase';
+import {
+  loadKinemosLiftRecords,
+  type KinemosLiftRecord,
+} from '../../kinemos/lib/analysisAdapter';
+import {
+  KINEMOS_ERROR_KEY,
+  KINEMOS_METRIC_PREFIX,
+  kinemosCustomKey,
+} from '../../kinemos/lib/analysisMetrics';
 import { getOwnerId } from '../ownerContext';
 import { catalogueOrFilter } from '../libraryScope';
 import { isoMonday, isoAddDays, snapToMonday } from '../dateUtils';
@@ -163,6 +172,12 @@ export interface BuildFactsInput {
   logSets: RawLogSet[];
   /** Resolve macro/relative-week context for a fact. */
   macroContext: (athleteId: string, weekStart: string) => MacroContext;
+  /**
+   * KinEMOS analyses, already joined to athlete/exercise/date by the adapter
+   * (design §13 Q3). Optional: the engine tests and any caller without the
+   * module simply leave it out.
+   */
+  kinemos?: KinemosLiftRecord[];
 }
 
 // ── load resolution ───────────────────────────────────────────────────────────
@@ -587,6 +602,68 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
     }
   }
 
+  // ── KINEMOS stream ──
+  //
+  // One fact per analysed rep, carrying its measured values under `custom`
+  // and NOTHING that the training metrics count: zero sets, zero reps, no kg
+  // load, `countsTowardsTotals: false`. A rep on video is not a second copy of
+  // the set it was filmed in — the training log already has that set — so the
+  // row exists only to give the KinEMOS measures an athlete, an exercise and a
+  // date to sit on in the same cells as tonnage and max load.
+  //
+  // The exercise is matched by name: a KinEMOS clip names its exercise as the
+  // library shows it, and the catalogue is looked up case-insensitively. An
+  // unknown name still yields a row, filed under the name itself, so an
+  // exercise that has since been renamed does not lose its velocities.
+  if (input.kinemos && input.kinemos.length > 0) {
+    const exerciseByName = new Map<string, RawExercise>();
+    for (const e of Object.values(input.exercisesById)) exerciseByName.set(e.name.toLowerCase(), e);
+    const wanted = new Set(input.athleteIds);
+
+    for (const rep of input.kinemos) {
+      if (!rep.athleteId || !rep.date || !wanted.has(rep.athleteId)) continue;
+      const e = rep.exerciseName ? exerciseByName.get(rep.exerciseName.toLowerCase()) : undefined;
+      const fam = e ? familyOf(e.id) : { familyRootId: null, familyRootName: rep.exerciseName ?? 'Clip' };
+
+      const custom: Record<string, number> = {};
+      for (const [id, value] of Object.entries(rep.values)) {
+        if (value !== null) custom[kinemosCustomKey(id)] = value;
+      }
+      // Presence marker for the "analysed reps" count, and the error behind
+      // the grade for the trust measure.
+      custom[kinemosCustomKey('reps')] = 1;
+      if (rep.gradeErrorMs !== null) custom[KINEMOS_ERROR_KEY] = rep.gradeErrorMs;
+
+      const weekStart = isoMonday(rep.date);
+      facts.push({
+        ...baseRow(rep.athleteId, weekStart),
+        state: 'performed',
+        exerciseId: e?.id ?? null,
+        exerciseName: e?.name ?? rep.exerciseName ?? 'Clip',
+        familyRootId: fam.familyRootId,
+        familyRootName: fam.familyRootName,
+        category: e?.category ?? '(uncategorised)',
+        movement: e?.lift_slot ?? null,
+        isCompetitionLift: e?.is_competition_lift ?? false,
+        countsTowardsTotals: false,
+        unit: null,
+        date: rep.date,
+        dayIndex: 0,
+        dayOfWeek: weekdayOf(rep.date),
+        pairKey: null,
+        sets: 0,
+        reps: 0,
+        tonnage: 0,
+        maxLoad: 0,
+        load: 0,
+        loadIsKg: false,
+        loadIsPct: false,
+        pct1rm: null,
+        custom,
+      });
+    }
+  }
+
   return facts;
 }
 
@@ -936,6 +1013,20 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     weekType: weekTypeColors,
   };
 
+  // KinEMOS analyses in the window, through the adapter — only when a
+  // KinEMOS measure is actually asked for, so an ordinary tonnage query does
+  // not pay for two more reads. A failure here is a KinEMOS failure, not an
+  // Analysis one: the training facts still load and only the KinEMOS measures
+  // come up empty.
+  let kinemos: KinemosLiftRecord[] = [];
+  if (query.measures.some((m) => m.metricId.startsWith(KINEMOS_METRIC_PREFIX))) {
+    try {
+      kinemos = await loadKinemosLiftRecords({ athleteIds, from: window.from, to: window.to });
+    } catch (e) {
+      console.warn('[analysis] KinEMOS records unavailable', e);
+    }
+  }
+
   const facts = buildFacts({
     athleteIds,
     hostOwnerByAthlete,
@@ -951,6 +1042,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     logExercises,
     logSets,
     macroContext,
+    kinemos,
   });
 
   return { facts, window, athleteLabels: athleteNameById, groupLabels, athleteBodyweight, intensityZones, dimensionColors };

@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Ruler, Triangle } from 'lucide-react';
+import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Ruler, TrendingUp, Triangle } from 'lucide-react';
 import { ErrorState, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
 import { getOwnerId } from '../lib/ownerContext';
@@ -40,7 +40,9 @@ import {
 import { gradeAnalysis, type CameraStability, type TrackerTier } from './engine/grade';
 import { trackFromAnchor } from './engine/tracker';
 import type { AlignmentAnchor } from './engine/compare';
+import { toStoredMetrics } from './engine/metricCatalogue';
 import { ComparisonView } from './components/ComparisonView';
+import { TrendsView } from './components/TrendsView';
 import {
   findComparable,
   loadComparisonSubject,
@@ -138,6 +140,9 @@ export function KinemosViewer() {
   const [trackProgress, setTrackProgress] = useState<{ done: number; total: number } | null>(null);
 
   const [comparing, setComparing] = useState(false);
+  // Trends and comparison are two readings of the same athlete's history and
+  // take the same space, so opening one closes the other.
+  const [trending, setTrending] = useState(false);
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
   const [comparisonId, setComparisonId] = useState<string | null>(null);
   const [comparisonSubject, setComparisonSubject] = useState<ComparisonSubject | null>(null);
@@ -423,7 +428,9 @@ export function KinemosViewer() {
             camera,
             phaseBoundaries: boundaries.length > 0 ? boundaries : null,
             phaseSetId: 'default',
-            metrics: liftMetrics,
+            // The cache the trend views read. Schema-stamped so a season of
+            // rows can be told apart if what is stored ever changes meaning.
+            metrics: liftMetrics ? toStoredMetrics(liftMetrics, repSummary) : null,
             grade: grade.grade,
             gradeErrorMs: grade.expectedVelocityErrorMs,
             gradeFactors: grade.factors,
@@ -926,7 +933,10 @@ export function KinemosViewer() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
           <button
             type="button"
-            onClick={() => setComparing(current => !current)}
+            onClick={() => {
+              setTrending(false);
+              setComparing(current => !current);
+            }}
             title={
               comparable
                 ? 'Compare this lift with another of the same athlete'
@@ -957,6 +967,43 @@ export function KinemosViewer() {
           >
             <Columns2 size={12} />
             COMPARE
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setComparing(false);
+              setTrending(current => !current);
+            }}
+            title={
+              clip.athleteId
+                ? `${clip.athleteName ?? 'This athlete'}’s analysed lifts over time and against load`
+                : 'Trends need an athlete on the clip'
+            }
+            disabled={!clip.athleteId}
+            aria-pressed={trending}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 24,
+              padding: '0 9px',
+              border: '1px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: trending ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+              color: clip.athleteId
+                ? trending
+                  ? 'var(--color-accent)'
+                  : 'var(--color-text-primary)'
+                : 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-micro)',
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              cursor: clip.athleteId ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <TrendingUp size={12} />
+            TRENDS
           </button>
           <GradeChip grade={grade} />
         </div>
@@ -1005,10 +1052,24 @@ export function KinemosViewer() {
         />
       )}
 
+      {trending && (
+        <TrendsView
+          athleteId={clip.athleteId}
+          athleteName={clip.athleteName}
+          exerciseName={clip.exerciseName}
+          currentAnalysisId={analysisIdRef.current}
+          onClose={() => setTrending(false)}
+          onOpen={record => {
+            setTrending(false);
+            navigate(`/kinemos/analysis/${record.sourceKind}/${record.sourceId}`);
+          }}
+        />
+      )}
+
       <div
         style={{
           flexGrow: 1,
-          display: comparing && comparable ? 'none' : 'flex',
+          display: trending || (comparing && comparable) ? 'none' : 'flex',
           minHeight: 0,
         }}
       >
