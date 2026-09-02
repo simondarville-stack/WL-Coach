@@ -40,6 +40,29 @@ export interface ImportedVideo {
  * decides nothing about the upload, but a probe *after* a successful upload
  * would strand provenance if it failed.
  */
+/**
+ * Containers that no browser decodes and mediabunny does not demux — an old
+ * camera's WMV, an AVI off a memory card, a DVD rip. Nothing downstream can do
+ * anything with them, so the import refuses up front and says what to do.
+ * Judged by extension AND mime type: Windows reports WMV as `video/x-ms-wmv`,
+ * but a file renamed on the way carries only its name.
+ */
+const UNREADABLE_CONTAINERS: ReadonlyArray<readonly [label: string, extensions: readonly string[], mimes: readonly string[]]> = [
+  ['WMV', ['wmv', 'asf', 'wm'], ['video/x-ms-wmv', 'video/x-ms-asf', 'video/x-ms-wm']],
+  ['AVI', ['avi'], ['video/x-msvideo', 'video/avi', 'video/msvideo']],
+  ['FLV', ['flv', 'f4v'], ['video/x-flv']],
+  ['MPEG', ['mpg', 'mpeg', 'vob', 'm2ts', 'mts', 'ts'], ['video/mpeg', 'video/mp2t']],
+];
+
+export function unreadableContainer(file: { name: string; type: string }): string | null {
+  const ext = file.name.toLowerCase().split('.').pop() ?? '';
+  const mime = file.type.toLowerCase();
+  for (const [label, extensions, mimes] of UNREADABLE_CONTAINERS) {
+    if (extensions.includes(ext) || mimes.includes(mime)) return label;
+  }
+  return null;
+}
+
 export async function importDirectVideo(
   file: File,
   meta: DirectImportMeta = {},

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KinEMOS — real clip check</title>
+    <style>
+      body { margin: 0; padding: 20px; font: 13px/1.5 ui-monospace, Menlo, monospace; background: #fafaf9; color: #1a1a18; }
+      h1 { font: 600 16px system-ui, sans-serif; margin: 0 0 8px; }
+      pre { margin: 0 0 12px; white-space: pre-wrap; }
+      #frames { display: flex; gap: 8px; flex-wrap: wrap; }
+      #frames canvas { border: 1px solid #ccc; background: #000; }
+    </style>
+  </head>
+  <body>
+    <h1>Real clip check</h1>
+    <pre id="log">starting…</pre>
+    <div id="frames"></div>
+
+    <script type="module">
+      import { openFrameServer } from '/src/kinemos/engine/frameServer.ts';
+
+      const params = new URLSearchParams(location.search);
+      const clip = params.get('clip') ?? '/verify/fixtures/emostestvideo-clip.mp4';
+      const logEl = document.getElementById('log');
+      const framesEl = document.getElementById('frames');
+      const lines = [];
+      const log = (...parts) => {
+        const line = parts.join(' ');
+        lines.push(line);
+        logEl.textContent = lines.join('\n');
+        console.log('[real-clip]', line);
+      };
+      // Force a paint before heavy work so the last line is visible even if the
+      // renderer freezes afterwards.
+      // NOT requestAnimationFrame: a background tab never fires it, and the
+      // harness would stall on its own bookkeeping rather than on the decoder.
+      const paint = () => new Promise(r => setTimeout(r, 30));
+
+      const preview = (frame, label) => {
+        const c = document.createElement('canvas');
+        const scale = 160 / Math.max(frame.canvas.width, frame.canvas.height);
+        c.width = Math.round(frame.canvas.width * scale);
+        c.height = Math.round(frame.canvas.height * scale);
+        c.title = label;
+        c.getContext('2d').drawImage(frame.canvas, 0, 0, c.width, c.height);
+        framesEl.appendChild(c);
+      };
+
+      const STEP_TIMEOUT_MS = Number(params.get('timeout') ?? 8000);
+      const timed = async (label, fn) => {
+        log(`→ ${label} …`);
+        await paint();
+        const t0 = performance.now();
+        let timer;
+        const out = await Promise.race([
+          fn(),
+          new Promise((_, rej) => {
+            timer = setTimeout(() => rej(new Error(`TIMEOUT after ${STEP_TIMEOUT_MS} ms`)), STEP_TIMEOUT_MS);
+          }),
+        ]).finally(() => clearTimeout(timer));
+        log(`  ${label}: ${(performance.now() - t0).toFixed(0)} ms`);
+        await paint();
+        return out;
+      };
+      const attempt = async (label, fn) => {
+        try {
+          return await timed(label, fn);
+        } catch (err) {
+          log(`  ${label}: FAILED — ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        }
+      };
+
+      // ── Raw WebCodecs, no mediabunny in the decode loop ────────────────────
+      // Feeds the container's own packets to a VideoDecoder straight from the
+      // config mediabunny derives. If THIS produces frames and the sink does
+      // not, the fault is in the sink; if this also stalls, it is the browser.
+      async function rawDecodeCheck(track, packetsWanted) {
+        const config = await track.getDecoderConfig();
+        const support = await VideoDecoder.isConfigSupported(config);
+        log('isConfigSupported', support.supported, JSON.stringify({ ...support.config, description: undefined }));
+        for (const hw of ['prefer-hardware', 'prefer-software']) {
+          const s = await VideoDecoder.isConfigSupported({ ...config, hardwareAcceleration: hw });
+          log(`  ${hw}:`, s.supported);
+        }
+        const mb = await import('mediabunny');
+        const sink = new mb.EncodedPacketSink(track);
+        let outputs = 0;
+        let firstOutputAt = null;
+        const t0 = performance.now();
+        const decoder = new VideoDecoder({
+          output: frame => {
+            outputs++;
+            if (firstOutputAt === null) {
+              firstOutputAt = performance.now() - t0;
+              log(`  first VideoFrame after ${firstOutputAt.toFixed(0)} ms: ${frame.codedWidth}×${frame.codedHeight}, display ${frame.displayWidth}×${frame.displayHeight}, rotation ${'rotation' in frame ? frame.rotation : '(none)'}`);
+            }
+            frame.close();
+          },
+          error: e => log('  decoder error:', e.message),
+        });
+        decoder.configure(config);
+        let fed = 0;
+        let types = [];
+        for await (const packet of sink.packets()) {
+          if (fed >= packetsWanted) break;
+          types.push(packet.type === 'key' ? 'K' : 'd');
+          decoder.decode(packet.toEncodedVideoChunk());
+          fed++;
+        }
+        log(`  fed ${fed} packets (${types.join('')}), decodeQueueSize ${decoder.decodeQueueSize}, state ${decoder.state}`);
+        await paint();
+        await decoder.flush();
+        log(`  flushed: ${outputs} frames out`);
+        decoder.close();
+      }
+
+      try {
+        log('clip', clip);
+        log('UA', navigator.userAgent);
+
+        // ── Raw mediabunny view first: what does the decoder hand back? ──────
+        const mb = await import('mediabunny');
+        const input = new mb.Input({ formats: mb.ALL_FORMATS, source: new mb.UrlSource(clip) });
+        const track = await input.getPrimaryVideoTrack();
+        log('track codec', track.codec, 'coded', track.codedWidth + '×' + track.codedHeight,
+            'display', track.displayWidth + '×' + track.displayHeight, 'rotation', track.rotation);
+        log('decoderConfig', JSON.stringify(await track.getDecoderConfig(), (k, v) => (k === 'description' ? '[bytes]' : v)));
+        await attempt('raw WebCodecs decode of 12 packets', () => rawDecodeCheck(track, 12));
+
+        const sampleSink = new mb.VideoSampleSink(track);
+        const sample = await attempt('VideoSampleSink.getSample(0)', () => sampleSink.getSample(0));
+        if (sample) {
+          log('sample rotation', sample.rotation, 'coded', sample.codedWidth + '×' + sample.codedHeight,
+              'display', sample.displayWidth + '×' + sample.displayHeight);
+          const vf = sample.toVideoFrame();
+          log('VideoFrame codedWidth', vf.codedWidth, 'displayWidth', vf.displayWidth, 'displayHeight', vf.displayHeight,
+              'rotation prop', 'rotation' in vf ? vf.rotation : '(none)', 'flip', 'flip' in vf ? vf.flip : '(none)');
+          vf.close();
+          sample.close();
+        }
+        await input.dispose();
+
+        // ── Now the frame server, the way the viewer uses it ─────────────────
+        const server = await timed('openFrameServer', () => openFrameServer(clip));
+        log('server', 'frames', server.frameCount, 'fps', server.averageFps.toFixed(2), 'vfr', server.isVfr,
+            'display', server.displayWidth + '×' + server.displayHeight, 'rotation', server.rotation,
+            'keyframes', server.keyframeTimestamps.length);
+
+        const f0 = await attempt('frameAt(0)', () => server.frameAt(0));
+        if (f0) {
+          log('served canvas', f0.canvas.width + '×' + f0.canvas.height);
+          preview(f0, 'frame 0');
+        }
+
+        for (const i of [1, 2, 10, 59, 60, 61, 200]) {
+          const f = await attempt(`frameAt(${i})`, () => server.frameAt(i));
+          if (f && i === 200) preview(f, 'frame 200');
+        }
+
+        await timed('prefetch(200, 4) + settle', async () => {
+          server.prefetch(200, 4);
+          await new Promise(r => setTimeout(r, 1500));
+        });
+
+        // The stepping burst: 20 requests fired without awaiting, as key repeat does.
+        await timed('burst: 20 × frameAt(i*10) in parallel', () =>
+          Promise.all(Array.from({ length: 20 }, (_, k) => server.frameAt(k * 10))),
+        );
+
+        log('DONE — no freeze');
+        server.close();
+      } catch (err) {
+        log('ERROR', err instanceof Error ? err.stack ?? err.message : String(err));
+      }
+    </script>
+  </body>
+</html>

@@ -120,6 +120,39 @@ export function ViewerStage({
   const dragRef = useRef<DragTarget | null>(null);
   const panFromRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
+  // The stage's own size, so the frame can be FITTED into it. `max-width:
+  // 100%` alone is not a fit: the wrapper's height is content-sized, so a
+  // percentage max-height on the canvas resolves to nothing, and any frame
+  // larger than the box renders at full width and is cropped by the
+  // overflow. On a 1080×1920 portrait phone clip — the footage coaches
+  // actually film — that showed the middle third of the picture and nothing
+  // else, with the lifter off the bottom. Measured with a ResizeObserver so a
+  // sidebar toggle or a window resize refits too.
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = boxRef.current;
+    // jsdom has no ResizeObserver; the stage then renders at 1:1, which is
+    // what the component tests exercise.
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      setBox(current =>
+        current.w === rect.width && current.h === rect.height
+          ? current
+          : { w: rect.width, h: rect.height },
+      );
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // Contain, in both directions: a 384×288 clip is upscaled to fill the box
+  // rather than sitting as a stamp in the corner. Sub-pixel sizes are rounded
+  // so the canvas and the SVG overlay agree on their box.
+  const fit = box.w > 0 && box.h > 0 && width > 0 && height > 0 ? Math.min(box.w / width, box.h / height) : 1;
+  const fittedWidth = Math.max(1, Math.round(width * fit));
+  const fittedHeight = Math.max(1, Math.round(height * fit));
+
   // Paint the served frame. The frame server owns its canvas, so this copies
   // rather than adopts — the served one can be evicted from the cache at any
   // time, and a stage holding a released canvas paints garbage.
@@ -265,10 +298,11 @@ export function ViewerStage({
       <div
         style={{
           position: 'relative',
+          width: fittedWidth,
+          height: fittedHeight,
+          flexShrink: 0,
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
           transformOrigin: 'center center',
-          maxWidth: '100%',
-          maxHeight: '100%',
           lineHeight: 0,
           touchAction: 'none',
         }}
@@ -281,7 +315,7 @@ export function ViewerStage({
           ref={paintRef}
           width={width}
           height={height}
-          style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', cursor }}
+          style={{ display: 'block', width: fittedWidth, height: fittedHeight, cursor }}
         />
 
         <svg

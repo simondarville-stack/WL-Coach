@@ -28,7 +28,7 @@ import { Upload } from 'lucide-react';
 import { Button, Select } from '../../components/ui';
 import { useClipEditor } from '../../components/planner/useClipEditor';
 import { readVideoDurationSeconds } from '../../lib/videoProbe';
-import { importDirectVideo } from '../lib/directImport';
+import { importDirectVideo, unreadableContainer } from '../lib/directImport';
 import { KINEMOS_IMPORT_MAX_BYTES } from '../lib/kinemosStorage';
 import type { Athlete } from '../../lib/database.types';
 
@@ -58,11 +58,33 @@ export function ImportControl({ athletes, exercises, onImported }: ImportControl
 
   const handlePick = async (file: File) => {
     setError(null);
+    // Containers no browser can read at all. Left to the pipeline, a WMV gets
+    // as far as the clip editor and fails there with a message about trimming,
+    // which is not what went wrong. Named here so the coach hears the actual
+    // problem — and the fix — before anything else runs.
+    const unreadable = unreadableContainer(file);
+    if (unreadable) {
+      setError(
+        `${unreadable} files cannot be read in a browser, so KinEMOS cannot analyse them. ` +
+          'Convert the clip to H.264 MP4 (HandBrake or ffmpeg) and import it again.',
+      );
+      return;
+    }
+
     // Measured before the editor runs, so a trimmed import can record what it
     // was cut from rather than only what survived.
     const originalDurationS = await readVideoDurationSeconds(file);
 
-    const prepared = await clipEditor.prepare(file);
+    let prepared: File[] | null;
+    try {
+      prepared = await clipEditor.prepare(file);
+    } catch (e) {
+      // The editor's own failures (a container mediabunny cannot open, a
+      // decoder that refuses the clip) used to escape as an unhandled
+      // rejection and leave the control silent.
+      setError(e instanceof Error ? e.message : 'This clip could not be opened.');
+      return;
+    }
     if (!prepared) return; // backed out of the editor
 
     try {

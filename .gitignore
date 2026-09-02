@@ -43,3 +43,6 @@ mockup/**/kinemos-analysis-viewer.html
 # The skill itself is committed under .agents/skills/; this link is an
 # absolute path, so it is not portable.
 /.claude/skills/frontend-design
+
+# Real-footage fixtures for the KinEMOS browser harnesses (large, local only)
+verify/fixtures/
