@@ -121,8 +121,9 @@ export interface RefineResult {
 export async function refinePlateEllipse(
   gray: GrayLike,
   guess: PlateEllipse,
-  options: { ringFraction?: number } = {},
+  options: { ringFraction?: number; pick?: 'outermost' | 'strongest' } = {},
 ): Promise<RefineResult | null> {
+  const pick = options.pick ?? 'outermost';
   const cv = await loadOpenCv();
   const ring = options.ringFraction ?? 0.22;
   const src = matFromGray(cv, gray);
@@ -151,7 +152,7 @@ export async function refinePlateEllipse(
 
     for (let pass = 0; pass < 2; pass++) {
       const tight = Math.max(0.06, 2.5 / Math.max(fit.semiMajorPx, 1));
-      const next = outermostPerBin(edgePointsNear(edges, gray, fit, tight, 18), fit);
+      const next = perBin(edgePointsNear(edges, gray, fit, tight, 18), fit, pick, gray);
       if (next.length < 12) break;
       const fitNext = fitEllipseFromPoints(cv, next);
       if (!fitNext) break;
@@ -253,19 +254,25 @@ function edgePointsNear(
   return out;
 }
 
-/** In each of 72 angular bins about the ellipse centre, the edge point with
- *  the largest normalised radius — the outer edge of a rim. */
-function outermostPerBin(pts: Array<[number, number]>, e: PlateEllipse): Array<[number, number]> {
+/** In each of 72 angular bins about the ellipse centre, one edge point: the
+ *  one with the largest normalised radius (the outer edge of a rim) or the
+ *  one with the strongest contrast across it. */
+function perBin(
+  pts: Array<[number, number]>,
+  e: PlateEllipse,
+  pick: 'outermost' | 'strongest',
+  gray: GrayLike,
+): Array<[number, number]> {
   const BINS = 72;
-  const best = new Array<{ p: [number, number]; nr: number } | null>(BINS).fill(null);
+  const best = new Array<{ p: [number, number]; score: number } | null>(BINS).fill(null);
   for (const p of pts) {
     const phi = Math.atan2(p[1] - e.cy, p[0] - e.cx);
     const bin = Math.floor(((phi + Math.PI) / (2 * Math.PI)) * BINS) % BINS;
-    const nr = normRadius(e, p[0], p[1]);
+    const score = pick === 'outermost' ? normRadius(e, p[0], p[1]) : gradientAcross(gray, p[0], p[1], e.cx, e.cy);
     const cur = best[bin];
-    if (!cur || nr > cur.nr) best[bin] = { p, nr };
+    if (!cur || score > cur.score) best[bin] = { p, score };
   }
-  return best.filter((b): b is { p: [number, number]; nr: number } => b !== null).map(b => b.p);
+  return best.filter((b): b is { p: [number, number]; score: number } => b !== null).map(b => b.p);
 }
 
 /** OpenCV's RotatedRect → the engine's ellipse and tilt convention. */

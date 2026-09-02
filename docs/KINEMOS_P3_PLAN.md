@@ -429,10 +429,56 @@ under Node for vitest):
 Ten unit tests on drawn scenes; `verify/track-clip.html` gained `?auto=1`
 and `?stabilise=1`; the bench gained `--handheld` and `--world` scoring.
 
+### The first real footage (0.83.3 fixtures, `verify/fixtures/real/`)
+
+Two clips of the same snatch — "Træk side" (perpendicular) and "Træk skråt"
+(oblique), 384×288 at 50 fps, tripod — through `verify/track-clip.html` with
+`?auto=1`: zero clicks from clip to bar path, on both.
+
+| | side | oblique |
+| --- | --- | --- |
+| Plate found | (221,0, 245,1), 28,2×25,8 px, support 1,00 | (244,3, 217,5), 20,9×19,9 px, support 0,90 |
+| Tracked | 170/170, min confidence 0,68, never lost | 188/188, min 0,51, 9 doubtful frames at the very end |
+| Lift-off → peak | 0,60 s | 0,62 s |
+| Peak vertical velocity | 2,55 m/s | 2,16 m/s |
+| Height to overhead | 157 cm | 161 cm |
+| Recovery peak | ≈1,0 m/s | ≈1,0 m/s |
+
+Same shape (pull, turnover hook, drop, recovery), same timing, heights within
+2,5 % — and a 15 % gap on peak velocity that calibration alone cannot explain
+in the direction it points. What the real plates showed that the synthetic
+ones could not:
+
+- **The plate's shadow inflates the outline downward.** On the side view the
+  face is a 52 px circle by intensity profile (r = 26); the snap found a
+  56 px major axis at 14° — the outermost edge at the bottom is the shadow's,
+  not the plate's. Picking the strongest edge per bin instead gives 27,2:
+  better, still a pixel out. A calibration that is 4–8 % large under-reads
+  every velocity by the same.
+- **A thick bumper seen obliquely has two 45 cm circles**, its face and the
+  far edge of its side, offset along the bar. The oblique fit mixes them:
+  face-only reads 36 px tall, face-and-rim 44 px. That is a 20 % spread on
+  the oblique scale from the choice of outline alone.
+- **The oblique view also changes depth along the pull.** The bar travels
+  back toward the lifter, which for a camera off the front corner is away
+  from the lens: the scale shrinks along the path and the peak under-reads.
+  A perpendicular side camera has no such term.
+
+So for *velocities*, film from the side, perpendicular, and let the coach
+check the outline against the plate face (the snap reports support, not
+which edge it chose); the oblique view is for path shape. Both of these are
+now product facts rather than assumptions.
+
+One environment note: the bundled headless Chromium has no H.264 decoder, so
+the fixtures were transcoded to VP8 for this run; a coach's Chrome decodes the
+MP4 directly.
+
 ### Not in P3d
 
-- **Validation on real footage.** All of the above is synthetic degradation,
-  chosen by the author. The two "træk" clips are the first real test.
+- **Ground truth on real footage.** The numbers above are consistent with
+  each other and with a snatch, and nothing here has been checked against a
+  hand-labelled track or a known bar path. The 15 % gap is explained, not
+  measured away.
 - **The device-profile calibration tier** (lens distortion by phone model).
 - **Re-rendering a stabilised clip.** The points are corrected, the picture
   is not; a coach watching a handheld clip still sees it move.
