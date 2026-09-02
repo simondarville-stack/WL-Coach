@@ -376,6 +376,11 @@ export function KinemosViewer() {
     if (!dirtyRef.current) return;
     const timer = window.setTimeout(() => {
       void (async () => {
+        // Cleared BEFORE the write, not after: an edit made while the write is
+        // in flight sets it again and schedules the next one. Clearing after
+        // would swallow that edit; never clearing at all — which is what this
+        // did — means every later dependency change rewrites the whole record.
+        dirtyRef.current = false;
         try {
           const analysisId = await ensureId();
           if (!analysisId) return;
@@ -405,6 +410,8 @@ export function KinemosViewer() {
           }
           setSaveError(null);
         } catch {
+          // Still unsaved, so the next dependency change should try again.
+          dirtyRef.current = true;
           setSaveError('Changes could not be saved — they are still on screen, but not stored.');
         }
       })();
@@ -516,7 +523,14 @@ export function KinemosViewer() {
   // again — which is why re-tracking needs no separate code path.
   const runTrack = useCallback(async () => {
     if (!server || currentT === null) return;
-    const anchorPoint = points.find(p => Math.abs(p.t - currentT) < 1e-6) ?? points[0];
+    // The mark on this frame if there is one, otherwise the nearest mark in
+    // time. Falling back to points[0] — which is what this did — anchors the
+    // track at the start of the clip while the button says "from here".
+    const anchorPoint = points.reduce<KinemosTrackPoint | null>(
+      (best, p) =>
+        best === null || Math.abs(p.t - currentT) < Math.abs(best.t - currentT) ? p : best,
+      null,
+    );
     if (!anchorPoint) return;
     const anchorIndex = server.nearestIndex(anchorPoint.t);
 

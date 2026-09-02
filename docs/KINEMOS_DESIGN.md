@@ -232,6 +232,25 @@ Coach-visible quality/effort tiers:
      Everything else §6 needs is in the stock build (`fitEllipse`, Canny/
      contours, `goodFeaturesToTrack` + LK flow + `estimateAffinePartial2D`
      for stabilisation).
+   - **Corrected by measurement (P2b, 0.81.0).** Two of the three assumptions
+     above did not survive contact with a ground-truth test. The details are in
+     `docs/KINEMOS_P2_PLAN.md` §4; in short:
+     - **OpenCV was not needed at all.** For this target — one large,
+       high-contrast disc, anchored by the coach — normalised cross-correlation
+       over a masked template with parabolic sub-pixel refinement reaches
+       0,04 px RMS on synthetic images and 0,09 px through a real
+       encode/decode round trip, in a few hundred lines of TypeScript and no
+       9 MB WASM payload. `src/kinemos/engine/tracker.ts`.
+     - **The annulus mask made things worse.** The reasoning was sound —
+       plates spin, so exclude the rotating face — but measured, cutting the
+       middle out throws away most of the pixels that localise the disc and
+       roughly doubles position error by an inner radius of 0,7. A ring does
+       hold slightly higher correlation through a spin; correlation only has to
+       clear a threshold, while position error is the product. The default now
+       masks nothing and the inner radius stays a parameter.
+     - The third assumption held: coarse-then-fine search is worth having, and
+       is implemented as a stride-2 pass followed by a full-resolution sweep of
+       the winner's neighbourhood.
 2. **Marker mode:** high-contrast marker/sticker on the bar end cap for
    hardcore setups → tighter, more repeatable centres (the 0.02 m/s tier,
    §6.4).
@@ -385,10 +404,16 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   and wraps the same demux → `VideoDecoder` pipeline, so mp4box would have been
   a second demuxer for one job. *KinEMOS is already a usable Kinovea-in-EMOS
   with zero automated tracking.*
-- **P2 — Assisted tracking & metrics.** Engine: anchor + supervise tracker,
-  shake stabilisation, Butterworth pipeline, phase auto-proposal +
-  coach-adjustable markers, per-rep metric computation, quality grades,
-  metrics into the Analysis registry. Marker mode. *The core product.*
+- **P2 — Assisted tracking & metrics.** *Shipped in 0.80.0 (measurement
+  pipeline) and 0.81.0 (tracker); scope, decisions and measurements in
+  `docs/KINEMOS_P2_PLAN.md`.* Engine: anchor + supervise tracker, Butterworth
+  pipeline, phase auto-proposal + coach-adjustable markers, per-rep metric
+  computation, quality grades. *The core product.*
+  **Built in two halves, metrics first** — a tracker and a filter shipped
+  together give a coach a first velocity with no way to tell which of the two
+  is lying. Deferred out of P2 and still open: shake stabilisation, marker
+  mode, and folding KinEMOS metrics into the Analysis metric registry (design
+  §13 open question 3, still unanswered).
 - **P3 — Comparison & sharing.** Path overlay + synced side-by-side, metric
   trend views, talkover recording, sharing to athlete/colleagues, overlay
   export. Device-profile calibration tier + model-lookup tier.
