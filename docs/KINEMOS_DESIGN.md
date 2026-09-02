@@ -437,8 +437,10 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   was decided: one metric catalogue in the engine, a read-only adapter that
   projects stored analyses for the trend view and for the Analysis module's
   measures, and a TRENDS view in the viewer that never shows velocity without
-  load. The model lift stays deferred; sharing, talkover and the calibration
-  tiers are untouched.
+  load. *P3c (the reference lift) shipped in the same 0.84.0*: a coach marks
+  one analysed rep as the athlete's reference for an exercise; comparison
+  opens on it and trends draw it as a line. Sharing, talkover and the
+  calibration tiers are untouched.
 - **P4 — Intelligence.** `kinemos-research` repo: literature, benchmarking on
   labelled clips, consented flywheel data collection wired in-product;
   ML-assisted detection/tracking (toward zero-click and server-side

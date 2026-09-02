@@ -31,6 +31,10 @@ export interface ComparisonCandidate {
   /** True when it is the same exercise as well as the same athlete — the
    *  comparison a coach usually means. */
   sameExercise: boolean;
+  /** The athlete's reference lift for this exercise — listed first and
+   *  preselected, because "how does this compare to the good one" is the
+   *  question the reference exists to answer. */
+  isReference: boolean;
 }
 
 /** A loaded comparison subject: everything needed to draw and to tabulate. */
@@ -77,13 +81,16 @@ export async function findComparable(
       clip,
       sameExercise:
         !!exerciseName && (clip.exerciseName ?? '').toLowerCase() === exerciseName.toLowerCase(),
+      isReference: analysis.is_reference === true,
     });
   }
 
-  // Same exercise first, then newest. A coach comparing a snatch to a snatch is
-  // the common case; comparing a snatch to a clean is occasionally the point.
+  // Same exercise first, its reference lift ahead of the rest, then newest. A
+  // coach comparing a snatch to a snatch is the common case; comparing a
+  // snatch to a clean is occasionally the point.
   return candidates.sort((a, b) => {
     if (a.sameExercise !== b.sameExercise) return a.sameExercise ? -1 : 1;
+    if (a.isReference !== b.isReference) return a.isReference ? -1 : 1;
     return (b.clip.date ?? '').localeCompare(a.clip.date ?? '');
   });
 }

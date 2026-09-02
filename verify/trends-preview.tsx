@@ -68,6 +68,7 @@ function season(): KinemosLiftRecord[] {
           grade,
           gradeErrorMs: grade === 'A' ? 0.02 : grade === 'B' ? 0.045 : grade === 'C' ? 0.08 : null,
           phaseSetId: 'default',
+          isReference: false,
           schema: stale ? 0 : 1,
           analysedAt: `${date}T18:00:00Z`,
           values: stale
@@ -109,6 +110,7 @@ function season(): KinemosLiftRecord[] {
         grade: 'B',
         gradeErrorMs: 0.05,
         phaseSetId: 'default',
+        isReference: false,
         schema: 1,
         analysedAt: `${date}T18:00:00Z`,
         values: {
@@ -120,6 +122,10 @@ function season(): KinemosLiftRecord[] {
       });
     }
   }
+  // The best-looking snatch of the block is the reference.
+  const snatches = out.filter(r => r.exerciseName === 'Snatch' && r.values.peakVelocity != null);
+  const best = snatches.reduce((a, b) => ((b.values.peakVelocity ?? 0) > (a.values.peakVelocity ?? 0) ? b : a));
+  best.isReference = true;
   return out;
 }
 

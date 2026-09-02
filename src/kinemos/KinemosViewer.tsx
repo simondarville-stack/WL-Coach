@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Ruler, TrendingUp, Triangle } from 'lucide-react';
+import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Ruler, Star, TrendingUp, Triangle } from 'lucide-react';
 import { ErrorState, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
 import { getOwnerId } from '../lib/ownerContext';
@@ -43,6 +43,7 @@ import type { AlignmentAnchor } from './engine/compare';
 import { toStoredMetrics } from './engine/metricCatalogue';
 import { ComparisonView } from './components/ComparisonView';
 import { TrendsView } from './components/TrendsView';
+import { markAsReference } from './lib/referenceService';
 import {
   findComparable,
   loadComparisonSubject,
@@ -143,6 +144,11 @@ export function KinemosViewer() {
   // Trends and comparison are two readings of the same athlete's history and
   // take the same space, so opening one closes the other.
   const [trending, setTrending] = useState(false);
+  // Whether this rep is the athlete's reference lift for the exercise. Written
+  // straight through on toggle rather than via the debounced save: it is one
+  // deliberate act, not a drag, and it has to clear the previous holder.
+  const [isReference, setIsReference] = useState(false);
+  const [referenceBusy, setReferenceBusy] = useState(false);
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
   const [comparisonId, setComparisonId] = useState<string | null>(null);
   const [comparisonSubject, setComparisonSubject] = useState<ComparisonSubject | null>(null);
@@ -235,6 +241,7 @@ export function KinemosViewer() {
     setMeasurePoints([]);
     setCoachBoundaries(null);
     setCamera('unknown');
+    setIsReference(false);
     // The logged load is the best first guess at bar mass, and it is already on
     // the library row. A coach who filmed a different set overwrites it.
     setMassKg(clip?.loadKg ?? null);
@@ -255,6 +262,7 @@ export function KinemosViewer() {
           setMassSource(bundle.analysis.mass_source ?? 'manual');
         }
         if (bundle.analysis.camera) setCamera(bundle.analysis.camera);
+        setIsReference(bundle.analysis.is_reference === true);
         // Only a set the coach has actually touched is restored. Stored
         // proposals would go stale the moment the track changed, and silently
         // re-showing an old engine guess as if it were current is worse than
@@ -561,7 +569,12 @@ export function KinemosViewer() {
       clip?.exerciseName ?? null,
     )
       .then(found => {
-        if (!cancelled) setCandidates(found);
+        if (cancelled) return;
+        setCandidates(found);
+        // Nothing chosen yet: open on the athlete's reference for this
+        // exercise, which is what the reference is for.
+        const reference = found.find(c => c.sameExercise && c.isReference);
+        if (reference) setComparisonId(current => current ?? reference.analysis.id);
       })
       .catch(() => {
         if (!cancelled) setCandidates([]);
@@ -864,6 +877,25 @@ export function KinemosViewer() {
     );
   }
 
+  const toggleReference = async () => {
+    if (referenceBusy) return;
+    const next = !isReference;
+    setReferenceBusy(true);
+    try {
+      const analysisId = await ensureId();
+      if (!analysisId) return;
+      await markAsReference(
+        { analysisId, athleteId: clip.athleteId, exerciseName: clip.exerciseName },
+        next,
+      );
+      setIsReference(next);
+    } catch {
+      setSaveError('The reference could not be saved.');
+    } finally {
+      setReferenceBusy(false);
+    }
+  };
+
   const title = clip.exerciseName ?? 'Clip';
   const subtitle = [
     clip.athleteName,
@@ -967,6 +999,42 @@ export function KinemosViewer() {
           >
             <Columns2 size={12} />
             COMPARE
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleReference()}
+            disabled={!comparable || referenceBusy}
+            aria-pressed={isReference}
+            title={
+              !comparable
+                ? 'A reference needs a calibrated, marked lift'
+                : isReference
+                  ? `This is ${clip.athleteName ?? 'the athlete'}’s reference ${clip.exerciseName ?? 'lift'}. Comparison opens on it and the trend view draws it as a line. Press to unmark.`
+                  : `Make this ${clip.athleteName ?? 'the athlete'}’s reference ${clip.exerciseName ?? 'lift'} — the one the others are judged against. Replaces any current reference for this exercise.`
+            }
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 24,
+              padding: '0 9px',
+              border: '1px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: isReference ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+              color: comparable
+                ? isReference
+                  ? 'var(--color-accent)'
+                  : 'var(--color-text-primary)'
+                : 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-micro)',
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              cursor: comparable ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <Star size={12} fill={isReference ? 'currentColor' : 'none'} />
+            {isReference ? 'REFERENCE' : 'SET REFERENCE'}
           </button>
           <button
             type="button"

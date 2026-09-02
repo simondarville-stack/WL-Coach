@@ -6,9 +6,9 @@
 0.81.x).
 
 > **Status: P3a SHIPPED** — the charts in 0.82.0, synced side-by-side playback
-> in 0.83.0. **P3b SHIPPED** — metric trends in 0.84.0 (§5 below). The rest
-> of P3 — model lift, talkover, sharing, overlay export, the calibration
-> tiers — is not started.
+> in 0.83.0. **P3b SHIPPED** — metric trends in 0.84.0 (§5 below). **P3c
+> SHIPPED** — the reference lift, same ship (§6). The rest of P3 — talkover,
+> sharing, overlay export, the calibration tiers — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made
@@ -202,8 +202,8 @@ Deliberately deferred, in the order they are likely to be picked up:
   and the overlay carries most of the value on its own.
 - **Metric trends over time.** Was gated on design §13 open question 3;
   decided 02/09/2026 and shipped as P3b (§5).
-- **Model-lift comparison.** Third in the design's own ordering; wants a notion
-  of a reference lift that does not exist yet.
+- **Model-lift comparison.** Third in the design's own ordering; wanted a
+  notion of a reference lift, which P3c supplied (§6).
 - **Talkover recording, sharing, overlay export.** The rest of P3.
 - **Device-profile and phone-model calibration tiers.** Listed under P3 in the
   design plan; unrelated to comparison and independently schedulable.
@@ -310,4 +310,47 @@ KinEMOS fact stream and measures (8).
 - **Load–velocity profile fitting.** The against-load view shows the points;
   fitting a line and deriving a minimum-velocity threshold is P5's
   VBT→planner work (design §12).
+
+---
+
+## 6. P3c — The reference lift (shipped with 0.84.0)
+
+Design §8's third comparison need, *versus a model lift*, deferred from P3a
+for want of a notion of a reference. This is that notion at its smallest, and
+deliberately per athlete rather than a library of ideal lifts: the coach marks
+one analysed rep as the athlete's reference for an exercise — their best
+snatch, the one that looked right — and the other surfaces read against it.
+
+### Decisions
+
+1. **One reference per (athlete, exercise), kept in the application.** An
+   analysis has no athlete or exercise of its own (it names its clip; both
+   live on the library row), so the database cannot state the constraint.
+   `referenceService.markAsReference` clears the previous holder, found
+   through the adapter's join, before setting the new one. Migration
+   `20260902200000_kinemos_reference_lift` adds `is_reference` and a partial
+   index; nothing else changes shape.
+2. **The reference is a standard, not a data point.** The trend view draws it
+   as a line whatever the range or scope — narrowing to three months must not
+   lose the thing the three months are read against — and only when it has a
+   value for the metric on screen.
+3. **A reference needs a calibrated, marked lift**, the same gate as
+   comparison. Written straight through on toggle, not via the debounced
+   save: it is one deliberate act and it has a side effect on another row.
+
+### What shipped
+
+`lib/referenceService.ts` (`referenceOf`, `markAsReference`); `is_reference`
+on the analysis row, the adapter record and the comparison candidate. Viewer:
+a SET REFERENCE / REFERENCE toggle in the header. Comparison: the reference
+lists first for its exercise, marked ★, and is preselected when the picker
+opens with nothing chosen. Trends: a dashed line at the reference's value,
+labelled with the value and its load, in both the time and the load views;
+the reference row marked in the table. Tests: service (5), trends (2),
+adapter and fixtures updated.
+
+### Not in P3c
+
+- A library of model lifts across athletes (design §12 P5), and any
+  "distance from the model" score. The reference is one athlete's own lift.
 

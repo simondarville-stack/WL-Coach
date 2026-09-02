@@ -28,6 +28,7 @@ function rep(over: Partial<KinemosLiftRecord> & { analysisId: string }): Kinemos
     grade: 'A',
     gradeErrorMs: 0.02,
     phaseSetId: 'default',
+    isReference: false,
     schema: 1,
     analysedAt: '2026-08-10T10:00:00Z',
     values: { peakVelocity: 1.8, secondPull: 1.8, transitionLoss: 0.1, turnover: 0.5 },
@@ -155,6 +156,27 @@ describe('TrendsView', () => {
     fireEvent.click(screen.getByText('01/07'));
     await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
     expect(onOpen.mock.calls[0][0].analysisId).toBe('r1');
+  });
+
+  it('draws the exercise’s reference as a labelled line, whatever the range', async () => {
+    // The reference is four months old: inside "all", outside "3 m".
+    const withReference = records.map(r =>
+      r.analysisId === 'r1' ? { ...r, isReference: true, date: '2026-05-01' } : r,
+    );
+    mount({ load: () => Promise.resolve(withReference) });
+    expect(await screen.findByText('reference 1,70 @ 80 kg')).toBeInTheDocument();
+    expect(screen.getByText('★ reference')).toBeInTheDocument();
+    // Narrow the range past the reference's date: the row goes, the line stays.
+    fireEvent.click(screen.getByRole('button', { name: '3 m' }));
+    await waitFor(() => expect(screen.queryByText('★ reference')).not.toBeInTheDocument());
+    expect(screen.getByText('reference 1,70 @ 80 kg')).toBeInTheDocument();
+  });
+
+  it('draws no reference line when the reference has no value for the metric', async () => {
+    const withReference = records.map(r => (r.analysisId === 'r3' ? { ...r, isReference: true } : r));
+    mount({ load: () => Promise.resolve(withReference) });
+    await screen.findByText('PEAK VELOCITY · M/S');
+    expect(screen.queryByText(/^reference /)).not.toBeInTheDocument();
   });
 
   it('says so when the clip has no athlete', () => {

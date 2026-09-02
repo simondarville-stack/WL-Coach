@@ -55,6 +55,7 @@ function analysis(over: Partial<KinemosAnalysis> & { id: string }): KinemosAnaly
     grade_error_ms: 0.045,
     grade_factors: null,
     camera: 'tripod',
+    is_reference: false,
     created_at: '2026-08-01T10:00:00Z',
     updated_at: '2026-08-01T10:05:00Z',
     ...over,

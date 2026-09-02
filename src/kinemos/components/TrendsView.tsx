@@ -35,6 +35,7 @@ import { formatDateShort } from '../../lib/dateUtils';
 import { METRIC_CATALOGUE, metricById } from '../engine/metricCatalogue';
 import { loadKinemosLiftRecords, type KinemosLiftRecord } from '../lib/analysisAdapter';
 import { isStale, refreshStoredMetrics, type RefreshOutcome } from '../lib/recompute';
+import { referenceOf } from '../lib/referenceService';
 import { num } from '../lib/viewerFormat';
 
 /** The lift on screen, drawn as the comparison view draws it. */
@@ -137,6 +138,26 @@ export function TrendsView({
   );
   const withLoad = useMemo(() => plotted.filter(r => isFinite(r.loadKg)), [plotted]);
   const missing = inScope.length - plotted.length;
+
+  /**
+   * The athlete's reference lift for THIS exercise, drawn as a line to read
+   * the others against — whatever the scope or range, because the reference
+   * is a standard, not a data point in the window. Only when it has a value
+   * for the metric on screen; a line at nothing is worse than no line.
+   */
+  const reference = useMemo(() => {
+    const rec = records ? referenceOf(records, exerciseName) : null;
+    const value = rec ? rec.values[metric.id] : null;
+    return rec && value != null && Number.isFinite(value) ? { record: rec, value } : null;
+  }, [records, exerciseName, metric.id]);
+  const referenceLine = reference
+    ? {
+        value: reference.value,
+        label: `reference ${num(reference.value, metric.decimals)}${
+          reference.record.loadKg !== null ? ` @ ${num(reference.record.loadKg, 0)} kg` : ''
+        }`,
+      }
+    : null;
   /** Reps in view whose cache predates the current schema — the ones a
    *  recompute would give numbers, or newer numbers. */
   const stale = useMemo(() => inScope.filter(isStale), [inScope]);
@@ -293,7 +314,8 @@ export function TrendsView({
                 xLabel={t => formatDateShort(isoOf(t))}
                 yLabel={v => num(v, metric.decimals)}
                 joined={scope === 'exercise'}
-                joinLabel="line: the day's mean" 
+                joinLabel="line: the day's mean"
+                referenceY={referenceLine}
                 height={220}
                 currentId={currentAnalysisId}
                 hover={hover}
@@ -313,6 +335,7 @@ export function TrendsView({
                 xLabel={(kg, last) => `${num(kg, 0)}${last ? ' kg' : ''}`}
                 yLabel={v => num(v, metric.decimals)}
                 joined={false}
+                referenceY={referenceLine}
                 height={300}
                 currentId={currentAnalysisId}
                 hover={hover}
@@ -493,6 +516,8 @@ interface DotChartProps {
   joined: boolean;
   /** What the line is, said once under the chart. */
   joinLabel?: string;
+  /** A horizontal line to read the marks against — the reference lift's value. */
+  referenceY?: { value: number; label: string } | null;
   height: number;
   currentId: string | null;
   hover: KinemosLiftRecord | null;
@@ -515,6 +540,7 @@ function DotChart({
   yLabel,
   joined,
   joinLabel,
+  referenceY,
   height,
   currentId,
   hover,
@@ -528,7 +554,7 @@ function DotChart({
   const padX = maxX0 - minX0 > 0 ? (maxX0 - minX0) * 0.04 : 1;
   const minX = minX0 - padX;
   const maxX = maxX0 + padX;
-  const [minY0, maxY0] = domainOf(ys);
+  const [minY0, maxY0] = domainOf(referenceY ? [...ys, referenceY.value] : ys);
   const padY = maxY0 - minY0 > 0 ? (maxY0 - minY0) * 0.15 : Math.abs(maxY0) * 0.1 || 1;
   const minY = minY0 - padY;
   const maxY = maxY0 + padY;
@@ -651,6 +677,19 @@ function DotChart({
             vectorEffect="non-scaling-stroke"
           />
         )}
+        {referenceY && (
+          <line
+            x1={0}
+            y1={py(referenceY.value)}
+            x2={W}
+            y2={py(referenceY.value)}
+            stroke={CURRENT_COLOR}
+            strokeWidth={1}
+            strokeDasharray="6 4"
+            strokeOpacity={0.7}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
         {records.map((r, i) => (
           <GradeMark
             key={r.analysisId}
@@ -678,8 +717,22 @@ function DotChart({
           {xLabel(v, i === ticksX.length - 1)}
         </AxisLabel>
       ))}
+      {/* Bottom right, clear of the reference label, which sits at its own
+          y and is usually near the top. */}
       {joinPath && joinLabel && (
-        <AxisLabel style={{ right: 4, top: 2 }}>{joinLabel}</AxisLabel>
+        <AxisLabel style={{ right: 4, bottom: 16 }}>{joinLabel}</AxisLabel>
+      )}
+      {referenceY && (
+        <AxisLabel
+          style={{
+            right: 4,
+            top: `${(py(referenceY.value) / H) * 100}%`,
+            transform: 'translateY(-100%)',
+            color: CURRENT_COLOR,
+          }}
+        >
+          {referenceY.label}
+        </AxisLabel>
       )}
     </div>
   );
@@ -864,6 +917,7 @@ function RepTable({
               <Td align="left" muted>
                 {r.exerciseName ?? 'Clip'}
                 {isCurrent ? <span style={{ ...caption, marginLeft: 6, color: CURRENT_COLOR }}>this rep</span> : null}
+                {r.isReference ? <span style={{ ...caption, marginLeft: 6 }}>★ reference</span> : null}
               </Td>
               <Td>{r.loadKg === null ? '—' : num(r.loadKg, 0)}</Td>
               <Td>{r.repIndex}</Td>

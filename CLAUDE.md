@@ -84,7 +84,8 @@ All modules are **active** — nothing is currently disabled or hidden:
   side-by-side playback 0.83.0 — and metric trends (0.84.0): a TRENDS view in
   the viewer plus KinEMOS measures inside the Analysis builder, both read
   through `src/kinemos/lib/analysisAdapter.ts` (design §13 Q3: metrics stay
-  adjacent, Analysis never imports the engine).
+  adjacent, Analysis never imports the engine) — and a per-athlete reference
+  lift that comparison opens on and trends draw as a line.
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
   in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
