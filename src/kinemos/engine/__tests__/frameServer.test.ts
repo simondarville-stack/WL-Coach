@@ -72,6 +72,28 @@ describe('detectVfr', () => {
     dropped.splice(60, 1); // one gone; every other delta untouched
     expect(detectVfr(dropped)).toBe(false);
   });
+
+  it('tolerates container-timescale rounding jitter', () => {
+    // A 600-tick QuickTime timescale can only represent 59,94 fps as mostly
+    // 10-tick deltas with an 11 slipped in — CFR in every way that matters.
+    // This is the everyday iPhone clip; a rule that calls it VFR docks every
+    // grade for nothing.
+    const times = Array.from({ length: 120 }, (_, i) => Math.round((i / 59.94) * 600) / 600);
+    expect(detectVfr(times)).toBe(false);
+  });
+
+  it('is not fooled by decode-order (B-frame) timestamps', () => {
+    // The probe hands over packet order, not presentation order; sorted, the
+    // stream is perfectly regular.
+    const display = cfr(120, 59.94);
+    const decodeOrder: number[] = [];
+    for (let i = 0; i < display.length; i += 3) {
+      decodeOrder.push(display[Math.min(i + 2, display.length - 1)]);
+      if (display[i] !== undefined) decodeOrder.push(display[i]);
+      if (display[i + 1] !== undefined) decodeOrder.push(display[i + 1]);
+    }
+    expect(detectVfr(decodeOrder)).toBe(false);
+  });
 });
 
 describe('averageFpsOf', () => {

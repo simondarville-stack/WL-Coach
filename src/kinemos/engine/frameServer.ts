@@ -115,26 +115,38 @@ export function nearestIndexIn(timestamps: readonly number[], t: number): number
 }
 
 /**
- * Are these timestamps variable-rate? Same rule as the import probe
- * (`kinemosProbe.isVariableFrameRate`), applied to the full table rather than a
- * 240-packet sample: a clip is VFR when the spread of frame deltas exceeds 5 %
- * of the median delta. Phones cross that easily; a genuine CFR clip sits at
- * essentially zero.
+ * Are these timestamps variable-rate?
  *
- * Null when there are too few frames to judge.
+ * THE one VFR rule in KinEMOS. The import probe (`lib/kinemosProbe.ts`)
+ * re-exports this and applies it to a packet sample; the frame server applies
+ * it to the full table. A clip called constant at import but variable in the
+ * viewer would be graded on one basis and measured on another, so the rule
+ * lives here and nowhere else (design §4 rule 3 — single source of truth).
+ *
+ * Timestamps are sorted first (packets arrive in decode order; with B-frames
+ * presentation order differs), then successive deltas are compared to their
+ * median. Container-timescale rounding wobbles CFR deltas by a tick — a
+ * 600-tick QuickTime timescale can only write 59,94 fps as mostly 10-tick gaps
+ * with an 11 slipped in — so the test is a tolerance, not equality: a clip is
+ * VFR when more than 5 % of deltas sit over 15 % away from the median. Real
+ * phone VFR swings far wider than that; a splice or a dropped frame stays
+ * under the 5 %.
+ *
+ * Null when the sample is too small to judge.
  */
 export function detectVfr(timestamps: readonly number[]): boolean | null {
-  if (timestamps.length < 10) return null;
+  if (timestamps.length < 24) return null;
+  const sorted = [...timestamps].sort((a, b) => a - b);
   const deltas: number[] = [];
-  for (let i = 1; i < timestamps.length; i++) deltas.push(timestamps[i] - timestamps[i - 1]);
-  deltas.sort((a, b) => a - b);
-  const median = deltas[deltas.length >> 1];
+  for (let i = 1; i < sorted.length; i++) {
+    const d = sorted[i] - sorted[i - 1];
+    if (d > 0) deltas.push(d);
+  }
+  if (deltas.length < 12) return null;
+  const median = [...deltas].sort((a, b) => a - b)[Math.floor(deltas.length / 2)];
   if (!(median > 0)) return null;
-  // Trimmed range: the 5th and 95th percentiles, so one dropped frame in a
-  // recording does not by itself brand the clip variable.
-  const lo = deltas[Math.floor(deltas.length * 0.05)];
-  const hi = deltas[Math.floor(deltas.length * 0.95)];
-  return (hi - lo) / median > 0.05;
+  const outliers = deltas.filter(d => Math.abs(d - median) > median * 0.15).length;
+  return outliers / deltas.length > 0.05;
 }
 
 /**
@@ -284,6 +296,16 @@ export async function openFrameServer(
   // order. The coach steps through presentation order.
   timestamps.sort((a, b) => a - b);
   keyframeTimestamps.sort((a, b) => a - b);
+
+  // A duplicate presentation timestamp is a muxing artefact, not a frame the
+  // coach can step to; left in the table, "next frame" becomes a no-op that
+  // reads as a frozen viewer. Exact equality is the right test: these are
+  // container timestamps, not computed floats.
+  let kept = 0;
+  for (let i = 0; i < timestamps.length; i++) {
+    if (kept === 0 || timestamps[i] !== timestamps[kept - 1]) timestamps[kept++] = timestamps[i];
+  }
+  timestamps.length = kept;
 
   if (timestamps.length === 0) {
     throw new FrameServerUnavailableError('This clip contains no video frames.');

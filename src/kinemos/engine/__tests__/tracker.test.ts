@@ -389,7 +389,9 @@ describe('anchoring anywhere', () => {
 });
 
 describe('losing the bar', () => {
-  it('gives up rather than reporting a complete track it does not have', async () => {
+  // Tracks forty full-resolution frames through the NCC search; under a full
+  // parallel suite run this takes ~5 s, right on vitest's default limit.
+  it('gives up rather than reporting a complete track it does not have', { timeout: 20_000 }, async () => {
     // The plate leaves the frame entirely part way through.
     const truth = pullTrajectory(40);
     const source = sourceFrom(

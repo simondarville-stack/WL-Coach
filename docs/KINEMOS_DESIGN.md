@@ -402,8 +402,13 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   `CanvasSink` for decoded, rotation-corrected pixels) rather than the mp4box
   this plan originally named: mediabunny arrived with the 0.77.0 clip editor
   and wraps the same demux → `VideoDecoder` pipeline, so mp4box would have been
-  a second demuxer for one job. *KinEMOS is already a usable Kinovea-in-EMOS
-  with zero automated tracking.*
+  a second demuxer for one job. A second frame-server slice was built locally
+  in parallel (`engine/video/frameServer.ts` + `frameTiming.ts`, preserved as
+  tag `archive/kinemos-p1-frame-server`) and superseded by this one on
+  02/09/2026; its durable contribution — one VFR rule shared by the import
+  probe and the frame server, plus duplicate-timestamp removal in the frame
+  table — was folded in with 0.83.1. *KinEMOS is already a usable
+  Kinovea-in-EMOS with zero automated tracking.*
 - **P2 — Assisted tracking & metrics.** *Shipped in 0.80.0 (measurement
   pipeline) and 0.81.0 (tracker); scope, decisions and measurements in
   `docs/KINEMOS_P2_PLAN.md`.* Engine: anchor + supervise tracker, Butterworth
