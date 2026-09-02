@@ -214,6 +214,65 @@ try {
     `${atOne.height.toFixed(2)} → ${atFour.height.toFixed(2)} cm`,
   );
 
+  // ── Side by side, and the stall it exposed ────────────────────────────────
+  //
+  // This is the check that caught the frame server's decode stall, and the only
+  // place it reproduces: it needs a live viewer painting each frame as it
+  // arrives, which no headless harness of the engine alone reproduces.
+  //
+  // Handed straight to `CanvasSink` — one decoder walking one demuxer — a
+  // stream of overlapping requests stops resolving after fifty or sixty, and
+  // does not reject either. The picture then freezes for the rest of the
+  // session while the transport, the readouts and the overlay all carry on
+  // naming a different moment. It reads as a viewer that lost sync rather than
+  // a decoder that stalled, which is how it survived three phases.
+  //
+  // Stepping SLOWLY hides it completely, so this steps as fast as the driver
+  // can click — which is what holding the step key does.
+  await page.getByRole('button', { name: 'Side by side', exact: true }).click();
+  // The bench encodes its two clips on first use.
+  await page.waitForFunction('window.__BENCH__?.leader?.frameCount > 0', null, { timeout: 90000 });
+
+  // Two ingredients, and it takes both. Fast stepping alone does not do it:
+  // what tips the decoder over is fast stepping WHILE the page is also pulling
+  // whole frames back off the GPU. In the app that pressure comes from the
+  // tracker's greyscale readbacks, from a second clip decoding beside this one,
+  // or simply from a slower machine; here it is a full `getImageData` sweep of
+  // the stages between bursts.
+  const readbackSweep = () =>
+    page.evaluate(() => {
+      for (const source of document.querySelectorAll('canvas')) {
+        if (source.width < 100) continue;
+        const scratch = document.createElement('canvas');
+        scratch.width = source.width;
+        scratch.height = source.height;
+        const ctx = scratch.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(source, 0, 0);
+        ctx.getImageData(0, 0, scratch.width, scratch.height);
+      }
+    });
+
+  const forward = page.getByRole('button', { name: 'Forward one frame (→)' });
+  let leader = (await bench()).leader;
+  for (const target of [30, 60, 78, 110]) {
+    for (let i = leader.index; i < target; i++) await forward.click();
+    await page.waitForTimeout(500);
+    await readbackSweep();
+    leader = (await bench()).leader;
+    if (leader.frameIndex !== leader.index) break;
+  }
+
+  check(
+    'Rapid stepping does not stall the decoder',
+    leader.frameIndex === leader.index,
+    `transport on ${leader.index}, picture on ${leader.frameIndex}`,
+  );
+  check(
+    'And it actually moved',
+    leader.index >= 110,
+    `${leader.index} of ${leader.frameCount}`,
+  );
+
   check('No page errors', errors.length === 0, errors.join(' | '));
 } catch (err) {
   check('The driver ran without throwing', false, String(err?.message ?? err));

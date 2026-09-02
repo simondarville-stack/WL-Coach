@@ -417,15 +417,19 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
 - **P3 — Comparison & sharing.** Path overlay + synced side-by-side, metric
   trend views, talkover recording, sharing to athlete/colleagues, overlay
   export. Device-profile calibration tier + model-lookup tier.
-  *P3a (comparison) shipped in 0.82.0; scope, decisions and what the browser
-  pass caught are in `docs/KINEMOS_P3_PLAN.md`.* Two lifts overlaid — bar
-  paths, velocity curves on a shared clock, a delta table that says which
-  direction is better in words and withholds the judgement where "better" has
-  no meaning. Two lifts align on a shared physical event — §8's "sync by phase
-  marker", lift-off by default — and an event the engine only *guessed* at is
-  refused as an anchor. Synced side-by-side playback, trends and the
-  model lift stay deferred; sharing, talkover and the calibration tiers are
-  untouched.
+  *P3a (comparison) shipped in 0.82.0 (charts) and 0.83.0 (synced side-by-side
+  playback); scope, decisions and what the browser pass caught are in
+  `docs/KINEMOS_P3_PLAN.md`.* Two lifts overlaid — bar paths, velocity curves
+  on a shared clock, a delta table that says which direction is better in words
+  and withholds the judgement where "better" has no meaning — plus both clips
+  playing off one clock. Two lifts align on a shared physical event — §8's
+  "sync by phase marker", lift-off by default — and an event the engine only
+  *guessed* at is refused as an anchor. Building the second half exposed a
+  **decode stall that had shipped with the frame server in 0.79.0**: overlapping
+  `getCanvas` calls stop resolving past a few dozen and never reject, freezing
+  the picture under a transport that carries on. Fixed with a serial decode
+  queue; see the P3 plan. Trends and the model lift stay deferred; sharing,
+  talkover and the calibration tiers are untouched.
 - **P4 — Intelligence.** `kinemos-research` repo: literature, benchmarking on
   labelled clips, consented flywheel data collection wired in-product;
   ML-assisted detection/tracking (toward zero-click and server-side

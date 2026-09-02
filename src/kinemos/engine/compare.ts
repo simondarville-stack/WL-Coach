@@ -310,7 +310,11 @@ export function compareMetrics(
   });
 }
 
-function verdictFor(id: string, delta: number | null, betterWhen: BetterWhen): MetricDelta['verdict'] {
+function verdictFor(
+  id: string,
+  delta: number | null,
+  betterWhen: BetterWhen,
+): MetricDelta['verdict'] {
   if (delta === null) return null;
   const threshold = SIGNIFICANT[id] ?? 0;
   if (Math.abs(delta) <= threshold) return 'same';

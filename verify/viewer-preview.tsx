@@ -37,6 +37,7 @@ import {
 } from '../src/kinemos/engine/phases';
 import { gradeAnalysis, type CameraStability } from '../src/kinemos/engine/grade';
 import { DEFAULT_FILTER } from '../src/kinemos/engine/signal';
+import { useFrameServer } from '../src/kinemos/hooks/useFrameServer';
 import { AnalysisPanel } from '../src/kinemos/components/AnalysisPanel';
 import { ViewerStage, type ViewerTool } from '../src/kinemos/components/ViewerStage';
 import { ComparisonView } from '../src/kinemos/components/ComparisonView';
@@ -76,6 +77,15 @@ const CM_PER_PX = 0.2;
  *  breaks if a handler reads clientX without going through the rect. */
 const STAGE_W = 1280;
 const STAGE_H = 800;
+
+/** The reference lift is filmed at a different frame rate from the current one.
+ *  That is the case side-by-side playback exists to survive: the follower has
+ *  to land on its NEAREST frame to a moment, because there usually is no frame
+ *  exactly there. */
+const REFERENCE_FPS = 30;
+
+/** Where the bar sits at rest, in frame pixels. */
+const FLOOR_PX = 720;
 
 interface TrackShape {
   delay?: number;
@@ -118,7 +128,11 @@ function syntheticTrack(fps: number, tremorPx: number, shape: TrackShape = {}): 
       points.push({
         t,
         x: 500 + xOffset + (4 / CM_PER_PX) * Math.sin(2 * Math.PI * t * 0.7) + rand() * tremorPx,
-        y: 1000 - y * pxPerM + rand() * tremorPx,
+        // The bar starts near the floor of the frame and rises ~95 cm, which at
+        // this scale is 475 px — so the whole lift is inside an 800 px frame.
+        // It has to be: the bench now ENCODES these positions into a clip, and
+        // a plate drawn off-frame is a fixture bug that looks like a viewer one.
+        y: FLOOR_PX - y * pxPerM + rand() * tremorPx,
       });
       next += 1 / fps;
     }
@@ -138,9 +152,27 @@ const calibration = calibrateFromEllipse(
   45,
 );
 
-/** The stage needs pixels. A painted frame stands in for decoded video: a
- *  platform, a plate at the marked position, and enough contrast to see the
- *  overlay against. */
+/** One frame of the stand-in scene: a platform, and a plate at the bar end. */
+function paintScene(ctx: CanvasRenderingContext2D, width: number, height: number, plate: PxPoint) {
+  ctx.fillStyle = '#232320';
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#3a3a35';
+  ctx.fillRect(0, height - 90, width, 90);
+  ctx.save();
+  ctx.translate(plate.x, plate.y);
+  ctx.fillStyle = '#7a7a74';
+  ctx.fillRect(-330, -7, 660, 14);
+  ctx.beginPath();
+  ctx.arc(0, 0, 112, 0, Math.PI * 2);
+  ctx.fillStyle = '#6f6f68';
+  ctx.fill();
+  ctx.lineWidth = 14;
+  ctx.strokeStyle = '#dcdcd6';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** The stage needs pixels. A painted frame stands in for decoded video. */
 function useStageCanvas(width: number, height: number, plate: PxPoint) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   if (!ref.current) {
@@ -148,27 +180,126 @@ function useStageCanvas(width: number, height: number, plate: PxPoint) {
     ref.current.width = width;
     ref.current.height = height;
   }
+  // Depending on the coordinates rather than the object: a fresh literal every
+  // render would repaint every render.
+  const { x, y } = plate;
   useEffect(() => {
     const ctx = ref.current?.getContext('2d');
-    if (!ctx) return;
-    ctx.fillStyle = '#232320';
-    ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = '#3a3a35';
-    ctx.fillRect(0, height - 90, width, 90);
-    ctx.save();
-    ctx.translate(plate.x, plate.y);
-    ctx.fillStyle = '#7a7a74';
-    ctx.fillRect(-330, -7, 660, 14);
-    ctx.beginPath();
-    ctx.arc(0, 0, 112, 0, Math.PI * 2);
-    ctx.fillStyle = '#6f6f68';
-    ctx.fill();
-    ctx.lineWidth = 14;
-    ctx.strokeStyle = '#dcdcd6';
-    ctx.stroke();
-    ctx.restore();
-  }, [width, height, plate.x, plate.y]);
+    if (ctx) paintScene(ctx, width, height, { x, y });
+  }, [width, height, x, y]);
   return ref.current;
+}
+
+/**
+ * A real, decodable clip of a synthetic lift.
+ *
+ * Side-by-side playback is the one surface here that a painted canvas cannot
+ * stand in for: it is about two decoders, two frame rates and the drift between
+ * them, and a still image has none of those. So the bench encodes its own
+ * clips — one frame per track point, timestamped with that point's own `t`, so
+ * the video and the track are in sync by construction and any misalignment on
+ * screen is the viewer's rather than the fixture's.
+ */
+async function encodeClip(points: TrackPoint[], fps: number): Promise<Blob | null> {
+  const chosen = await pickCodec();
+  if (!chosen) return null;
+
+  const { Output, BufferTarget, CanvasSource, Mp4OutputFormat, WebMOutputFormat } =
+    await import('mediabunny');
+  const canvas = document.createElement('canvas');
+  canvas.width = STAGE_W;
+  canvas.height = STAGE_H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const output = new Output({
+    format:
+      chosen.container === 'mp4'
+        ? new Mp4OutputFormat({ fastStart: 'in-memory' })
+        : new WebMOutputFormat(),
+    target: new BufferTarget(),
+  });
+  const source = new CanvasSource(canvas, { codec: chosen.codec, bitrate: 6_000_000 });
+  output.addVideoTrack(source);
+  await output.start();
+  for (const p of points) {
+    paintScene(ctx, STAGE_W, STAGE_H, p);
+    await source.add(p.t, 1 / fps);
+  }
+  source.close();
+  await output.finalize();
+  return new Blob([output.target.buffer as ArrayBuffer], {
+    type: chosen.container === 'mp4' ? 'video/mp4' : 'video/webm',
+  });
+}
+
+async function pickCodec(): Promise<{ codec: 'avc' | 'vp9' | 'vp8'; container: string } | null> {
+  for (const c of [
+    { codec: 'avc' as const, container: 'mp4', config: 'avc1.42001f' },
+    { codec: 'vp9' as const, container: 'webm', config: 'vp09.00.10.08' },
+    { codec: 'vp8' as const, container: 'webm', config: 'vp8' },
+  ]) {
+    const supported = await VideoEncoder.isConfigSupported({
+      codec: c.config,
+      width: STAGE_W,
+      height: STAGE_H,
+      bitrate: 6_000_000,
+    }).catch(() => null);
+    if (supported?.supported) return c;
+  }
+  return null;
+}
+
+/**
+ * Encode the clips the bench needs, once, ONE AT A TIME.
+ *
+ * Sequentially on purpose. Run concurrently, the second encoder quietly
+ * produces a clip whose frames stop advancing partway through while its
+ * timestamps carry on — 139 packets, the last sixty of them the same picture.
+ * Nothing throws and the container looks correct, so it reads on screen as a
+ * viewer that lost sync rather than a fixture that lost frames, which cost an
+ * hour to tell apart. Two encoders on one GPU is a fixture problem, not a
+ * product one: the app downloads its clips.
+ */
+function useEncodedClips(
+  specs: Array<{ points: TrackPoint[]; fps: number }>,
+  wanted: boolean,
+): Array<Blob | null> {
+  const [blobs, setBlobs] = useState<Array<Blob | null>>(() => specs.map(() => null));
+  const started = useRef(false);
+  useEffect(() => {
+    if (!wanted || started.current) return;
+    started.current = true;
+    (async () => {
+      const out: Array<Blob | null> = [];
+      for (const spec of specs) {
+        out.push(await encodeClip(spec.points, spec.fps).catch(() => null));
+        setBlobs([...out, ...specs.slice(out.length).map(() => null)]);
+      }
+    })();
+  }, [wanted, specs]);
+  return blobs;
+}
+
+/**
+ * A blob as a URL the production code can take unchanged.
+ *
+ * Deliberately a URL rather than handing the Blob straight to the frame server:
+ * the app only ever has URLs, and a bench that took a shortcut the app cannot
+ * would stop testing the path the app runs.
+ */
+function useObjectUrl(blob: Blob | null): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) {
+      setUrl(null);
+      return;
+    }
+    const next = URL.createObjectURL(blob);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [blob]);
+  return url;
 }
 
 /**
@@ -178,9 +309,12 @@ function useStageCanvas(width: number, height: number, plate: PxPoint) {
  * those differences is something the alignment and the delta table have to
  * handle, and none of them is visible from a unit test.
  */
-function useReferenceSubject(): { candidate: ComparisonCandidate; subject: ComparisonSubject } {
+function useReferenceSubject(playbackUrl: string): {
+  candidate: ComparisonCandidate;
+  subject: ComparisonSubject;
+} {
   return useMemo(() => {
-    const points = syntheticTrack(60, 1.2, {
+    const points = syntheticTrack(REFERENCE_FPS, 1.2, {
       delay: -0.35,
       firstPull: 1.25,
       secondPull: 1.68,
@@ -202,10 +336,10 @@ function useReferenceSubject(): { candidate: ComparisonCandidate; subject: Compa
       loadKg: 96,
       loadIsTopSet: false,
       durationS: 2.4,
-      fps: 60,
+      fps: REFERENCE_FPS,
       width: 1920,
       height: 1080,
-      playbackUrl: '',
+      playbackUrl,
       isEmbed: false,
       thumbnailUrl: null,
       note: null,
@@ -228,13 +362,14 @@ function useReferenceSubject(): { candidate: ComparisonCandidate; subject: Compa
       subject: {
         analysis,
         clip,
+        points,
         series,
         boundaries,
         metrics: computeLiftMetrics(series, spans),
         summary: summariseRep(series),
       },
     };
-  }, []);
+  }, [playbackUrl]);
 }
 
 function Bench() {
@@ -249,9 +384,33 @@ function Bench() {
   const [ellipse, setEllipse] = useState<PlateEllipse | null>(null);
   const [comparing, setComparing] = useState(false);
   const [alignment, setAlignment] = useState<AlignmentAnchor>('liftoff');
-  const reference = useReferenceSubject();
 
   const points = useMemo(() => syntheticTrack(fps, tremor), [fps, tremor]);
+
+  // Encoding is deferred until the coach actually compares: it costs a couple
+  // of seconds and every other panel on this page works without it.
+  const referencePoints = useMemo(
+    () =>
+      syntheticTrack(REFERENCE_FPS, 1.2, {
+        delay: -0.35,
+        firstPull: 1.25,
+        secondPull: 1.68,
+        xOffset: 260,
+      }),
+    [],
+  );
+  const clipSpecs = useMemo(
+    () => [
+      { points, fps },
+      { points: referencePoints, fps: REFERENCE_FPS },
+    ],
+    [points, fps, referencePoints],
+  );
+  const [leaderClip, referenceClip] = useEncodedClips(clipSpecs, comparing);
+  const leaderUrl = useObjectUrl(leaderClip);
+  const referenceUrl = useObjectUrl(referenceClip);
+  const playback = useFrameServer(leaderUrl);
+  const reference = useReferenceSubject(referenceUrl ?? '');
   const kinematics = useMemo(
     () => computeKinematics(points, calibration, { massKg, filter: DEFAULT_FILTER }),
     [points, massKg],
@@ -302,8 +461,19 @@ function Bench() {
         ? { from: kinematics.t[0], to: kinematics.t[kinematics.t.length - 1] }
         : null,
       currentT,
+      // Side-by-side has two clocks that must agree: the index the transport
+      // is on, and the timestamp of the frame actually painted. A gap between
+      // them is a stale picture under a correct overlay, which reads on screen
+      // as the two lifts being at different points in the pull.
+      leader: {
+        index: playback.index,
+        indexT: playback.server?.timestamps[playback.index] ?? null,
+        frameT: playback.frame?.timestamp ?? null,
+        frameIndex: playback.frame?.index ?? null,
+        frameCount: playback.server?.frameCount ?? null,
+      },
     };
-  }, [boundaries, marks, ellipse, currentT, kinematics]);
+  }, [boundaries, marks, ellipse, currentT, kinematics, playback]);
 
   return (
     <div
@@ -341,6 +511,7 @@ function Bench() {
           current={{
             label: 'Snatch · 26/08',
             date: '2026-08-26',
+            points,
             series: kinematics,
             boundaries,
             metrics,
@@ -357,6 +528,7 @@ function Bench() {
           anchor={alignment}
           onAnchor={setAlignment}
           onClose={() => setComparing(false)}
+          playback={playback}
         />
       )}
 

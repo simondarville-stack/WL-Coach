@@ -290,7 +290,9 @@ export async function openFrameServer(
   }
 
   const lastDuration =
-    timestamps.length > 1 ? timestamps[timestamps.length - 1] - timestamps[timestamps.length - 2] : 0;
+    timestamps.length > 1
+      ? timestamps[timestamps.length - 1] - timestamps[timestamps.length - 2]
+      : 0;
   const durationS = timestamps[timestamps.length - 1] - timestamps[0] + lastDuration;
 
   const sinkOptions: { width?: number; height?: number; fit?: 'contain'; poolSize?: number } = {
@@ -322,22 +324,134 @@ export async function openFrameServer(
     return { index, timestamp, canvas: wrapped.canvas };
   }
 
-  function request(index: number): Promise<ServedFrame> {
+  // ── The decode queue ──────────────────────────────────────────────────────
+  //
+  // ONE decode at a time, always. `CanvasSink` wraps a single `VideoDecoder`
+  // walking a single demuxer, and overlapping `getCanvas` calls on it do not
+  // queue — past a handful in flight they simply stop resolving, and they never
+  // reject either. The picture then freezes for the rest of the session while
+  // the transport, the readouts and the overlay all carry on, which reads as a
+  // viewer that lost sync rather than a decoder that stalled.
+  //
+  // It is not a rare case. Dragging the scrub strip, holding the step key or
+  // stepping quickly through a turnover — the things a coach does constantly —
+  // each fire a request per frame plus a prefetch fan, so hundreds pile up in a
+  // second or two. Serialising them costs nothing (there is one decoder either
+  // way) and is the whole fix.
+  //
+  // What ordering buys, on top: while a queue is draining the coach has usually
+  // moved on, so the newest request is the one they are waiting for. Jobs are
+  // taken by priority — a request the coach is watching for beats a prefetch —
+  // and newest-first within a priority.
+  interface DecodeJob {
+    index: number;
+    priority: number;
+    seq: number;
+    resolve: (frame: ServedFrame) => void;
+    reject: (error: unknown) => void;
+  }
+
+  /** A frame someone is waiting to see, versus one decoded speculatively. */
+  const WANTED = 1;
+  const SPECULATIVE = 0;
+
+  /** How many speculative frames may sit in the queue. Beyond this the oldest
+   *  are dropped: a prefetch for where the playhead WAS is worth nothing once
+   *  it has moved, and letting them accumulate would delay every real request
+   *  behind a queue of stale work. */
+  const MAX_SPECULATIVE_QUEUED = 8;
+
+  const queued = new Map<number, DecodeJob>();
+  let nextSeq = 0;
+  let draining = false;
+
+  function takeNext(): DecodeJob | null {
+    let best: DecodeJob | null = null;
+    for (const job of queued.values()) {
+      if (
+        !best ||
+        job.priority > best.priority ||
+        (job.priority === best.priority && job.seq > best.seq)
+      ) {
+        best = job;
+      }
+    }
+    if (best) queued.delete(best.index);
+    return best;
+  }
+
+  function trimSpeculative(): void {
+    let over = 0;
+    for (const job of queued.values()) if (job.priority === SPECULATIVE) over++;
+    while (over > MAX_SPECULATIVE_QUEUED) {
+      let oldest: DecodeJob | null = null;
+      for (const job of queued.values()) {
+        if (job.priority !== SPECULATIVE) continue;
+        if (!oldest || job.seq < oldest.seq) oldest = job;
+      }
+      if (!oldest) return;
+      queued.delete(oldest.index);
+      inFlight.delete(oldest.index);
+      oldest.reject(new FrameServerUnavailableError('Prefetch dropped: the playhead moved on.'));
+      over--;
+    }
+  }
+
+  async function drain(): Promise<void> {
+    if (draining) return;
+    draining = true;
+    try {
+      for (;;) {
+        const job = takeNext();
+        if (!job) return;
+        if (closed) {
+          inFlight.delete(job.index);
+          job.reject(new FrameServerUnavailableError('Frame server is closed.'));
+          continue;
+        }
+        try {
+          const frame = await decodeAt(job.index);
+          if (!closed) cache.set(job.index, frame);
+          job.resolve(frame);
+        } catch (error) {
+          job.reject(error);
+        } finally {
+          inFlight.delete(job.index);
+        }
+      }
+    } finally {
+      draining = false;
+    }
+  }
+
+  function request(index: number, priority = WANTED): Promise<ServedFrame> {
     const cached = cache.get(index);
     if (cached) return Promise.resolve(cached);
+
+    const already = queued.get(index);
+    if (already) {
+      // A speculative decode the coach is now actually waiting for: promote it
+      // rather than queueing the same frame twice.
+      if (priority > already.priority) {
+        already.priority = priority;
+        already.seq = nextSeq++;
+      }
+      return inFlight.get(index)!;
+    }
 
     const pending = inFlight.get(index);
     if (pending) return pending;
 
-    const promise = decodeAt(index)
-      .then(frame => {
-        if (!closed) cache.set(index, frame);
-        return frame;
-      })
-      .finally(() => {
-        inFlight.delete(index);
-      });
+    let resolve!: (frame: ServedFrame) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<ServedFrame>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
     inFlight.set(index, promise);
+    queued.set(index, { index, priority, seq: nextSeq++, resolve, reject });
+    if (priority === SPECULATIVE) trimSpeculative();
+    void drain();
     return promise;
   }
 
@@ -363,7 +477,7 @@ export async function openFrameServer(
       if (closed) return;
       for (const i of prefetchOrder(Math.round(index), radius, timestamps.length)) {
         if (cache.has(i) || inFlight.has(i)) continue;
-        void request(i).catch(() => undefined);
+        void request(i, SPECULATIVE).catch(() => undefined);
       }
     },
 
@@ -375,6 +489,12 @@ export async function openFrameServer(
       closed = true;
       cache.clear();
       inFlight.clear();
+      // Anyone waiting on a queued frame gets an answer rather than a promise
+      // that never settles — the failure this whole queue exists to remove.
+      for (const job of queued.values()) {
+        job.reject(new FrameServerUnavailableError('Frame server is closed.'));
+      }
+      queued.clear();
       input.dispose();
     },
   };

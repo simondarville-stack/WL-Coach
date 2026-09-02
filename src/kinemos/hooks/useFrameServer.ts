@@ -28,6 +28,12 @@ export const PLAYBACK_SPEEDS = [0.1, 0.25, 0.5, 1] as const;
 export interface UseFrameServer {
   status: FrameServerStatus;
   error: string | null;
+  /**
+   * Set when the clip opened but a particular frame would not decode. Distinct
+   * from `error`, which means the clip never opened at all: this one is
+   * per-frame and recovers as soon as a frame decodes.
+   */
+  decodeError: string | null;
   server: FrameServer | null;
   frame: ServedFrame | null;
   /** Frame the playhead is ON, even while its pixels are still decoding. */
@@ -46,6 +52,7 @@ export function useFrameServer(src: string | null): UseFrameServer {
   const [error, setError] = useState<string | null>(null);
   const [server, setServer] = useState<FrameServer | null>(null);
   const [frame, setFrame] = useState<ServedFrame | null>(null);
+  const [decodeError, setDecodeError] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(0.25);
@@ -63,6 +70,7 @@ export function useFrameServer(src: string | null): UseFrameServer {
     let cancelled = false;
     setStatus('opening');
     setError(null);
+    setDecodeError(null);
     setFrame(null);
     setIndex(0);
     wantedRef.current = 0;
@@ -108,8 +116,19 @@ export function useFrameServer(src: string | null): UseFrameServer {
       .then(next => {
         if (stale || wantedRef.current !== index) return;
         setFrame(next);
+        setDecodeError(null);
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        if (stale || wantedRef.current !== index) return;
+        // Never leave the previous frame up. It would sit under a transport, a
+        // readout and an overlay that all name a different moment, and a mark
+        // placed on it would be stored against a timestamp it does not belong
+        // to. A blank stage that says why is the honest failure.
+        setFrame(null);
+        setDecodeError(
+          `Frame ${index + 1} would not decode (${err instanceof Error ? err.message : 'unknown error'}).`,
+        );
+      });
     active.prefetch(index, 4);
     return () => {
       stale = true;
@@ -170,5 +189,18 @@ export function useFrameServer(src: string | null): UseFrameServer {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, speed, status]);
 
-  return { status, error, server, frame, index, playing, speed, seek, step, togglePlay, setSpeed };
+  return {
+    status,
+    error,
+    decodeError,
+    server,
+    frame,
+    index,
+    playing,
+    speed,
+    seek,
+    step,
+    togglePlay,
+    setSpeed,
+  };
 }

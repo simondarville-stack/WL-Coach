@@ -46,8 +46,13 @@ import {
 import type { KinematicSeries, RepSummary } from '../engine/kinematics';
 import type { LiftMetrics, PhaseBoundary } from '../engine/phases';
 import { formatDateShort } from '../../lib/dateUtils';
+import type { KinemosTrackPoint } from '../../lib/database.types';
 import type { ComparisonCandidate, ComparisonSubject } from '../lib/comparisonService';
-import { num } from '../lib/viewerFormat';
+import { useFollowerFrame, type UseFollowerFrame } from '../hooks/useFollowerFrame';
+import type { UseFrameServer } from '../hooks/useFrameServer';
+import { ClipStage } from './ClipStage';
+import { ViewerTransport } from './ViewerTransport';
+import { clipTime, num } from '../lib/viewerFormat';
 
 /** The lift on screen. Accent, because it is the one being judged. */
 const CURRENT_COLOR = '#185FA5';
@@ -58,6 +63,9 @@ const REFERENCE_COLOR = '#8B8A83';
 export interface ComparisonSide {
   label: string;
   date: string | null;
+  /** The track in this clip's own display-space pixels, for drawing the path
+   *  onto the video in side-by-side mode. */
+  points: KinemosTrackPoint[];
   series: KinematicSeries;
   boundaries: PhaseBoundary[];
   metrics: LiftMetrics;
@@ -66,6 +74,16 @@ export interface ComparisonSide {
   massKg: number | null;
   phaseSetId: string;
 }
+
+/** What the comparison shows. Two readings of the same two lifts, not two
+ *  features: the charts answer "what differed", the clips answer "what did it
+ *  look like". */
+type ComparisonMode = 'curves' | 'video';
+
+const MODE_LABEL: Record<ComparisonMode, string> = {
+  curves: 'Charts',
+  video: 'Side by side',
+};
 
 interface ComparisonViewProps {
   current: ComparisonSide;
@@ -77,6 +95,13 @@ interface ComparisonViewProps {
   anchor: AlignmentAnchor;
   onAnchor: (anchor: AlignmentAnchor) => void;
   onClose: () => void;
+  /**
+   * The current lift's playhead — the viewer's own, passed in rather than
+   * opened again. Side-by-side playback has exactly one clock, and this is it;
+   * the reference clip follows the time this one is at. Two clocks drift, and
+   * the drift looks like a decoding bug rather than a design mistake.
+   */
+  playback: UseFrameServer;
 }
 
 export function ComparisonView({
@@ -89,6 +114,7 @@ export function ComparisonView({
   anchor,
   onAnchor,
   onClose,
+  playback,
 }: ComparisonViewProps) {
   const currentAligned = alignSeries(current.series, current.boundaries, anchor);
   const referenceAligned = subject ? alignSeries(subject.series, subject.boundaries, anchor) : null;
@@ -100,6 +126,22 @@ export function ComparisonView({
    * bar was at that instant in each. One hover, both panels.
    */
   const [hoverT, setHoverT] = useState<number | null>(null);
+  const [mode, setMode] = useState<ComparisonMode>('curves');
+
+  // ── The one clock ─────────────────────────────────────────────────────────
+  //
+  // The leader is at some time in its own clip. Subtracting its anchor puts
+  // that on the aligned clock; adding the reference's anchor puts it back into
+  // the reference's clip. Nothing here is in frames: the two clips are usually
+  // different frame rates and one of them is often variable, so the offset
+  // between them is a fraction of a frame that no index arithmetic can carry.
+  const leaderT = playback.server?.timestamps[playback.index] ?? null;
+  const alignedT = leaderT === null ? null : leaderT - currentAligned.anchorT;
+  const referenceSrc =
+    mode === 'video' && subject && !subject.clip.isEmbed ? subject.clip.playbackUrl : null;
+  const referenceT =
+    alignedT === null || !referenceAligned ? null : alignedT + referenceAligned.anchorT;
+  const follower = useFollowerFrame(referenceSrc, referenceT);
 
   const referenceMass =
     subject && subject.analysis.mass_kg !== null ? Number(subject.analysis.mass_kg) : null;
@@ -190,6 +232,21 @@ export function ComparisonView({
           ))}
         </Select>
 
+        {subject && (
+          <Segmented
+            options={(Object.keys(MODE_LABEL) as ComparisonMode[]).map(key => ({
+              value: key,
+              label: MODE_LABEL[key],
+              title:
+                key === 'curves'
+                  ? 'Bar paths, velocity curves and the delta table.'
+                  : 'Both clips playing off one clock, synced on the alignment above.',
+            }))}
+            value={mode}
+            onChange={setMode}
+          />
+        )}
+
         {referenceAligned && !referenceAligned.anchored && (
           <span style={{ ...caption, color: 'var(--color-warning-text)' }}>
             That lift has no detected {ALIGNMENT_LABEL[anchor].toLowerCase()} — aligned on the clip
@@ -243,7 +300,20 @@ export function ComparisonView({
         </div>
       )}
 
-      {!loading && subject && referenceAligned && (
+      {!loading && subject && referenceAligned && mode === 'video' && (
+        <SideBySide
+          current={current}
+          currentAligned={currentAligned}
+          subject={subject}
+          referenceAligned={referenceAligned}
+          referenceLabel={referenceLabel}
+          playback={playback}
+          follower={follower}
+          alignedT={alignedT}
+        />
+      )}
+
+      {!loading && subject && referenceAligned && mode === 'curves' && (
         <div
           style={{
             flexGrow: 1,
@@ -327,6 +397,193 @@ export function ComparisonView({
       )}
     </div>
   );
+}
+
+/**
+ * Two clips off one clock.
+ *
+ * Design §8's first comparison item is "overlay two paths / side-by-side synced
+ * playback"; this is its second half. What makes it a comparison rather than
+ * two videos is the sync: the leader's playhead is converted to the aligned
+ * clock and back into the reference's clip, so at every position both clips are
+ * at the same MOMENT OF THE LIFT rather than the same second of footage.
+ *
+ * The transport drives the leader only. Stepping is on the leader's frame grid
+ * — a coach steps through one lift and watches the other keep up — and the
+ * follower lands on its nearest frame, which for two clips of different frame
+ * rates is the only correct answer. How near is stated on screen: a mismatch of
+ * a full frame at 30 fps is 33 ms of lift, and a coach comparing turnovers
+ * deserves to know it is there.
+ */
+function SideBySide({
+  current,
+  currentAligned,
+  subject,
+  referenceAligned,
+  referenceLabel,
+  playback,
+  follower,
+  alignedT,
+}: {
+  current: ComparisonSide;
+  currentAligned: AlignedSeries;
+  subject: ComparisonSubject;
+  referenceAligned: AlignedSeries;
+  referenceLabel: string;
+  playback: UseFrameServer;
+  follower: UseFollowerFrame;
+  alignedT: number | null;
+}) {
+  const leaderT = playback.server?.timestamps[playback.index] ?? null;
+  const requestedT = alignedT === null ? null : alignedT + referenceAligned.anchorT;
+  const sync = syncNote(requestedT, follower);
+
+  const velocityAt = (aligned: AlignedSeries, t: number | null) =>
+    t === null ? null : valueNear(aligned.t, aligned.vyMs, t);
+
+  return (
+    <div
+      style={{
+        flexGrow: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-sm)',
+        padding: 'var(--space-md)',
+      }}
+    >
+      <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', gap: 'var(--space-sm)' }}>
+        <ClipStage
+          canvas={follower.frame?.canvas ?? null}
+          width={follower.server?.displayWidth ?? 16}
+          height={follower.server?.displayHeight ?? 9}
+          points={subject.points}
+          currentT={follower.shownT}
+          color={REFERENCE_COLOR}
+          overlay={
+            follower.status === 'ready' && !follower.decodeError ? null : (
+              <span>
+                {follower.status === 'error'
+                  ? follower.error
+                  : follower.decodeError
+                    ? follower.decodeError
+                    : subject.clip.isEmbed
+                      ? 'That clip is hosted as an embed, which cannot be decoded frame by frame. Its numbers still compare; its video cannot be played beside this one.'
+                      : 'Opening the other clip…'}
+              </span>
+            )
+          }
+          footer={
+            <>
+              <span style={{ opacity: 0.75 }}>{referenceLabel}</span>
+              <span style={{ marginLeft: 'auto' }}>
+                {follower.shownT === null ? '—' : clipTime(follower.shownT)}
+              </span>
+              <Reading value={velocityAt(referenceAligned, alignedT)} />
+              {/* Named, because a silent 30 ms is exactly the error a coach
+                  would otherwise read as a difference between the lifts. */}
+              {sync && (
+                <span style={{ opacity: 0.7 }} title={sync.why}>
+                  {sync.text}
+                </span>
+              )}
+            </>
+          }
+        />
+        <ClipStage
+          canvas={playback.frame?.canvas ?? null}
+          width={playback.server?.displayWidth ?? 16}
+          height={playback.server?.displayHeight ?? 9}
+          points={current.points}
+          currentT={leaderT}
+          color={CURRENT_COLOR}
+          overlay={
+            playback.status === 'ready' && !playback.decodeError ? null : (
+              <span>{playback.decodeError ?? 'Opening this clip…'}</span>
+            )
+          }
+          footer={
+            <>
+              <span style={{ fontWeight: 600 }}>{current.label}</span>
+              <span style={{ marginLeft: 'auto' }}>
+                {leaderT === null ? '—' : clipTime(leaderT)}
+              </span>
+              <Reading value={velocityAt(currentAligned, alignedT)} />
+            </>
+          }
+        />
+      </div>
+
+      {playback.server && (
+        <ViewerTransport
+          index={playback.index}
+          frameCount={playback.server.frameCount}
+          timestamps={playback.server.timestamps}
+          playing={playback.playing}
+          speed={playback.speed}
+          markedTimes={current.points.map(p => p.t)}
+          fps={playback.server.averageFps}
+          vfr={playback.server.isVfr}
+          onSeek={playback.seek}
+          onStep={playback.step}
+          onTogglePlay={playback.togglePlay}
+          onSpeed={playback.setSpeed}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * How well the follower actually landed on the moment it was asked for, when
+ * that is worth saying.
+ *
+ * Two very different situations produce the same arithmetic, and conflating
+ * them is how a coach ends up reading a fixture artefact as a difference
+ * between two lifts:
+ *
+ *   - **A few tens of milliseconds** is the two clips' frame rates disagreeing.
+ *     There is no frame exactly at the synced moment, so the nearest one shows.
+ *     Unavoidable, and worth naming — a frame at 30 fps is 33 ms of lift.
+ *   - **A large offset at either end** is the reference clip simply not having
+ *     footage that early or that late. The frame on screen is then not a near
+ *     miss, it is the first or last frame standing in for one that does not
+ *     exist, and saying "+350 ms off" implies a precision problem where there
+ *     is a coverage one.
+ */
+function syncNote(
+  requestedT: number | null,
+  follower: UseFollowerFrame,
+): { text: string; why: string } | null {
+  if (requestedT === null || follower.shownT === null || !follower.server) return null;
+  const timestamps = follower.server.timestamps;
+  const first = timestamps[0] ?? 0;
+  const last = timestamps[timestamps.length - 1] ?? 0;
+
+  if (requestedT < first - 1e-6) {
+    return {
+      text: 'before this clip starts',
+      why: 'The other lift is further along than anything this clip filmed. Its first frame is showing.',
+    };
+  }
+  if (requestedT > last + 1e-6) {
+    return {
+      text: 'after this clip ends',
+      why: 'This clip finished before the moment shown beside it. Its last frame is showing.',
+    };
+  }
+
+  const slipMs = (follower.shownT - requestedT) * 1000;
+  if (Math.abs(slipMs) < 1) return null;
+  return {
+    text: `${slipMs > 0 ? '+' : ''}${num(slipMs, 0)} ms off`,
+    why: 'These clips have different frame rates, so the nearest frame to the synced moment is this far from it.',
+  };
+}
+
+/** One velocity, in the tone the stage footers use. */
+function Reading({ value }: { value: number | null }) {
+  return <span style={{ fontWeight: 600 }}>{value === null ? '—' : `${num(value, 2)} m/s`}</span>;
 }
 
 function Legend({
@@ -507,42 +764,18 @@ function PathOverlay({
       >
         <span style={caption}>{`corner = ${num(scaleCm, 0)} × ${num(scaleCm, 0)} cm`}</span>
         <span style={{ ...label, marginLeft: 'auto' }}>HORIZONTAL</span>
-        <span style={{ display: 'inline-flex' }}>
-          {EXAGGERATIONS.map((factor, i) => (
-            <button
-              key={factor}
-              type="button"
-              onClick={() => setExaggeration(factor)}
-              title={
-                factor === 1
-                  ? 'True proportions. A centimetre across is a centimetre up.'
-                  : `Horizontal stretched ${factor}×, so the loop is readable. Vertical is unchanged; the corner scale bar shows the distortion.`
-              }
-              style={{
-                height: 22,
-                padding: '0 8px',
-                border: '1px solid var(--color-border-secondary)',
-                borderLeftWidth: i === 0 ? 1 : 0,
-                borderTopLeftRadius: i === 0 ? 'var(--radius-sm)' : 0,
-                borderBottomLeftRadius: i === 0 ? 'var(--radius-sm)' : 0,
-                borderTopRightRadius: i === EXAGGERATIONS.length - 1 ? 'var(--radius-sm)' : 0,
-                borderBottomRightRadius: i === EXAGGERATIONS.length - 1 ? 'var(--radius-sm)' : 0,
-                background:
-                  exaggeration === factor ? 'var(--color-accent)' : 'var(--color-bg-primary)',
-                color:
-                  exaggeration === factor
-                    ? 'var(--color-text-on-accent)'
-                    : 'var(--color-text-secondary)',
-                fontSize: 'var(--text-micro)',
-                fontFamily: 'inherit',
-                fontVariantNumeric: 'tabular-nums',
-                cursor: 'pointer',
-              }}
-            >
-              {`×${factor}`}
-            </button>
-          ))}
-        </span>
+        <Segmented
+          value={exaggeration}
+          onChange={setExaggeration}
+          options={EXAGGERATIONS.map(factor => ({
+            value: factor,
+            label: `×${factor}`,
+            title:
+              factor === 1
+                ? 'True proportions. A centimetre across is a centimetre up.'
+                : `Horizontal stretched ${factor}×, so the loop is readable. Vertical is unchanged; the corner scale bar shows the distortion.`,
+          }))}
+        />
       </div>
     </div>
   );
@@ -717,6 +950,53 @@ function VelocityOverlay({
 
 /** Tick spacings in seconds, coarsest last. */
 const TIME_STEPS = [0.1, 0.2, 0.5, 1, 2, 5];
+
+/** A joined row of exclusive choices. Two or three short options that belong
+ *  together read better joined than as separate buttons or a select. */
+function Segmented<T extends string | number>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  options: Array<{ value: T; label: string; title?: string }>;
+}) {
+  return (
+    <span style={{ display: 'inline-flex' }}>
+      {options.map((option, i) => (
+        <button
+          key={String(option.value)}
+          type="button"
+          onClick={() => onChange(option.value)}
+          title={option.title}
+          aria-pressed={value === option.value}
+          style={{
+            height: 22,
+            padding: '0 8px',
+            border: '1px solid var(--color-border-secondary)',
+            borderLeftWidth: i === 0 ? 1 : 0,
+            borderTopLeftRadius: i === 0 ? 'var(--radius-sm)' : 0,
+            borderBottomLeftRadius: i === 0 ? 'var(--radius-sm)' : 0,
+            borderTopRightRadius: i === options.length - 1 ? 'var(--radius-sm)' : 0,
+            borderBottomRightRadius: i === options.length - 1 ? 'var(--radius-sm)' : 0,
+            background: value === option.value ? 'var(--color-accent)' : 'var(--color-bg-primary)',
+            color:
+              value === option.value
+                ? 'var(--color-text-on-accent)'
+                : 'var(--color-text-secondary)',
+            fontSize: 'var(--text-micro)',
+            fontFamily: 'inherit',
+            fontVariantNumeric: 'tabular-nums',
+            cursor: 'pointer',
+          }}
+        >
+          {option.label}
+        </button>
+      ))}
+    </span>
+  );
+}
 
 function AxisLabel({ children, style }: { children: ReactNode; style: CSSProperties }) {
   return (

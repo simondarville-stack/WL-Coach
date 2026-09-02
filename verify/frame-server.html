@@ -98,14 +98,27 @@
         return null;
       }
 
-      /** Encode a clip whose frames present at exactly `timestamps`. */
-      async function encode(timestamps, chosen) {
+      /**
+       * Encode a clip whose frames present at exactly `timestamps`.
+       *
+       * `painter` defaults to the brightness marker; `keyFrameInterval`
+       * defaults to intra-only, which removes GOP handling from the addressing
+       * checks. The burst check overrides both: it wants ordinary footage, and
+       * ordinary footage has long gaps between key frames.
+       */
+      async function encode(timestamps, chosen, options = {}) {
+        const {
+          painter = paint,
+          keyFrameInterval = 0,
+          width = WIDTH,
+          height = HEIGHT,
+        } = options;
         const { Output, BufferTarget, CanvasSource, Mp4OutputFormat, WebMOutputFormat } =
           await import('mediabunny');
 
         const canvas = document.createElement('canvas');
-        canvas.width = WIDTH;
-        canvas.height = HEIGHT;
+        canvas.width = width;
+        canvas.height = height;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
         const format =
@@ -116,16 +129,13 @@
         const source = new CanvasSource(canvas, {
           codec: chosen.codec,
           bitrate: 6_000_000,
-          // Every frame a key frame: this harness is testing the frame server's
-          // addressing, not the decoder's GOP handling, and an intra-only clip
-          // removes one source of ambiguity from a failure.
-          keyFrameInterval: 0,
+          keyFrameInterval,
         });
         output.addVideoTrack(source);
         await output.start();
 
         for (let i = 0; i < timestamps.length; i++) {
-          paint(ctx, i);
+          painter(ctx, i);
           const duration =
             i + 1 < timestamps.length ? timestamps[i + 1] - timestamps[i] : 1 / FPS;
           await source.add(timestamps[i], duration);
@@ -217,6 +227,122 @@
         );
 
         server.close();
+
+        // ── Many requests at once ──────────────────────────────────────────
+        //
+        // Dragging the scrub strip or holding the step key fires a request per
+        // frame plus a prefetch fan around each, so dozens are outstanding
+        // within a second. Every one must settle, and each must come back with
+        // its OWN frame rather than whichever one the decoder happened to be
+        // on.
+        //
+        // Honest about its reach: this does NOT reproduce the decoder stall
+        // that `verify/drive-gestures.mjs` catches — that one needs a live
+        // viewer painting each frame as it arrives, and passes here with or
+        // without the frame server's decode queue. It covers the simpler
+        // invariant, in one place, cheaply.
+        //
+        // The clip above is too short, so this uses a long one. Its frames are
+        // marked by POSITION rather than brightness — a white bar walking left
+        // to right — because the brightness marker runs out of distinguishable
+        // levels around thirty frames.
+        const LONG_FRAMES = 200;
+        // Small frames: this check is about request bookkeeping, and encoding
+        // two hundred full-size ones would add half a minute to the harness for
+        // nothing it tests.
+        const LONG_W = WIDTH;
+        const LONG_H = HEIGHT;
+        /** Width of the position marker, in pixels. */
+        const BAR_W = 12;
+        const longTimes = [];
+        for (let i = 0; i < LONG_FRAMES; i++) longTimes.push(i / FPS);
+        const longBlob = await encode(longTimes, chosen, {
+          width: LONG_W,
+          height: LONG_H,
+          // Ordinary footage: key frames spaced out, so a seek has to decode
+          // forward from one. That is the condition the stall appears under.
+          keyFrameInterval: 2,
+          painter: (ctx, i) => {
+            ctx.fillStyle = '#101010';
+            ctx.fillRect(0, 0, LONG_W, LONG_H);
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(Math.round((i / LONG_FRAMES) * (LONG_W - BAR_W)), 0, BAR_W, LONG_H);
+          },
+        });
+        const longServer = await openFrameServer(longBlob);
+        check(
+          'Long clip opens',
+          longServer.frameCount === LONG_FRAMES,
+          `${longServer.frameCount} frames`,
+        );
+
+        /**
+         * Recover a frame's index from where its bar is.
+         *
+         * By the bar's CENTRE OF MASS, not its brightest pixel: a codec smears
+         * the two edges by different amounts frame to frame, so an argmax
+         * latches the left edge on some frames and the right on others — which
+         * showed up as a run of eleven frames all off by exactly the bar's own
+         * width, and looked like a decoder returning neighbours.
+         */
+        const readBar = canvas => {
+          probeCtx.canvas.width = LONG_W;
+          probeCtx.canvas.height = 1;
+          probeCtx.drawImage(canvas, 0, 0, LONG_W, LONG_H, 0, 0, LONG_W, 1);
+          const { data } = probeCtx.getImageData(0, 0, LONG_W, 1);
+          let sum = 0;
+          let weight = 0;
+          for (let x = 0; x < LONG_W; x++) {
+            const luma = data[x * 4];
+            if (luma < 128) continue;
+            sum += x * luma;
+            weight += luma;
+          }
+          if (weight === 0) return -1;
+          const left = sum / weight - (BAR_W - 1) / 2;
+          return Math.round((left / (LONG_W - BAR_W)) * LONG_FRAMES);
+        };
+
+        const burst = [];
+        for (let i = 0; i < LONG_FRAMES; i++) {
+          burst.push(longServer.frameAt(i));
+          longServer.prefetch(i, 4);
+        }
+        const settled = await Promise.race([
+          Promise.allSettled(burst),
+          new Promise(resolve => setTimeout(() => resolve(null), 30000)),
+        ]);
+        check(
+          'A burst of overlapping requests all settle',
+          settled !== null,
+          settled ? `${LONG_FRAMES} requests` : 'the decoder stalled and never answered',
+        );
+        if (settled) {
+          const fulfilled = settled.filter(r => r.status === 'fulfilled');
+          check(
+            'None of them fails',
+            fulfilled.length === LONG_FRAMES,
+            `${fulfilled.length} of ${LONG_FRAMES}`,
+          );
+          const off = [];
+          for (const r of fulfilled) {
+            // The bar is 12 px wide out of 480, so a recovered index within a
+            // few of the true one is the same frame; anything further is the
+            // decoder handing back whichever frame it happened to be on.
+            const seen = readBar(r.value.canvas);
+            if (Math.abs(seen - r.value.index) > 3) off.push(`${r.value.index}\u2192${seen}`);
+          }
+          check(
+            'Each request got its own frame',
+            off.length === 0,
+            off.length ? `${off.length} wrong: ${off.slice(0, 12).join(' ')}` : '200 checked',
+          );
+        }
+        longServer.close();
+
+        // Restore the probe surface for anything after this.
+        probe.width = MARKER_SIZE;
+        probe.height = MARKER_SIZE;
 
         // ── Variable frame rate ────────────────────────────────────────────
         // A rate CHANGE, not jitter: 30 fps for the first half, 24 for the

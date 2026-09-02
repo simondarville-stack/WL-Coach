@@ -17,7 +17,12 @@
  * is to run the same pipeline.
  */
 import { calibrateFromEllipse } from '../engine/calibration';
-import { computeKinematics, summariseRep, type KinematicSeries, type RepSummary } from '../engine/kinematics';
+import {
+  computeKinematics,
+  summariseRep,
+  type KinematicSeries,
+  type RepSummary,
+} from '../engine/kinematics';
 import {
   computeLiftMetrics,
   proposePhases,
@@ -26,7 +31,7 @@ import {
   type PhaseBoundary,
 } from '../engine/phases';
 import { DEFAULT_FILTER } from '../engine/signal';
-import type { KinemosAnalysis } from '../../lib/database.types';
+import type { KinemosAnalysis, KinemosTrackPoint } from '../../lib/database.types';
 import { listRecentAnalyses, loadBundle, plateEllipseFrom } from './analysisService';
 import { loadLibrary, type LibrarySource, type LibraryVideo } from './videoLibrary';
 
@@ -43,6 +48,10 @@ export interface ComparisonCandidate {
 export interface ComparisonSubject {
   analysis: KinemosAnalysis;
   clip: LibraryVideo;
+  /** The track in this clip's own display-space pixels. The series is in
+   *  centimetres and aligned to the other lift; drawing a path ON this video
+   *  needs the pixels it was marked in. */
+  points: KinemosTrackPoint[];
   series: KinematicSeries;
   boundaries: PhaseBoundary[];
   metrics: LiftMetrics;
@@ -78,8 +87,7 @@ export async function findComparable(
       analysis,
       clip,
       sameExercise:
-        !!exerciseName &&
-        (clip.exerciseName ?? '').toLowerCase() === exerciseName.toLowerCase(),
+        !!exerciseName && (clip.exerciseName ?? '').toLowerCase() === exerciseName.toLowerCase(),
     });
   }
 
@@ -131,6 +139,7 @@ export async function loadComparisonSubject(
   return {
     analysis: bundle.analysis,
     clip: candidate.clip,
+    points,
     series,
     boundaries,
     metrics: computeLiftMetrics(series, spans),

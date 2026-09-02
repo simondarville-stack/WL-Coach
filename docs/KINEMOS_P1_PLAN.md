@@ -257,7 +257,7 @@ without leaving EMOS.
 `verify/frame-server.html` closes the gap the first ship left open. Open it
 under `npm run dev`: the page encodes a synthetic clip **in the browser**
 (WebCodecs + mediabunny), reads it back through the real
-`openFrameServer`, and checks 19 properties. Every frame carries a flat grey
+`openFrameServer`, and checks 23 properties. Every frame carries a flat grey
 patch whose brightness encodes its own index, so decoding frame *n* and
 recovering *n* from the pixels proves frame-accurate **seeking** — not merely
 that some frame came back.
@@ -293,3 +293,27 @@ outlined.
 intra-only, unrotated, and 480×270. Real phone video adds long GOPs, rotation
 matrices, HEVC, and Range-request delivery off R2 — none of which this harness
 reaches. A pass over one real clip in the running app is still worth doing.
+
+### A stall in the frame server, found in 0.83.0
+
+The named P1 deliverable carried a bug for three phases. `openFrameServer`
+handed every request straight to `CanvasSink`, which wraps one `VideoDecoder`
+walking one demuxer. Dragging the scrub strip or holding the step key fires a
+request per frame plus a prefetch fan around each, so dozens go in flight
+within a second — and past fifty or sixty they **stop resolving without ever
+rejecting**. The picture freezes for the rest of the session while the
+transport, the readouts and the overlay carry on naming a different moment.
+`useFrameServer` swallowed the failure with a bare `.catch(() => undefined)`,
+so nothing surfaced.
+
+It hid this long for two reasons: stepping slowly never triggers it, and when
+it does trigger it reads as a viewer that lost sync rather than a decoder that
+stalled. What finally exposed it was P3's side-by-side playback, where a stale
+frame beside a live one is unmissable.
+
+Fixed in `openFrameServer` with a serial decode queue — one decode at a time,
+frames the coach is waiting for ahead of speculative ones, newest first within
+a priority, and a cap on queued prefetches. Both frame hooks now surface a
+decode failure instead of leaving the previous frame up: a stale frame under a
+live transport is how a mark gets stored against a timestamp it does not belong
+to. Details and the three-way coverage are in `docs/KINEMOS_P3_PLAN.md` §3.

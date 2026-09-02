@@ -250,7 +250,9 @@ describe('compareMetrics', () => {
       massesComparable: false,
     });
     expect(withheld.find(r => r.id === 'peakVelocity')!.verdict).toBe('better');
-    expect(withheld.filter(r => r.verdict === 'incomparable').map(r => r.id)).toEqual(['peakPower']);
+    expect(withheld.filter(r => r.verdict === 'incomparable').map(r => r.id)).toEqual([
+      'peakPower',
+    ]);
   });
 
   it('judges power normally when nothing says the bars differ', () => {

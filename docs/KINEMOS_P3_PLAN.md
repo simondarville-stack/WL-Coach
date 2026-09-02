@@ -5,8 +5,9 @@
 (study room, 0.79.x), `docs/KINEMOS_P2_PLAN.md` (metrics 0.80.0, tracker
 0.81.x).
 
-> **Status: P3a SHIPPED in 0.82.0.** The rest of P3 — trends, talkover,
-> sharing, overlay export, the calibration tiers — is not started.
+> **Status: P3a SHIPPED** — the charts in 0.82.0, synced side-by-side playback
+> in 0.83.0. The rest of P3 — trends, talkover, sharing, overlay export, the
+> calibration tiers — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made
@@ -102,6 +103,22 @@ Comparison goes first, and the ordering is not just the design doc's:
     chart puts the reading in its header (both velocities and the gap) and a
     dot on each bar path at that instant.
 
+11. **Side by side has exactly ONE clock, and it is the viewer's.** The
+    comparison is handed the viewer's own playhead rather than opening a second
+    one; the reference clip follows the time that playhead is at, converted
+    through the aligned clock (`t_reference = t_leader − anchor_leader +
+    anchor_reference`). Two clocks drift, and drift on this screen looks like a
+    decoding bug rather than a design mistake. So `useFollowerFrame` has no
+    play loop at all — it is given a time and decodes the frame nearest to it.
+
+12. **The follower says how near "nearest" was.** Two clips are usually
+    different frame rates, so there is rarely a frame exactly at the synced
+    moment; a frame at 30 fps is 33 ms of lift and a coach comparing turnovers
+    deserves to know it is there. Running out of footage is reported
+    differently ("before this clip starts") from a near miss, because the first
+    is a coverage problem and the second a precision one, and the same
+    arithmetic produces both.
+
 ## 3. What P3a shipped
 
 **Engine (pure, `src/kinemos/engine/compare.ts`)** — `anchorTimeOf`,
@@ -114,11 +131,13 @@ analysed lifts of the same athlete, same exercise first) and
 series, recomputed rather than trusted, so both sides come out of the same
 pipeline at the same filter settings).
 
-**Surface (`src/kinemos/components/ComparisonView.tsx`)** — bar paths overlaid,
-velocity curves on the aligned clock with a time axis and a linked crosshair,
-delta table with worded verdicts, caveats underneath. Reached from a COMPARE
-toggle in the viewer header, enabled only when this lift has a calibrated,
-marked track.
+**Surface (`src/kinemos/components/ComparisonView.tsx`)** — two modes behind one
+picker. *Charts*: bar paths overlaid, velocity curves on the aligned clock with
+a time axis and a linked crosshair, delta table with worded verdicts, caveats
+underneath. *Side by side*: both clips off the viewer's playhead, each with its
+own bar path traced up to the moment on screen and its velocity at that instant
+(`ClipStage`, `useFollowerFrame`). Reached from a COMPARE toggle in the viewer
+header, enabled only when this lift has a calibrated, marked track.
 
 ### What the browser pass caught
 
@@ -140,6 +159,38 @@ The design bench (`verify/viewer-preview.html`) also caught two things a
 screenshot shows and a test does not: the delta table calling +498 W "better"
 above a caveat saying power was not comparable, and the bench rendering the
 analysis panel in comparison mode when the real viewer hides it.
+
+### The frame server bug side-by-side exposed
+
+Building this needed the bench to show real decoded video rather than a painted
+still, so it now encodes its own two clips (different frame rates, one frame per
+track point timestamped with that point's own `t`). Stepping through them
+surfaced a **stall in the frame server that had shipped in 0.79.0 and survived
+three phases**:
+
+- `CanvasSink` wraps one `VideoDecoder` walking one demuxer. `openFrameServer`
+  fired a `getCanvas` per request with nothing between, so dragging the scrub
+  strip or holding the step key put dozens in flight at once.
+- Past fifty or sixty they **stop resolving, and do not reject either**. The
+  picture freezes for the rest of the session while the transport, the readouts
+  and the overlay all carry on naming a different moment. `useFrameServer`
+  swallowed the failure with a bare `.catch(() => undefined)`, so nothing was
+  logged and nothing was shown.
+- Why it hid so long: it reads as a viewer that lost sync rather than a decoder
+  that stalled, and stepping slowly never triggers it.
+
+The fix is a serial decode queue in `openFrameServer` — one decode at a time,
+wanted frames ahead of speculative ones, newest first within a priority, and a
+cap on queued prefetches. Both hooks now surface a decode failure instead of
+leaving the previous frame up, because a stale frame under a live transport is
+how a mark gets stored against a timestamp it does not belong to.
+
+Covered three ways: five unit tests against a mocked sink
+(`engine/__tests__/frameServerQueue.test.ts`, four of which fail without the
+queue), a concurrency check in `verify/frame-server.html`, and the end-to-end
+reproduction in `verify/drive-gestures.mjs` — which needs both fast stepping
+**and** GPU readback pressure, and reports "transport on 78, picture on 65"
+without the fix.
 
 ## 4. Out of scope for P3a
 

@@ -182,9 +182,14 @@ export function KinemosViewer() {
   const analysable = clip !== null && !clip.isEmbed;
   const playbackUrl = analysable ? clip.playbackUrl : null;
 
+  // Kept whole as well as destructured: the comparison view is handed the
+  // playhead itself, because side-by-side playback has to run off this clock
+  // rather than open a second one.
+  const playback = useFrameServer(playbackUrl);
   const {
     status,
     error: frameError,
+    decodeError,
     server,
     frame,
     index,
@@ -194,7 +199,7 @@ export function KinemosViewer() {
     step,
     togglePlay,
     setSpeed,
-  } = useFrameServer(playbackUrl);
+  } = playback;
 
   const currentT = server ? (server.timestamps[index] ?? null) : null;
 
@@ -979,6 +984,7 @@ export function KinemosViewer() {
               .filter(Boolean)
               .join(' · '),
             date: clip.date,
+            points,
             series: kinematics,
             boundaries,
             metrics: liftMetrics,
@@ -995,6 +1001,7 @@ export function KinemosViewer() {
           anchor={alignment}
           onAnchor={setAlignment}
           onClose={() => setComparing(false)}
+          playback={playback}
         />
       )}
 
@@ -1077,6 +1084,23 @@ export function KinemosViewer() {
           {analysable && (status === 'opening' || status === 'idle') && (
             <div style={{ display: 'grid', placeItems: 'center', flexGrow: 1 }}>
               <Spinner />
+            </div>
+          )}
+
+          {/* A frame that would not decode. The stage is blank behind this —
+              deliberately, because a stale frame under a live transport is how
+              a mark gets stored against a timestamp it does not belong to. */}
+          {analysable && status === 'ready' && decodeError && (
+            <div
+              style={{
+                flexShrink: 0,
+                padding: 'var(--space-sm) var(--space-lg)',
+                background: 'var(--color-warning-bg)',
+                color: 'var(--color-warning-text)',
+                fontSize: 'var(--text-caption)',
+              }}
+            >
+              {`${decodeError} Nothing is shown rather than the frame before it — step past it, or re-import the clip if it persists.`}
             </div>
           )}
 
