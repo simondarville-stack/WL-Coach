@@ -453,7 +453,21 @@ dedicated `git worktree` (shared-working-tree hazard).
 2. Literature drop → seeds `kinemos-research` (P4, or earlier if it should
    inform P2's tracker/filter choices).
 3. Exact relationship between KinEMOS metric registry and the existing
-   Analysis metric registry (merge vs adjacent) — decide at P2 build time.
+   Analysis metric registry (merge vs adjacent) — **DECIDED 02/09/2026:
+   adjacent, with a read-only adapter.** KinEMOS keeps its own tables
+   (`kinemos_analyses.metrics` is the per-rep cache) and its own metric
+   definitions (`engine/kinematics.ts`, `engine/phases.ts`); nothing KinEMOS
+   is inserted into the Analysis registry's seed. The Analysis module reads
+   KinEMOS results through an adapter (`src/kinemos/lib/analysisAdapter.ts`,
+   P3b) that projects stored analyses into Analysis facts — athlete,
+   exercise, date, metric id, value, plus the grade as a quality flag — so
+   trend views and Soll-Ist can chart peak velocity per phase or power next
+   to load and volume without the Analysis code importing the engine.
+   Rationale: the engine stays pure (§4 rule 1), the schema needs no
+   surgery, and a KinEMOS metric definition can change without a migration
+   of Analysis facts. Revisit only if a coach-defined Analysis metric ever
+   needs to *combine* a KinEMOS value with a load value inside one formula;
+   that is the case an adapter cannot serve.
 4. Live-mode product shape (P5) — deliberately open.
 5. Retention/cost policy revisit trigger — define a storage threshold that
    forces the raw-video-expiry conversation.
