@@ -144,9 +144,9 @@ describe('TrendsView', () => {
     // The select and its first option share the metric's tooltip; the select comes first.
     fireEvent.change(screen.getAllByTitle(/headline number/)[0], { target: { value: 'transitionLoss' } });
     expect(await screen.findByText('LOSS 1ST → 2ND · M/S')).toBeInTheDocument();
-    // No rep in the fixture carries a transition loss, so the panel says so
-    // rather than drawing an empty chart.
-    expect(screen.getByText(/None of the 4 reps in view has a stored loss 1st → 2nd/)).toBeInTheDocument();
+    // No rep in the fixture carries a transition loss, so the caption counts
+    // all four rather than drawing an empty chart.
+    expect(screen.getByText(/4 of 4 reps in view have no stored loss 1st → 2nd/)).toBeInTheDocument();
   });
 
   it('opens a rep from its table row', async () => {

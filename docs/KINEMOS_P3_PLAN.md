@@ -287,6 +287,15 @@ could not do (not calibrated, no track, gone) and reads the history again.
 The grade is deliberately left alone: it needs the frame server's sample rate
 and its variable-frame-rate verdict, which only the viewer has.
 
+**Bench** — `verify/trends-preview.html` renders the view against a
+synthetic season (five months of snatches, a few cleans, mixed grades, stale
+reps, a simulated refresh); `verify/shoot-trends.mjs` screenshots every state
+through Playwright. The first render caught what jsdom could not: the joining
+line zig-zagged through same-day reps (now through the day's mean, said so on
+the chart), a 0,025 axis step printed as 1,77 / 1,80 / 1,82 (steps are 1, 2,
+5, 10 only), y labels sat on the first marks (fixed left inset), and the
+single-rep state said the same thing twice.
+
 **Tests** — catalogue round trip and leniency (9), adapter projection and
 filters (10), Trends view words, modes and the refresh (11), recompute (8),
 KinEMOS fact stream and measures (8).

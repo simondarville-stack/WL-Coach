@@ -90,7 +90,8 @@ All modules are **active** — nothing is currently disabled or hidden:
   in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
   `_P3_PLAN.md`.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
-  for the analysis panels) — open them under `npm run dev`.
+  for the analysis panels, a trends bench with a Playwright screenshot driver)
+  — open them under `npm run dev`.
 
 **Deletion policy:** shipped code and database tables are never deleted
 without explicit instruction. **Carve-out for failed experiments:** once the

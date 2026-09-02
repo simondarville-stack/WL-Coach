@@ -284,12 +284,7 @@ export function TrendsView({
                 <GradeLegend />
               )}
             </header>
-            {plotted.length === 0 ? (
-              <p style={{ ...caption, margin: 0, lineHeight: 1.5 }}>
-                None of the {inScope.length} reps in view has a stored {metric.label.toLowerCase()}.
-                Opening a rep recomputes and stores its numbers.
-              </p>
-            ) : against === 'time' ? (
+            {plotted.length === 0 ? null : against === 'time' ? (
               <DotChart
                 records={plotted}
                 x={r => dayOf(r.date!)}
@@ -298,6 +293,7 @@ export function TrendsView({
                 xLabel={t => formatDateShort(isoOf(t))}
                 yLabel={v => num(v, metric.decimals)}
                 joined={scope === 'exercise'}
+                joinLabel="line: the day's mean" 
                 height={220}
                 currentId={currentAnalysisId}
                 hover={hover}
@@ -314,7 +310,7 @@ export function TrendsView({
                 x={r => r.loadKg!}
                 y={r => r.values[metric.id]!}
                 xTicks={niceTicks}
-                xLabel={kg => `${num(kg, 0)} kg`}
+                xLabel={(kg, last) => `${num(kg, 0)}${last ? ' kg' : ''}`}
                 yLabel={v => num(v, metric.decimals)}
                 joined={false}
                 height={300}
@@ -469,7 +465,9 @@ function niceTicks(min: number, max: number): number[] {
   const span = max - min || 1;
   const rough = span / 5;
   const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const step = [1, 2, 2.5, 5, 10].map(m => m * magnitude).find(s => span / s <= 6) ?? magnitude * 10;
+  // No 2,5 multiplier: a 0,025 step prints as 1,77 / 1,80 / 1,82 at two
+  // decimals, which reads as uneven spacing and is.
+  const step = [1, 2, 5, 10].map(m => m * magnitude).find(s => span / s <= 6) ?? magnitude * 10;
   const out: number[] = [];
   for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(Number(v.toFixed(6)));
   return out;
@@ -483,11 +481,18 @@ interface DotChartProps {
   y: (r: KinemosLiftRecord) => number;
   xDomain?: [number, number];
   xTicks: (min: number, max: number) => number[];
-  xLabel: (v: number) => string;
+  xLabel: (v: number, last: boolean) => string;
   yLabel: (v: number) => string;
-  /** Join the marks in x order with a thin line — only when they are one
-   *  exercise, because a line through a snatch and a clean is a lie. */
+  /**
+   * Join the marks with a thin line through the MEAN of each x — only when
+   * they are one exercise, because a line through a snatch and a clean is a
+   * lie. Through the mean, not through every rep: three reps of one set drawn
+   * as a vertical zigzag say nothing about the block, and the marks are still
+   * there for the spread.
+   */
   joined: boolean;
+  /** What the line is, said once under the chart. */
+  joinLabel?: string;
   height: number;
   currentId: string | null;
   hover: KinemosLiftRecord | null;
@@ -509,6 +514,7 @@ function DotChart({
   xLabel,
   yLabel,
   joined,
+  joinLabel,
   height,
   currentId,
   hover,
@@ -529,14 +535,10 @@ function DotChart({
   const spanX = maxX - minX;
   const spanY = maxY - minY;
 
-  const px = (v: number) => ((v - minX) / spanX) * W;
-  const py = (v: number) => H - ((v - minY) / spanY) * H;
-
-  const ticksX = xTicks(minX0, maxX0);
-  const ticksY = niceTicks(minY0, maxY0);
-
   // Marks are drawn in screen pixels: the SVG is stretched to its box, so a
-  // circle in viewBox units would become an ellipse.
+  // circle in viewBox units would become an ellipse. The same measurement
+  // gives the plot a fixed left inset in pixels, so the y labels sit beside
+  // the first marks rather than on top of them.
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -551,11 +553,29 @@ function DotChart({
   }, []);
   const sx = box.width > 0 ? W / box.width : 1; // viewBox units per pixel, x
   const sy = box.height > 0 ? H / box.height : 1;
+  const insetL = 52 * sx;
+  const insetR = 16 * sx;
 
-  const ordered = useMemo(
-    () => records.map((r, i) => ({ r, i })).sort((a, b) => xs[a.i] - xs[b.i]),
-    [records, xs],
-  );
+  const px = (v: number) => insetL + ((v - minX) / spanX) * (W - insetL - insetR);
+  const py = (v: number) => H - ((v - minY) / spanY) * H;
+
+  const ticksX = xTicks(minX0, maxX0);
+  const ticksY = niceTicks(minY0, maxY0);
+
+  // One point per distinct x for the line: the mean of the reps there.
+  const joinPath = useMemo(() => {
+    if (!joined) return null;
+    const byX = new Map<number, number[]>();
+    records.forEach((_, i) => {
+      const arr = byX.get(xs[i]) ?? [];
+      arr.push(ys[i]);
+      byX.set(xs[i], arr);
+    });
+    const pts = [...byX.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([x, values]) => [x, values.reduce((a, b) => a + b, 0) / values.length] as const);
+    return pts.length > 1 ? pts : null;
+  }, [joined, records, xs, ys]);
 
   const readPointer = (clientX: number, clientY: number) => {
     const rect = boxRef.current?.getBoundingClientRect();
@@ -621,9 +641,9 @@ function DotChart({
             vectorEffect="non-scaling-stroke"
           />
         ))}
-        {joined && ordered.length > 1 && (
+        {joinPath && (
           <polyline
-            points={ordered.map(({ i }) => `${px(xs[i]).toFixed(2)},${py(ys[i]).toFixed(2)}`).join(' ')}
+            points={joinPath.map(([x, y]) => `${px(x).toFixed(2)},${py(y).toFixed(2)}`).join(' ')}
             fill="none"
             stroke={SERIES_COLOR}
             strokeWidth={1.5}
@@ -650,14 +670,17 @@ function DotChart({
           {yLabel(v)}
         </AxisLabel>
       ))}
-      {ticksX.map(v => (
+      {ticksX.map((v, i) => (
         <AxisLabel
           key={`xl${v}`}
           style={{ left: `${(px(v) / W) * 100}%`, bottom: 2, transform: 'translateX(-50%)' }}
         >
-          {xLabel(v)}
+          {xLabel(v, i === ticksX.length - 1)}
         </AxisLabel>
       ))}
+      {joinPath && joinLabel && (
+        <AxisLabel style={{ right: 4, top: 2 }}>{joinLabel}</AxisLabel>
+      )}
     </div>
   );
 }
