@@ -49,8 +49,9 @@ import { toStoredMetrics } from './engine/metricCatalogue';
 import { ComparisonView } from './components/ComparisonView';
 import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
-import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack } from './lib/assists';
+import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack, trackMarkerFrom } from './lib/assists';
 import { trackSet } from './lib/setTracker';
+import { persistRep } from './lib/autoAnalyse';
 import { createClubShare, createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
 import { exportOverlayVideo } from './lib/overlayExport';
 import { formatTalkoverLength, startTalkover, talkoverMimeType, type TalkoverController } from './lib/talkover';
@@ -799,40 +800,28 @@ export function KinemosViewer() {
       let firstApplied = false;
       for (const rep of result.reps) {
         const index = repIndex + rep.rep - 1;
-        const analysis = await ensureAnalysis(
+        // One definition of what a stored rep is, shared with the automatic
+        // run on the library (`lib/autoAnalyse.ts`).
+        const analysisId = await persistRep({
           source,
-          id,
-          index,
-          { frameWidth: server.displayWidth, frameHeight: server.displayHeight, rotation: server.rotation },
-          owner,
-        );
-        await saveTrack(analysis.id, rep.points, { tier: 'assisted', ownerId: owner });
-        await saveCalibration(
-          analysis.id,
-          rep.ellipse,
-          rep.calibration,
-          { index: server.nearestIndex(rep.segment.liftOffT), t: rep.segment.liftOffT },
-          owner,
-        );
-        const series = computeKinematics(rep.points, rep.calibration, { massKg, filter: DEFAULT_FILTER });
-        if (series) {
-          const proposal = proposePhases(series);
-          const metrics = computeLiftMetrics(series, spansFrom(proposal.boundaries, DEFAULT_PHASE_SET));
-          await saveAnalysisState(analysis.id, {
-            massKg,
-            massSource,
-            camera,
-            phaseBoundaries: proposal.boundaries,
-            phaseSetId: 'default',
-            metrics: toStoredMetrics(metrics, summariseRep(series)),
-          });
-        }
+          sourceId: id,
+          repIndex: index,
+          server,
+          ownerId: owner,
+          points: rep.points,
+          ellipse: rep.ellipse,
+          calibration: rep.calibration,
+          calibratedAt: { index: server.nearestIndex(rep.segment.liftOffT), t: rep.segment.liftOffT },
+          massKg,
+          massSource,
+          camera,
+        });
         indices.push(index);
         if (!firstApplied) {
           // Rep 1 is the one on screen: take it into the viewer directly,
           // already saved, rather than round-tripping through a reload.
           firstApplied = true;
-          analysisIdRef.current = analysis.id;
+          analysisIdRef.current = analysisId;
           dirtyRef.current = false;
           setPoints(rep.points);
           setEllipse(rep.ellipse);
@@ -860,6 +849,50 @@ export function KinemosViewer() {
       setTrackProgress(null);
     }
   }, [server, source, id, currentT, ellipse, points, plateDiameterCm, repIndex, massKg, massSource, camera]);
+
+  /**
+   * Follow a marker on the bar end rather than the plate. The coach clicks
+   * the sticker, this samples its colour there and follows that colour; the
+   * track it produces is stored at the `marker` tier, which the grade prices
+   * tighter than the template one because it is.
+   */
+  const runMarkerTrack = useCallback(async () => {
+    if (!server || currentT === null) return;
+    const anchorPoint = points.reduce<KinemosTrackPoint | null>(
+      (best, p) => (best === null || Math.abs(p.t - currentT) < Math.abs(best.t - currentT) ? p : best),
+      null,
+    );
+    if (!anchorPoint) return;
+    setTrackProgress({ done: 0, total: server.frameCount });
+    setSetNote(null);
+    try {
+      const result = await trackMarkerFrom(
+        server,
+        { index: server.nearestIndex(anchorPoint.t), x: anchorPoint.x, y: anchorPoint.y },
+        (done, total) => setTrackProgress({ done, total }),
+      );
+      if (!result.found) {
+        setSetNote(
+          'Nothing coloured under that mark. A marker has to be a colour nothing else in shot shares — a bright sticker on the end cap. Without one, TRACK follows the plate.',
+        );
+        return;
+      }
+      dirtyRef.current = true;
+      setPoints(result.points);
+      setUncertainIndices(result.lowConfidenceIndices);
+      setTrackerTier('marker');
+      setCorrectionCount(0);
+      setSetNote(
+        `Followed the marker over ${result.points.length} frames` +
+          (result.gaveUp ? ', then lost it — it was hidden too long.' : '.') +
+          ' Graded at the marker tier.',
+      );
+    } catch (e) {
+      setSetNote(e instanceof Error ? e.message : 'The marker could not be followed.');
+    } finally {
+      setTrackProgress(null);
+    }
+  }, [server, currentT, points]);
 
   const runTrack = useCallback(async () => {
     if (!server || currentT === null) return;
@@ -2113,6 +2146,7 @@ export function KinemosViewer() {
               onNextUncertain: jumpToNextUncertain,
               onTrackSet: points.length > 0 && status === 'ready' && ellipse ? () => void trackSetNow() : undefined,
               setNote,
+              onTrackMarker: points.length > 0 && status === 'ready' ? () => void runMarkerTrack() : undefined,
             }}
           />
           <MetricsPanel

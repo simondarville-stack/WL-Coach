@@ -11,6 +11,7 @@ import type { FrameServer } from '../engine/frameServer';
 import { findPlate, refinePlateEllipse, type RefineOptions, type RefineResult } from '../cv/plate';
 import { estimateCameraMotion, motionSummary, stabilisePoints } from '../cv/stabilise';
 import type { KinemosTrackPoint } from '../../lib/database.types';
+import { trackMarker } from '../engine/markerTracker';
 import { trackerSourceFrom } from './trackerSource';
 
 /** Plausible plate radii on this frame: 3–22 % of the frame height covers a
@@ -224,6 +225,34 @@ export async function stabiliseTrack(
       maxShiftPx: summary.maxShiftPx,
       maxCorrectionPx,
       weakFrames: summary.weakFrames,
+    };
+  } finally {
+    source.dispose();
+  }
+}
+
+/**
+ * Follow a marker on the bar end from one click — design §6.2's tracking
+ * tier 2. The engine does the work on colour frames; this hands it the
+ * frame server's and converts the result to the points the viewer stores.
+ */
+export async function trackMarkerFrom(
+  server: FrameServer,
+  anchor: { index: number; x: number; y: number },
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ points: KinemosTrackPoint[]; lowConfidenceIndices: number[]; gaveUp: boolean; found: boolean }> {
+  const source = trackerSourceFrom(server);
+  try {
+    const result = await trackMarker(
+      { frameCount: server.frameCount, timestamps: server.timestamps, getRgba: i => source.getRgba(i) },
+      anchor,
+      { onProgress },
+    );
+    return {
+      points: result.points.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })),
+      lowConfidenceIndices: result.lowConfidenceIndices,
+      gaveUp: result.gaveUp,
+      found: result.colour !== null,
     };
   } finally {
     source.dispose();

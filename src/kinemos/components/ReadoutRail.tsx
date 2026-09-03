@@ -79,6 +79,9 @@ export interface TrackingState {
   onTrackSet?: () => void;
   /** What the last set track said, in the coach's terms. */
   setNote?: string | null;
+  /** Follow a high-contrast marker on the bar end instead of the plate —
+   *  design §6.2's tighter tier. Absent until there is an anchor. */
+  onTrackMarker?: () => void;
 }
 
 export interface ShareState {
@@ -306,6 +309,17 @@ export function ReadoutRail({
                   >
                     Track the set
                   </Button>
+                  {tracking.onTrackMarker && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={tracking.onTrackMarker}
+                      title="Follow a high-contrast marker on the bar end instead of the plate. A sticker nothing else in the gym shares gives a centroid about twice as tight as the plate template — the tier the grade calls 0,4 px. Click the marker first, then this."
+                      style={{ marginLeft: 'var(--space-xs)' }}
+                    >
+                      Track a marker
+                    </Button>
+                  )}
                   {tracking.setNote && <p style={hint}>{tracking.setNote}</p>}
                 </div>
               )}

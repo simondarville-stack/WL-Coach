@@ -113,11 +113,25 @@ All modules are **active** — nothing is currently disabled or hidden:
   mark (KNEE tool) that checks the phase edges against the coach's eye.
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports, and it never imports `cv/`. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
-  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
-  `_P3_PLAN.md`.
+  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md`, `_P3_PLAN.md`
+  and `_P4_PLAN.md`.
+  From 0.87.0 (P3 plan §11–§12, P4 plan): **sharing** — a rep handed to its
+  athlete as a card in their coach thread, to a colleague coach via "Shared
+  with you" on the library, as an mp4/WebM with the bar path burned in
+  (`lib/overlayExport.ts`), or as a talkover recorded over the scrubbed lift
+  (`lib/talkover.ts`); the **lens tier** (`engine/distortion.ts`,
+  `engine/edgeChains.ts`, `lib/distortionFit.ts`) fitting a one-parameter
+  division model to the gym's own straight edges, with `probeSensitivity` so
+  a refusal says whether the lens is clean or the edges simply cannot tell;
+  **marker mode** (`engine/markerTracker.ts`, design §6.2 tier 2); and P4's
+  **consent + labelled export** (`lib/flywheel.ts`, design §10), the
+  **benchmark** (`npm run bench`, `verify/bench.mjs`) and **zero-click
+  analysis** (`lib/autoAnalyse.ts`) — whose `persistRep` is the single
+  definition of a stored rep. The learned tracker of design §6.2 tier 3 is
+  deliberately not built; P4 plan §5 says what would have to be true first.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver)
-  — open them under `npm run dev`.
+  — open them under `npm run dev`; `npm run bench` scores engine variants.
 
 **Deletion policy:** shipped code and database tables are never deleted
 without explicit instruction. **Carve-out for failed experiments:** once the

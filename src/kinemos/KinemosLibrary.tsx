@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Ruler, Trash2, X } from 'lucide-react';
+import { Ruler, Trash2, Wand2, X } from 'lucide-react';
 import {
   Button,
   DataTable,
@@ -34,7 +34,11 @@ import { ImportControl } from './components/ImportControl';
 import { deleteDirectVideo } from './lib/directImport';
 import { loadLibrary, type LibraryFilters, type LibrarySource, type LibraryVideo } from './lib/videoLibrary';
 import { SharedWithYou } from './components/SharedWithYou';
+import { TrainingDataPanel } from './components/TrainingDataPanel';
 import { useCoachStore } from '../store/coachStore';
+import { getOwnerId } from '../lib/ownerContext';
+import { openFrameServer } from './engine/frameServer';
+import { autoAnalyse, describeAutoAnalysis } from './lib/autoAnalyse';
 
 const SOURCE_LABEL: Record<LibrarySource, string> = {
   log: 'Log',
@@ -73,6 +77,9 @@ export function KinemosLibrary() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<LibraryVideo | null>(null);
+
+  const [autoBusy, setAutoBusy] = useState<string | null>(null);
+  const [autoNote, setAutoNote] = useState<string | null>(null);
 
   const [athleteId, setAthleteId] = useState('');
   const [source, setSource] = useState<'' | LibrarySource>('');
@@ -132,6 +139,36 @@ export function KinemosLibrary() {
     () => [...new Set(rows.map(r => r.exerciseName).filter((n): n is string => !!n))].sort(),
     [rows],
   );
+
+  /**
+   * Analyse a clip with no clicks at all. The whole pipeline runs in the
+   * browser, so this opens the clip's frame server, does the work and closes
+   * it again — the coach stays on the library and gets a sentence saying
+   * what happened.
+   */
+  const runAuto = useCallback(async (row: LibraryVideo) => {
+    setAutoBusy(row.key);
+    setAutoNote(`Opening ${row.athleteName ?? 'the clip'}…`);
+    let server: Awaited<ReturnType<typeof openFrameServer>> | null = null;
+    try {
+      server = await openFrameServer(row.playbackUrl);
+      const result = await autoAnalyse(server, {
+        source: row.source,
+        sourceId: row.sourceId,
+        ownerId: getOwnerId(),
+        massKg: row.loadKg,
+        massSource: row.loadKg == null ? null : 'logged',
+        onProgress: (stage, done, total) =>
+          setAutoNote(total > 1 ? `${stage} — ${done} of ${total}` : `${stage}…`),
+      });
+      setAutoNote(describeAutoAnalysis(result, [row.athleteName, row.exerciseName].filter(Boolean).join(' · ') || 'Clip'));
+    } catch (e) {
+      setAutoNote(e instanceof Error ? e.message : 'That clip could not be analysed.');
+    } finally {
+      server?.close();
+      setAutoBusy(null);
+    }
+  }, []);
 
   const handleDelete = async (video: LibraryVideo) => {
     const ok = await confirmDialog({
@@ -247,10 +284,33 @@ export function KinemosLibrary() {
     {
       key: 'actions',
       header: '',
-      width: '76px',
+      width: '108px',
       align: 'right',
       render: row => (
         <span style={{ display: 'inline-flex', gap: 2 }}>
+          {/* Zero-click: find the plate, follow the bar through the set, cut
+              it into reps and store them all, with nothing asked of the coach
+              (P4c). The grade on each rep is the same one a hand-anchored
+              analysis gets, which is what makes it safe to offer here. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Wand2 size={14} />}
+            disabled={row.isEmbed || autoBusy !== null}
+            title={
+              row.isEmbed
+                ? 'Streaming clips cannot be analysed'
+                : autoBusy === row.key
+                  ? 'Analysing…'
+                  : 'Analyse it now, with no clicks: find the plate, follow the bar, split the reps and store them. Loads OpenCV the first time, about 13 MB.'
+            }
+            aria-label="Analyse automatically"
+            onClick={e => {
+              e.stopPropagation();
+              if (!row.isEmbed) void runAuto(row);
+            }}
+          />
           <Button
             variant="ghost"
             size="sm"
@@ -301,6 +361,18 @@ export function KinemosLibrary() {
         />
 
         <SharedWithYou coachId={activeCoachId} coachNames={coachNames} />
+        <TrainingDataPanel athletes={athletes.map(a => ({ id: a.id, name: a.name }))} />
+        {autoNote && (
+          <p
+            style={{
+              margin: '0 0 var(--space-md)',
+              fontSize: 'var(--text-caption)',
+              color: 'var(--color-text-secondary)',
+            }}
+          >
+            {autoNote}
+          </p>
+        )}
 
         <div
           style={{

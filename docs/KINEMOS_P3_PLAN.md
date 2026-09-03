@@ -13,8 +13,8 @@
 > the German analyzer's measures (§9, 0.85.0), sets in the viewer with
 > colour re-acquisition, height charts and the knee mark (§10, 0.86.0).
 > **P3h SHIPPED** — sharing to the athlete and to a colleague, overlay
-> export and talkover (§11). Left in P3: the device-profile calibration
-> tier.
+> export and talkover (§11). **P3i SHIPPED** — the lens tier, measured from
+> the gym's own straight edges (§12). P3 is complete.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made

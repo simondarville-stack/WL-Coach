@@ -150,6 +150,62 @@ export function samplePlateColour(
   };
 }
 
+/**
+ * The colour of a small disc — a marker on the bar end, as the coach
+ * clicked it (design §6.2's tracking tier 2). Unlike `samplePlateColour`
+ * there is no hub to skip and no outline to work from: everything inside the
+ * radius counts, and the tolerance is tighter, because a marker is chosen to
+ * be one flat colour and the point of the tier is precision.
+ */
+export function sampleSpotColour(
+  image: RgbaImage,
+  centre: PxPoint,
+  radiusPx: number,
+  options: Pick<SampleOptions, 'greyChroma' | 'minCoverage'> = {},
+): PlateColourModel | null {
+  const greyChroma = options.greyChroma ?? SAMPLE_DEFAULTS.greyChroma;
+  const minCoverage = options.minCoverage ?? 0.6;
+  const { data, width, height } = image;
+  const x0 = Math.max(0, Math.floor(centre.x - radiusPx));
+  const x1 = Math.min(width - 1, Math.ceil(centre.x + radiusPx));
+  const y0 = Math.max(0, Math.floor(centre.y - radiusPx));
+  const y1 = Math.min(height - 1, Math.ceil(centre.y + radiusPx));
+  let total = 0;
+  let sinSum = 0;
+  let cosSum = 0;
+  const hues: number[] = [];
+  const chromas: number[] = [];
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (Math.hypot(x - centre.x, y - centre.y) > radiusPx) continue;
+      total++;
+      const i = (y * width + x) * 4;
+      const { hue, chroma } = hueChroma(data[i], data[i + 1], data[i + 2]);
+      if (chroma < greyChroma) continue;
+      const rad = (hue * Math.PI) / 180;
+      sinSum += Math.sin(rad);
+      cosSum += Math.cos(rad);
+      hues.push(hue);
+      chromas.push(chroma);
+    }
+  }
+  if (total === 0 || hues.length / total < minCoverage) return null;
+  let hueDeg = (Math.atan2(sinSum, cosSum) * 180) / Math.PI;
+  if (hueDeg < 0) hueDeg += 360;
+  let spread = 0;
+  for (const h of hues) spread += hueDistance(h, hueDeg) ** 2;
+  const std = Math.sqrt(spread / hues.length);
+  const sorted = [...chromas].sort((a, b) => a - b);
+  return {
+    hueDeg,
+    // Tighter than a plate's: a marker is one colour, and letting the
+    // tolerance widen is how the tracker ends up on the lifter's shirt.
+    hueToleranceDeg: Math.min(20, Math.max(8, 2 * std)),
+    minChroma: Math.max(greyChroma * 0.75, sorted[sorted.length >> 1] * 0.4),
+    coverage: hues.length / total,
+  };
+}
+
 function matches(model: PlateColourModel, r: number, g: number, b: number): boolean {
   const { hue, chroma } = hueChroma(r, g, b);
   return chroma >= model.minChroma && hueDistance(hue, model.hueDeg) <= model.hueToleranceDeg;

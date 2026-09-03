@@ -454,6 +454,23 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   labelled clips, consented flywheel data collection wired in-product;
   ML-assisted detection/tracking (toward zero-click and server-side
   pre-analysis); lifter pose tracking enters here or P5.
+  *P4a–P4c shipped in 0.87.0; scope and findings in
+  `docs/KINEMOS_P4_PLAN.md`.* Per-athlete consent, recorded and revocable
+  (§10), with an export of coach-corrected tracks as labelled data that
+  carries no video and no names. A benchmark (`npm run bench`) that runs
+  clips × variants through the real harness and scores them two ways —
+  position RMS against ground truth, and two-view agreement where no truth
+  exists; its first run reproduced the accuracy study's 2,8 % independently
+  and exposed a trade-off nobody had stated (the variant that wins on real
+  footage loses on the synthetic clip). And **zero-click analysis**, which
+  §3 called a non-goal and §12 put behind a model: P3d's plate detector
+  supplies the one click P3g's set tracker still needed, so a wand on any
+  library row finds the plate, follows the bar, splits the reps and stores
+  them — graded exactly as a hand-anchored analysis is, which is what makes
+  offering it honest. **The learned tracker (§6.2 tier 3) is NOT built**:
+  the labels do not exist yet, the classical tracker's numbers are not
+  obviously beatable, and P4 plan §5 records what would have to be true
+  first.
 - **P5 — Frontier (shapes TBD).** Live webcam mode (product shape
   undecided), model-lift library, VBT→planner suggestions (LV profiles,
   velocity-loss cutoffs), 80–99 % pre-analysed arrivals.

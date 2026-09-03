@@ -1363,6 +1363,22 @@ export interface KinemosAnnotation {
   updated_at: string;
 }
 
+/** Whether one athlete's coach-corrected tracks may be used as machine-
+ *  learning training data (design §10). Granting and revoking are both
+ *  dated, because a withdrawal ends future use rather than rewriting what
+ *  was lawfully done before it. */
+export interface KinemosTrainingConsent {
+  id: string;
+  owner_id: string | null;
+  athlete_id: string;
+  granted_at: string | null;
+  revoked_at: string | null;
+  recorded_by_coach_id: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A lens, measured once and reused for every clip from the same phone
  *  (design §6.1's model/profile tiers). `k1` is the division model's single
  *  coefficient, normalised by half the image diagonal so it describes the
@@ -1784,6 +1800,13 @@ export interface Database {
           Record<string, unknown>;
         Update: Partial<Omit<KinemosAnnotation, 'id' | 'created_at' | 'updated_at'>> &
           Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_training_consent: {
+        Row: KinemosTrainingConsent & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosTrainingConsent, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosTrainingConsent, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       kinemos_device_profiles: {
