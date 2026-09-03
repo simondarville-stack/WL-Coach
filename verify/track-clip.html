@@ -203,7 +203,40 @@
           if (!Number.isFinite(aIndex) || plate.length < 6) throw new Error('need ?anchor=i,x,y&plate=cx,cy,a,b,tilt,cm');
           const radius = Number(params.get('radius') ?? plate[2]);
           const t0 = performance.now();
-          const result = await trackFromAnchor(source, { index: aIndex, x: ax, y: ay }, { templateRadiusPx: radius });
+          // `&from=&to=` track only this frame range (one rep of a double);
+          // `&search=` the search radius in px (a 1080p clip at 30 fps moves
+          // the bar 25 px a frame at the peak, past the 14 px default);
+          // `&minconf=` and `&giveup=` the tracker's confidence floor and
+          // patience.
+          const from = Math.max(0, Number(params.get('from') ?? 0));
+          const to = Math.min(server.frameCount - 1, Number(params.get('to') ?? server.frameCount - 1));
+          const ranged = {
+            frameCount: to - from + 1,
+            timestamps: source.timestamps.slice(from, to + 1),
+            getGray: i => source.getGray(i + from),
+          };
+          const trackOptions = { templateRadiusPx: radius };
+          if (params.has('search')) trackOptions.searchRadiusPx = Number(params.get('search'));
+          if (params.has('minconf')) trackOptions.minConfidence = Number(params.get('minconf'));
+          if (params.has('giveup')) trackOptions.giveUpAfter = Number(params.get('giveup'));
+          // `&track=<url>`: bring your own track — a JSON array of
+          // {index, x, y} in display pixels — and skip the tracker. For a
+          // clip the tracker cannot hold (a fan behind the plate, say) but a
+          // colour segmentation can; the rest of the pipeline is unchanged.
+          let result;
+          if (params.has('track')) {
+            const own = await (await fetch(params.get('track'))).json();
+            const points = own
+              .filter(p => p.index >= from && p.index <= to)
+              .map(p => ({ index: p.index, t: server.timestamps[p.index], x: p.x, y: p.y, confidence: 1, predictionErrorPx: 0 }));
+            result = { points, lowConfidenceIndices: [], gaveUp: false };
+            log(`own track: ${points.length} points from ${params.get('track')}`);
+          } else {
+            result = await trackFromAnchor(ranged, { index: aIndex - from, x: ax, y: ay }, trackOptions);
+            for (const p of result.points) p.index += from;
+            result.lowConfidenceIndices = result.lowConfidenceIndices.map(i => i + from);
+          }
+          if (from > 0 || to < server.frameCount - 1) log(`tracking frames ${from}–${to} only`);
           const ms = performance.now() - t0;
           log(`tracked ${result.points.length}/${server.frameCount} frames in ${ms.toFixed(0)} ms (${(ms / Math.max(1, result.points.length)).toFixed(1)} ms/frame), gaveUp=${result.gaveUp}, low-confidence frames: ${result.lowConfidenceIndices.length} [${result.lowConfidenceIndices.slice(0, 20).join(',')}]`);
           const confs = result.points.map(p => p.confidence);
