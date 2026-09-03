@@ -11,9 +11,9 @@
  * library is worth having on its own, and it is the thing every later phase
  * reads from.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Ruler, Trash2, Wand2, X } from 'lucide-react';
+import { Radio, Ruler, Trash2, Wand2, X } from 'lucide-react';
 import {
   Button,
   DataTable,
@@ -39,6 +39,7 @@ import { useCoachStore } from '../store/coachStore';
 import { getOwnerId } from '../lib/ownerContext';
 import { openFrameServer } from './engine/frameServer';
 import { autoAnalyse, describeAutoAnalysis } from './lib/autoAnalyse';
+import { analysedClipKeys, runArrivalQueue, targetFor, unanalysedClips } from './lib/arrivals';
 
 const SOURCE_LABEL: Record<LibrarySource, string> = {
   log: 'Log',
@@ -80,6 +81,10 @@ export function KinemosLibrary() {
 
   const [autoBusy, setAutoBusy] = useState<string | null>(null);
   const [autoNote, setAutoNote] = useState<string | null>(null);
+  const [sweeping, setSweeping] = useState(false);
+  /** A ref, not state: the queue reads it between clips and must see the
+   *  latest value, not the one captured when the sweep started. */
+  const stopSweep = useRef(false);
 
   const [athleteId, setAthleteId] = useState('');
   const [source, setSource] = useState<'' | LibrarySource>('');
@@ -169,6 +174,47 @@ export function KinemosLibrary() {
       setAutoBusy(null);
     }
   }, []);
+
+  /**
+   * The backlog sweep (P5d). Clips that arrived before analyse-on-import
+   * existed, and every clip from the athlete app — which never passes through
+   * a coach's browser at all — are analysed here, one at a time, stoppable
+   * between clips.
+   *
+   * Deliberately not automatic on page load: it is minutes of this laptop's
+   * CPU and megabytes of download, and starting that because someone opened
+   * the library would be a hostile thing to do.
+   */
+  const runSweep = useCallback(async () => {
+    setSweeping(true);
+    stopSweep.current = false;
+    try {
+      const analysed = await analysedClipKeys();
+      const pending = unanalysedClips(rows, analysed);
+      if (pending.length === 0) {
+        setAutoNote('Every clip in the library has already been analysed.');
+        return;
+      }
+      let analysedCount = 0;
+      await runArrivalQueue(pending.map(targetFor), {
+        ownerId: getOwnerId(),
+        shouldStop: () => stopSweep.current,
+        onProgress: p => setAutoNote(`Analysing ${p.index} of ${p.total} — ${p.label}, ${p.stage.toLowerCase()}`),
+        onDone: outcome => {
+          if (outcome.result && !outcome.result.problem) analysedCount += 1;
+        },
+      });
+      await refresh();
+      setAutoNote(
+        `Swept ${pending.length} clip${pending.length === 1 ? '' : 's'}: ${analysedCount} analysed. ` +
+          'The rest need a plate outlined by hand — open them in the viewer.',
+      );
+    } catch (e) {
+      setAutoNote(e instanceof Error ? e.message : 'The sweep could not be run.');
+    } finally {
+      setSweeping(false);
+    }
+  }, [refresh, rows]);
 
   const handleDelete = async (video: LibraryVideo) => {
     const ok = await confirmDialog({
@@ -357,7 +403,17 @@ export function KinemosLibrary() {
           eyebrow="KinEMOS"
           title="Video library"
           subtitle="Every lift video in EMOS — log clips, competition footage, and direct imports."
-          metadata={`${visible.length} of ${rows.length} clips`}
+          metadata={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+              <span>{`${visible.length} of ${rows.length} clips`}</span>
+              {/* Live mode is the one KinEMOS surface that is not about a clip
+                  in the library, so it hangs off the header rather than the
+                  table. */}
+              <Button variant="ghost" size="sm" icon={<Radio size={14} />} onClick={() => navigate('/kinemos/live')}>
+                Live
+              </Button>
+            </div>
+          }
         />
 
         <SharedWithYou coachId={activeCoachId} coachNames={coachNames} />
@@ -444,7 +500,25 @@ export function KinemosLibrary() {
           </div>
           )}
 
-          <ImportControl athletes={athletes} exercises={exercises} onImported={refresh} />
+          <ImportControl
+            athletes={athletes}
+            exercises={exercises}
+            onImported={refresh}
+            onArrivalNote={setAutoNote}
+          />
+
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Wand2 size={14} />}
+            onClick={() => {
+              if (sweeping) stopSweep.current = true;
+              else void runSweep();
+            }}
+            title="Analyse every clip that has none yet, one at a time, in this browser."
+          >
+            {sweeping ? 'Stop sweep' : 'Analyse the backlog'}
+          </Button>
         </div>
 
         {loading ? (

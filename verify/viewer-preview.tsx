@@ -358,7 +358,7 @@ function useReferenceSubject(playbackUrl: string): {
     } as unknown as KinemosAnalysis;
 
     return {
-      candidate: { analysis, clip, sameExercise: true, isReference: false },
+      candidate: { analysis, clip, sameExercise: true, isReference: false, isModel: false, modelLabel: null },
       subject: {
         analysis,
         clip,

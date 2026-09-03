@@ -37,6 +37,7 @@ import { loadKinemosLiftRecords, type KinemosLiftRecord } from '../lib/analysisA
 import { isStale, refreshStoredMetrics, type RefreshOutcome } from '../lib/recompute';
 import { referenceOf } from '../lib/referenceService';
 import { num } from '../lib/viewerFormat';
+import { LoadVelocityPanel } from './LoadVelocityPanel';
 
 /** The lift on screen, drawn as the comparison view draws it. */
 const CURRENT_COLOR = '#185FA5';
@@ -137,6 +138,14 @@ export function TrendsView({
     [inScope, metric.id],
   );
   const withLoad = useMemo(() => plotted.filter(r => isFinite(r.loadKg)), [plotted]);
+
+  /** This exercise's reps regardless of the scope toggle — what a
+   *  load–velocity line may be fitted over. */
+  const sameExercise = useMemo(() => {
+    if (!records) return [];
+    const wanted = (exerciseName ?? '').toLowerCase();
+    return wanted ? records.filter(r => (r.exerciseName ?? '').toLowerCase() === wanted) : records;
+  }, [records, exerciseName]);
   const missing = inScope.length - plotted.length;
 
   /**
@@ -428,6 +437,14 @@ export function TrendsView({
               onHover={setHover}
               onOpen={onOpen}
             />
+          </section>
+
+          {/* Design §12's end-game, in its display-only form (P5a). Fitted
+              over this exercise alone whatever the scope above is set to: a
+              line through the snatch and the clean together would be two
+              lines fitted as one. */}
+          <section style={card}>
+            <LoadVelocityPanel records={sameExercise} exerciseName={exerciseName} />
           </section>
         </div>
       )}

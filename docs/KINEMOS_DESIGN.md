@@ -474,6 +474,23 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
 - **P5 — Frontier (shapes TBD).** Live webcam mode (product shape
   undecided), model-lift library, VBT→planner suggestions (LV profiles,
   velocity-loss cutoffs), 80–99 % pre-analysed arrivals.
+  *P5a–P5d shipped in 0.88.0; scope in `docs/KINEMOS_P5_PLAN.md`.*
+  **Load–velocity profiles** (`engine/loadVelocity.ts`) fit a line through a
+  season of (load, peak velocity) pairs and refuse to when it would be
+  nonsense — under four points, under 15 % load spread, or a non-negative
+  slope — giving expected velocity at a load, the load for a target
+  velocity, an estimated 1RM from submaximal work, and velocity loss
+  measured from the *best* rep of a set. A **model-lift library**
+  (`is_model` / `model_label`) answers the question a per-athlete reference
+  lift cannot: how a rep compares to one that is simply correct. **Live
+  mode** at `/kinemos/live` — which answers open question 4 below.
+  And **pre-analysed arrivals**, which §12 put behind a server: with no
+  server to have, `lib/arrivals.ts` runs the pipeline at the two moments the
+  clip is in the browser anyway — on import, from the local file about to be
+  uploaded (no download at all), and on a stoppable backlog sweep from the
+  library. **Lifter pose tracking is NOT built**: the weights are not
+  reachable, the coaching claim it would make is unstated, and P5 plan §6
+  records what would change that.
 
 Each phase merges to `main` behind the KinEMOS entry point; premium gating is
 a feature flag until auth/billing lands. Long-running KinEMOS work uses a
@@ -503,6 +520,20 @@ dedicated `git worktree` (shared-working-tree hazard).
    of Analysis facts. Revisit only if a coach-defined Analysis metric ever
    needs to *combine* a KinEMOS value with a load value inside one formula;
    that is the case an adapter cannot serve.
-4. Live-mode product shape (P5) — deliberately open.
+4. Live-mode product shape (P5) — **DECIDED 03/09/2026: a VBT-unit readout,
+   not live path drawing.** A bar path drawn live can only be consumed by
+   looking away from the lifter at the exact moment you should not; the path
+   is a review artefact KinEMOS already does properly (two overlaid,
+   phase-aligned, with a delta table); and live has exactly one job the
+   recorded viewer cannot do — the stop cue, which has to be decided between
+   reps or not at all. So `/kinemos/live` is a big velocity number, a set
+   list and a velocity-loss cue. *Built in 0.88.0 (P5c):
+   `engine/liveReps.ts` is a three-state machine fed one sample at a time
+   (the whole-track logic in `engine/reps.ts` cannot run live, since it reads
+   five seconds either side of the rep), emitting at the catch rather than
+   the apex so a dumped bar is not counted, learning the floor rather than
+   being told it, and discarding steps no barbell makes. Nothing live is
+   stored or graded — an uncalibrated phone is an everyday-tier measurement
+   and the screen says so. Rationale and the full argument: P5 plan §4.
 5. Retention/cost policy revisit trigger — define a storage threshold that
    forces the raw-video-expiry conversation.

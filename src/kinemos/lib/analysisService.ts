@@ -221,6 +221,8 @@ export async function saveAnalysisState(
     gradeErrorMs?: number | null;
     gradeFactors?: unknown;
     isReference?: boolean;
+    isModel?: boolean;
+    modelLabel?: string | null;
   },
 ): Promise<void> {
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -234,6 +236,8 @@ export async function saveAnalysisState(
   if (state.gradeErrorMs !== undefined) patch.grade_error_ms = state.gradeErrorMs;
   if (state.gradeFactors !== undefined) patch.grade_factors = state.gradeFactors;
   if (state.isReference !== undefined) patch.is_reference = state.isReference;
+  if (state.isModel !== undefined) patch.is_model = state.isModel;
+  if (state.modelLabel !== undefined) patch.model_label = state.modelLabel;
 
   const { error } = await supabase.from('kinemos_analyses').update(patch).eq('id', analysisId);
   if (error) throw error;

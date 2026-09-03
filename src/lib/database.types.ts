@@ -1282,6 +1282,15 @@ export interface KinemosAnalysis {
    *  `referenceService`, not the database (see migration 20260902200000). */
   is_reference: boolean;
 
+  /** A model lift: an exemplar offered when comparing ANY athlete, not only
+   *  its own (design §8 comparison item 3, the club-wide half that the
+   *  per-athlete reference above does not cover). Several may exist for one
+   *  lift; choosing between them is the coach's business. */
+  is_model: boolean;
+  /** What it is a model OF, in the coach's words — "Textbook second pull".
+   *  A model lift without a name is an anonymous bar path. */
+  model_label: string | null;
+
   created_at: string;
   updated_at: string;
 }

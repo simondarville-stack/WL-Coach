@@ -60,6 +60,10 @@ export interface KinemosLiftRecord {
   /** The athlete's reference lift for this exercise (design §8, comparison
    *  item 3). At most one per (athlete, exercise). */
   isReference: boolean;
+  /** A model lift: an exemplar for the whole environment (P5b), with what it
+   *  is a model of. */
+  isModel: boolean;
+  modelLabel: string | null;
   /** Which stored-metrics schema the values were written under. */
   schema: number;
   /** When the analysis was last saved, ISO. */
@@ -128,6 +132,8 @@ export function projectLiftRecords(
       gradeErrorMs: analysis.grade_error_ms === null ? null : Number(analysis.grade_error_ms),
       phaseSetId: analysis.phase_set_id,
       isReference: analysis.is_reference === true,
+      isModel: analysis.is_model === true,
+      modelLabel: analysis.model_label ?? null,
       schema: stored?.schema ?? 0,
       analysedAt: analysis.updated_at,
       values,
