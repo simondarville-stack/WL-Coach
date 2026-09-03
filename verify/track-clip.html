@@ -184,14 +184,19 @@
             const cm = plate[plate.length - 1] ?? 45;
             const gray = await source.getGray(aIndex);
             const tAuto = performance.now();
+            // `?pick=face|strongest|outermost` chooses which edge is the plate
+            // (default: the face); `?shape=circle` fits a circle for a round
+            // plate filmed square-on.
             const found = await findPlate(gray, {
               minRadiusPx: Math.round(server.displayHeight * 0.03),
               maxRadiusPx: Math.round(server.displayHeight * 0.22),
               near: Number.isFinite(ax) && Number.isFinite(ay) ? { x: ax, y: ay } : undefined,
+              pick: params.get('pick') ?? undefined,
+              shape: params.get('shape') ?? undefined,
             });
             if (!found) throw new Error('auto: no plate found on the anchor frame');
             const e = found.ellipse;
-            log(`auto plate in ${(performance.now() - tAuto).toFixed(0)} ms: centre (${e.cx.toFixed(2)}, ${e.cy.toFixed(2)}) semi-axes ${e.semiMajorPx.toFixed(2)}×${e.semiMinorPx.toFixed(2)} tilt ${e.tiltDeg.toFixed(1)}°, edge support ${found.support.toFixed(2)} on ${found.points} points (hough r ${found.candidate.r.toFixed(1)})`);
+            log(`auto plate in ${(performance.now() - tAuto).toFixed(0)} ms: centre (${e.cx.toFixed(2)}, ${e.cy.toFixed(2)}) semi-axes ${e.semiMajorPx.toFixed(2)}×${e.semiMinorPx.toFixed(2)} tilt ${e.tiltDeg.toFixed(1)}°, edge support ${found.support.toFixed(2)} on ${found.points} points, residual ${found.residualPx.toFixed(2)} px (hough r ${found.candidate.r.toFixed(1)}, pick ${params.get('pick') ?? 'face'}, shape ${params.get('shape') ?? 'ellipse'})`);
             ax = e.cx; ay = e.cy;
             plate = [e.cx, e.cy, e.semiMajorPx, e.semiMinorPx, e.tiltDeg, cm];
           }
@@ -261,15 +266,42 @@
             let kept = 0;
             let weak = 0;
             let moved = 0;
+            const perFrame = [];
             for (const p of pts) {
               const gray = await source.getGray(p.index);
               const guess = { cx: p.x, cy: p.y, semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg: plate[4] };
-              const fit = await refinePlateEllipse(gray, guess, { pick: params.get('pick') ?? 'outermost' });
+              const fit = await refinePlateEllipse(gray, guess, { pick: params.get('pick') ?? undefined, shape: params.get('shape') ?? undefined });
               if (!fit || fit.support < 0.6) { weak++; continue; }
               moved = Math.max(moved, Math.hypot(fit.ellipse.cx - p.x, fit.ellipse.cy - p.y));
               p.x = fit.ellipse.cx; p.y = fit.ellipse.cy; kept++;
+              perFrame.push({ index: p.index, y: p.y, a: fit.ellipse.semiMajorPx, b: fit.ellipse.semiMinorPx, tilt: fit.ellipse.tiltDeg, residual: fit.residualPx });
             }
             log(`outline tracker in ${(performance.now() - tO).toFixed(0)} ms: ${kept} frames re-centred on the fitted outline, ${weak} kept the tracker's point (support < 0,6), largest move ${moved.toFixed(2)} px`);
+            // How the fitted plate changes with height — the scale the
+            // calibration would have read had it been taken on that frame.
+            // Three bands of image height over the track: floor, middle, top.
+            const ys = perFrame.map(f => f.y);
+            const yMin = Math.min(...ys), yMax = Math.max(...ys);
+            const median = arr => { const s = [...arr].sort((u, v) => u - v); return s.length ? s[s.length >> 1] : NaN; };
+            const bands = ['top third', 'middle third', 'bottom third'].map((label, k) => {
+              const lo = yMin + (k / 3) * (yMax - yMin), hi = yMin + ((k + 1) / 3) * (yMax - yMin);
+              const rows = perFrame.filter(f => f.y >= lo - 1e-6 && f.y <= hi + 1e-6);
+              const vertical = rows.map(f => Math.abs(Math.cos((f.tilt * Math.PI) / 180)) >= Math.SQRT1_2 ? f.a : f.b);
+              return `${label}: ${rows.length} frames, semi-axes ${median(rows.map(f => f.a)).toFixed(2)}×${median(rows.map(f => f.b)).toFixed(2)}, vertical semi ${median(vertical).toFixed(2)} px, residual ${median(rows.map(f => f.residual)).toFixed(2)} px`;
+            });
+            log(`outline by height — ${bands.join(' | ')}`);
+            window.__PERFRAME__ = perFrame;
+            // `&midpull=1`: read the scale from the middle third, as the
+            // viewer's re-centre assist does (assists.ts midPullOutline).
+            if (params.get('midpull') === '1') {
+              const lo = yMin + (yMax - yMin) / 3, hi = yMin + (2 * (yMax - yMin)) / 3;
+              const rows = perFrame.filter(f => f.y >= lo && f.y <= hi);
+              if (rows.length >= 8) {
+                const a = median(rows.map(f => f.a)), b = median(rows.map(f => f.b)), tilt = median(rows.map(f => f.tilt));
+                log(`mid-pull calibration: semi-axes ${a.toFixed(2)}×${b.toFixed(2)} tilt ${tilt.toFixed(1)}° from ${rows.length} frames (was ${plate[2].toFixed(2)}×${plate[3].toFixed(2)} on the anchor frame)`);
+                plate = [plate[0], plate[1], a, b, tilt, plate[5]];
+              }
+            }
           }
 
           const calibration = calibrateFromEllipse(

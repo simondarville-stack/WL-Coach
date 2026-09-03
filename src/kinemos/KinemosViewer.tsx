@@ -157,6 +157,11 @@ export function KinemosViewer() {
   });
   const [stabiliseProgress, setStabiliseProgress] = useState<{ done: number; total: number } | null>(null);
   const [stabiliseNote, setStabiliseNote] = useState<string | null>(null);
+  /** How the plate outline is fitted: a free ellipse, or a circle for a round
+   *  plate filmed square-on (see `OutlineFitOptions`). Not persisted — it
+   *  describes how the next find or snap runs, and the outline it produces is
+   *  what gets stored. */
+  const [plateShape, setPlateShape] = useState<'ellipse' | 'circle'>('ellipse');
   const [recentreProgress, setRecentreProgress] = useState<{ done: number; total: number } | null>(null);
   const [recentreNote, setRecentreNote] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
@@ -704,7 +709,7 @@ export function KinemosViewer() {
     if (!server || currentT === null) return;
     setAssist({ busy: 'find', note: null });
     try {
-      const found = await findPlateOnFrame(server, index);
+      const found = await findPlateOnFrame(server, index, undefined, { shape: plateShape });
       if (!found) {
         setAssist({ busy: null, note: 'No plate found on this frame. Try a frame where the whole plate is in view, or outline it by hand.' });
         return;
@@ -718,17 +723,20 @@ export function KinemosViewer() {
         busy: null,
         note: `Plate found, edge under ${Math.round(found.support * 100)} % of the outline. Tracking from its centre.`,
       });
-      await trackFrom(index, found.ellipse.cx, found.ellipse.cy, found.ellipse.semiMajorPx);
+      // A template exactly the plate's face lost the lock at the second pull
+      // on real footage; a little context round the rim keeps it
+      // (docs/KINEMOS_ACCURACY_STUDY.md §7).
+      await trackFrom(index, found.ellipse.cx, found.ellipse.cy, found.ellipse.semiMajorPx * 1.08);
     } catch (e) {
       setAssist({ busy: null, note: e instanceof Error ? e.message : 'The plate finder could not run.' });
     }
-  }, [server, currentT, index, trackFrom]);
+  }, [server, currentT, index, trackFrom, plateShape]);
 
   const snapHere = useCallback(async () => {
     if (!server || !ellipse) return;
     setAssist({ busy: 'snap', note: null });
     try {
-      const out = await snapEllipseOnFrame(server, index, ellipse);
+      const out = await snapEllipseOnFrame(server, index, ellipse, { shape: plateShape });
       if (!out) {
         setAssist({ busy: null, note: 'No plate edge near the outline on this frame — nothing to snap to.' });
         return;
@@ -746,7 +754,7 @@ export function KinemosViewer() {
     } catch (e) {
       setAssist({ busy: null, note: e instanceof Error ? e.message : 'The snap could not run.' });
     }
-  }, [server, ellipse, index]);
+  }, [server, ellipse, index, plateShape]);
 
   const stabiliseNow = useCallback(async () => {
     if (!server || points.length < 8 || currentT === null) return;
@@ -777,21 +785,39 @@ export function KinemosViewer() {
     setRecentreProgress({ done: 0, total: points.length });
     setRecentreNote(null);
     try {
-      const out = await recentreTrackOnOutline(server, points, ellipse, (done, total) =>
-        setRecentreProgress({ done, total }),
+      const out = await recentreTrackOnOutline(
+        server,
+        points,
+        ellipse,
+        (done, total) => setRecentreProgress({ done, total }),
+        { shape: plateShape },
       );
       dirtyRef.current = true;
       setPoints(out.points);
+      let scaleNote = '';
+      if (out.midPull) {
+        // The scale is re-read where the plate is at camera height — see
+        // RecentreTrackResult.midPull — and the calibration frame follows
+        // it, so the outline on screen is the plate it describes.
+        const before = ellipse.semiMajorPx;
+        const after = out.midPull.ellipse.semiMajorPx;
+        setEllipse(out.midPull.ellipse);
+        seek(server.nearestIndex(out.midPull.t));
+        scaleNote =
+          ` Scale re-read at mid-pull from ${out.midPull.frames} frames: plate ${num(2 * after, 1)} px across` +
+          (Math.abs(after - before) >= 0.25 ? ` (was ${num(2 * before, 1)} px on the calibration frame).` : '.');
+      }
       setRecentreNote(
         `${out.recentred} of ${points.length} points now sit on the fitted outline's centre, moved by up to ${num(out.largestMovePx, 1)} px` +
-          (out.kept > 0 ? `; ${out.kept} kept the tracker's point because too little rim was visible.` : '.'),
+          (out.kept > 0 ? `; ${out.kept} kept the tracker's point because too little rim was visible.` : '.') +
+          scaleNote,
       );
     } catch (e) {
       setRecentreNote(e instanceof Error ? e.message : 'Re-centring could not run.');
     } finally {
       setRecentreProgress(null);
     }
-  }, [server, points, ellipse]);
+  }, [server, points, ellipse, plateShape, seek]);
 
   /** Seek to the next frame the tracker was unsure about, after the playhead.
    *  Wraps, so repeated presses walk the whole set. */
@@ -1434,6 +1460,8 @@ export function KinemosViewer() {
             onFind={() => void findPlateHere()}
             onSnap={() => void snapHere()}
             assist={assist}
+            shape={plateShape}
+            onShape={setPlateShape}
           />
           <ReadoutRail
             repIndices={repIndices}

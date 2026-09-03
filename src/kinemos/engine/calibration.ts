@@ -79,6 +79,19 @@ export interface PlateEllipse {
  *  every number wrong by a factor of two. COACH-CONFIG candidate. */
 export const DEFAULT_PLATE_DIAMETER_CM = 45;
 
+/**
+ * The bar's sleeve end — the ø50 mm disc at the very tip of the bar, at the
+ * plate's centre. A second known dimension in every clip, and the better one
+ * when the resolution allows: it IS the bar's axis (the plate merely sits on
+ * it), it is small enough that motion blur barely touches it, it has no rim,
+ * thickness or shadow to confuse an edge with, and it is round from any
+ * angle a coach films at. At 384×288 it is six pixels across and useless as
+ * a scale; on 1080p phone footage it is 25–40 px and a tracking target in
+ * its own right. Recorded here as the reference the next accuracy step
+ * should build on (docs/KINEMOS_ACCURACY_STUDY.md §6).
+ */
+export const BAR_SLEEVE_END_DIAMETER_CM = 5;
+
 /** Common plate faces, for the calibration panel's quick picks. Diameters are
  *  the disc's outer diameter in cm. */
 export const PLATE_PRESETS: ReadonlyArray<{ label: string; diameterCm: number }> = [

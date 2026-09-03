@@ -34,6 +34,10 @@ interface CalibrationPanelProps {
   onSnap: () => void;
   /** Which assist is running, and what the last one said. */
   assist: { busy: 'find' | 'snap' | null; note: string | null };
+  /** How the next find or snap fits the outline: a free ellipse, or a circle
+   *  for a round plate filmed square-on. */
+  shape: 'ellipse' | 'circle';
+  onShape: (shape: 'ellipse' | 'circle') => void;
 }
 
 export function CalibrationPanel({
@@ -47,7 +51,24 @@ export function CalibrationPanel({
   onFind,
   onSnap,
   assist,
+  shape,
+  onShape,
 }: CalibrationPanelProps) {
+  const shapeToggle = (
+    <label
+      style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'var(--space-sm)', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+      title="A round plate filmed square-on is a circle: fitting one instead of a free ellipse leaves nothing for the shadow below or the rim's thickness above to tilt, and the radius is the scale directly. Leave it off when the camera is off to one side — the plate really is an ellipse then. Applies to the next find or snap."
+    >
+      <input
+        type="checkbox"
+        checked={shape === 'circle'}
+        onChange={e => onShape(e.target.checked ? 'circle' : 'ellipse')}
+        disabled={assist.busy !== null}
+      />
+      Round plate, camera square-on — fit a circle
+    </label>
+  );
+
   return (
     <section style={sectionStyle}>
       <header style={headerStyle}>
@@ -78,6 +99,7 @@ export function CalibrationPanel({
               {active ? 'Click the plate on the frame' : 'Outline it by hand'}
             </Button>
           </div>
+          {shapeToggle}
           {assist.note && <p style={hintStyle}>{assist.note}</p>}
         </>
       )}
@@ -165,6 +187,7 @@ export function CalibrationPanel({
               </Button>
             </div>
           )}
+          {!active && shapeToggle}
           {assist.note && !active && <p style={hintStyle}>{assist.note}</p>}
           {active && (
             <p style={hintStyle}>

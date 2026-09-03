@@ -478,9 +478,12 @@ near-circular outline is noise (+11,9° and −16,9° for two level cameras) —
 that alone made the 46 cm "loops" and most of the velocity gap. With gravity
 as the reference, a timing repair before resampling, the track re-centred on
 the plate's outline frame by frame, and a peak-stability factor in the grade,
-the two views now agree to 1,2 % on peak velocity, 1,4 % on height and 0,3 cm
-on loop width. The study is the reference for what the pipeline does and why;
-the paragraphs above stand as the record of what the first pass concluded.
+the two views agree to about 3 % on peak velocity and 2 % on height — and,
+once the plate's FACE rather than its shadow and rim thickness sizes the
+outline and the scale is read at mid-pull, on a scale that is measured rather
+than merely shared. The study is the reference for what the pipeline does
+and why; the paragraphs above stand as the record of what the first pass
+concluded.
 
 One environment note: the bundled headless Chromium has no H.264 decoder, so
 the fixtures were transcoded to VP8 for this run; a coach's Chrome decodes the

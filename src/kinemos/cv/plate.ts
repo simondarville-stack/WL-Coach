@@ -107,23 +107,65 @@ export interface RefineResult {
   support: number;
   /** How many edge points the final fit used. */
   points: number;
+  /** RMS distance of the kept edge points from the outline, px. A round
+   *  plate seen square-on fits its circle to under half a pixel; a fit that
+   *  had to average two edges reads a pixel or more. */
+  residualPx: number;
 }
+
+/**
+ * Which of the edges round a plate is the plate.
+ *
+ * A bumper plate on a bar is not one edge but three, a few pixels apart:
+ * the boundary of its FACE against whatever is behind it; outside that at the
+ * top, the plate's own thickness — the rim of a cylinder seen slightly from
+ * above while the bar is on the floor, a lighter crescent; outside that at the
+ * bottom, its shadow. The 45 cm is the face. On the first real footage the
+ * outermost edge per bin (the P3d default) read the shadow and the crescent
+ * and made the plate 9 % bigger than it was; the strongest edge splits the
+ * difference. The face is the largest edge the WHOLE circumference agrees
+ * on: the crescent lives only in the top bins and the shadow only in the
+ * bottom ones, so a fit through the outermost edge per bin, with the points
+ * that sit outside it thrown out and the fit repeated until none do, settles
+ * on the face — to 0,4 px RMS on the side clip — while a plate whose outer
+ * rim really is its outermost edge all the way round keeps it
+ * (docs/KINEMOS_ACCURACY_STUDY.md §6).
+ */
+export type EdgePick = 'face' | 'strongest' | 'outermost';
+
+export interface RefineOptions {
+  ringFraction?: number;
+  pick?: EdgePick;
+  /**
+   * `circle` fits a circle — three parameters instead of five. For a plate a
+   * coach knows to be round, filmed square-on, it is the right model: the
+   * orientation a free ellipse would invent is gone and the radius is the
+   * scale directly. `ellipse` (the default) is needed as soon as the camera
+   * is off perpendicular, because then the plate really is an ellipse.
+   */
+  shape?: 'ellipse' | 'circle';
+}
+
+export const DEFAULT_EDGE_PICK: EdgePick = 'face';
 
 /**
  * Snap an ellipse to the plate edge it is nearly on.
  *
- * Canny edges in a ring around the given outline, a direct least-squares
- * ellipse fit through them, then once more through only the points within a
- * few pixels of that first fit — the second pass drops the rim of a second
- * plate, a collar or a bar sleeve that the ring caught. Null when there are
- * not enough edge points to fit anything, which is itself the answer.
+ * Canny edges in a ring around the given outline, a direct least-squares fit
+ * through them, then once more through only the points within a few pixels
+ * of that first fit — the second pass drops the rim of a second plate, a
+ * collar or a bar sleeve that the ring caught — and a last pass through the
+ * intensity itself at sub-pixel, with points more than 1,5 px off the outline
+ * rejected. Null when there are not enough edge points to fit anything,
+ * which is itself the answer.
  */
 export async function refinePlateEllipse(
   gray: GrayLike,
   guess: PlateEllipse,
-  options: { ringFraction?: number; pick?: 'outermost' | 'strongest' } = {},
+  options: RefineOptions = {},
 ): Promise<RefineResult | null> {
-  const pick = options.pick ?? 'outermost';
+  const pick = options.pick ?? DEFAULT_EDGE_PICK;
+  const shape = options.shape ?? 'ellipse';
   const cv = await loadOpenCv();
   const ring = options.ringFraction ?? 0.22;
   const src = matFromGray(cv, gray);
@@ -145,17 +187,51 @@ export async function refinePlateEllipse(
     // bin, the outermost: the band excludes texture beyond the rim, the
     // contrast test excludes texture inside it, and "outermost" chooses the
     // rim's outer edge over its inner one.
+    const fitPoints = (points: Array<[number, number]>): PlateEllipse | null =>
+      shape === 'circle' ? fitCircleFromPoints(points) : fitEllipseFromPoints(cv, points);
+
     let pts = edgePointsNear(edges, gray, guess, ring, 0);
     if (pts.length < 12) return null;
-    let fit = fitEllipseFromPoints(cv, pts);
+    let fit = fitPoints(pts);
     if (!fit) return null;
 
     for (let pass = 0; pass < 2; pass++) {
       const tight = Math.max(0.06, 2.5 / Math.max(fit.semiMajorPx, 1));
-      const next = perBin(edgePointsNear(edges, gray, fit, tight, 18), fit, pick, gray);
+      let next = perBin(edgePointsNear(edges, gray, fit, tight, 18), fit, pick, gray);
       if (next.length < 12) break;
-      const fitNext = fitEllipseFromPoints(cv, next);
+      let fitNext = fitPoints(next);
       if (!fitNext) break;
+      if (pick === 'face') {
+        // The largest edge the whole circumference agrees on. A free ellipse
+        // has enough freedom to absorb a partial arc of shadow or rim
+        // thickness as elongation, so the agreement is first settled with a
+        // CIRCLE — three parameters cannot bend round an arc — by dropping
+        // the points that sit outside it and fitting again until none do.
+        // The plate is round, so its true outline lies within a few per cent
+        // of that circle at any angle the model covers (cos 30° = 0,87):
+        // only points in that band go to the requested shape.
+        let circle = fitCircleFromPoints(next);
+        let ring = next;
+        for (let round = 0; circle && round < 4; round++) {
+          const current = circle;
+          const inside = ring.filter(p => distanceFromOutline(current, p) <= 1);
+          if (inside.length === ring.length || inside.length < Math.max(12, ring.length * 0.5)) break;
+          const again = fitCircleFromPoints(inside);
+          if (!again) break;
+          ring = inside;
+          circle = again;
+        }
+        if (circle) {
+          const band = Math.max(1.5, 0.08 * circle.semiMajorPx);
+          const c = circle;
+          const agreed = next.filter(p => Math.abs(distanceFromOutline(c, p)) <= band);
+          const fitAgreed = agreed.length >= 12 ? fitPoints(agreed) : null;
+          if (fitAgreed) {
+            next = agreed;
+            fitNext = fitAgreed;
+          }
+        }
+      }
       fit = fitNext;
       pts = next;
     }
@@ -165,16 +241,33 @@ export async function refinePlateEllipse(
     // intensity changes fastest, found to a fraction of a pixel from a
     // parabola through the gradient peak. This is what "sub-pixel" means
     // here, and it takes about a third of a pixel of bias out of the axes.
+    // Points the sub-pixel step leaves more than 1,5 px off the outline are
+    // another edge — the shadow's, a collar's — and are dropped before the
+    // final fit.
     const around: PlateEllipse = fit;
-    const refined = pts.map(p => subpixelAlongRadial(gray, p, around)).filter((p): p is [number, number] => p !== null);
+    let refined = pts.map(p => subpixelAlongRadial(gray, p, around)).filter((p): p is [number, number] => p !== null);
     if (refined.length >= 12) {
-      const fitSub = fitEllipseFromPoints(cv, refined);
+      const fitSub = fitPoints(refined);
       if (fitSub) {
-        fit = fitSub;
+        const kept = refined.filter(p => Math.abs(distanceFromOutline(fitSub, p)) <= 1.5);
+        const fitKept = kept.length >= 12 && kept.length < refined.length ? fitPoints(kept) : null;
+        if (fitKept) {
+          fit = fitKept;
+          refined = kept;
+        } else {
+          fit = fitSub;
+        }
         pts = refined;
       }
     }
-    return { ellipse: fit, support: edgeSupport(gray, fit.cx, fit.cy, fit.semiMajorPx, fit.semiMinorPx, fit.tiltDeg, edges), points: pts.length };
+    let sum = 0;
+    for (const p of pts) sum += distanceFromOutline(fit, p) ** 2;
+    return {
+      ellipse: fit,
+      support: edgeSupport(gray, fit.cx, fit.cy, fit.semiMajorPx, fit.semiMinorPx, fit.tiltDeg, edges),
+      points: pts.length,
+      residualPx: pts.length > 0 ? Math.sqrt(sum / pts.length) : 0,
+    };
   } finally {
     src.delete();
     blurred.delete();
@@ -188,17 +281,15 @@ export async function refinePlateEllipse(
  */
 export async function findPlate(
   gray: GrayLike,
-  options: DetectPlateOptions,
+  options: DetectPlateOptions & RefineOptions,
 ): Promise<(RefineResult & { candidate: PlateCandidate }) | null> {
   const candidates = await detectPlates(gray, { ...options, limit: 3 });
   for (const candidate of candidates) {
-    const refined = await refinePlateEllipse(gray, {
-      cx: candidate.cx,
-      cy: candidate.cy,
-      semiMajorPx: candidate.r,
-      semiMinorPx: candidate.r,
-      tiltDeg: 0,
-    });
+    const refined = await refinePlateEllipse(
+      gray,
+      { cx: candidate.cx, cy: candidate.cy, semiMajorPx: candidate.r, semiMinorPx: candidate.r, tiltDeg: 0 },
+      { ringFraction: options.ringFraction, pick: options.pick, shape: options.shape },
+    );
     if (refined && refined.support >= 0.4) return { ...refined, candidate };
   }
   return null;
@@ -255,12 +346,13 @@ function edgePointsNear(
 }
 
 /** In each of 72 angular bins about the ellipse centre, one edge point: the
- *  one with the largest normalised radius (the outer edge of a rim) or the
- *  one with the strongest contrast across it. */
+ *  one with the largest normalised radius (`outermost`, and the starting set
+ *  for `face`, which then rejects what the circumference does not agree on)
+ *  or the one with the strongest contrast across it. See `EdgePick`. */
 function perBin(
   pts: Array<[number, number]>,
   e: PlateEllipse,
-  pick: 'outermost' | 'strongest',
+  pick: EdgePick,
   gray: GrayLike,
 ): Array<[number, number]> {
   const BINS = 72;
@@ -268,11 +360,64 @@ function perBin(
   for (const p of pts) {
     const phi = Math.atan2(p[1] - e.cy, p[0] - e.cx);
     const bin = Math.floor(((phi + Math.PI) / (2 * Math.PI)) * BINS) % BINS;
-    const score = pick === 'outermost' ? normRadius(e, p[0], p[1]) : gradientAcross(gray, p[0], p[1], e.cx, e.cy);
+    const score = pick === 'strongest' ? gradientAcross(gray, p[0], p[1], e.cx, e.cy) : normRadius(e, p[0], p[1]);
     const cur = best[bin];
     if (!cur || score > cur.score) best[bin] = { p, score };
   }
   return best.filter((b): b is { p: [number, number]; score: number } => b !== null).map(b => b.p);
+}
+
+/** Signed distance of a point from the outline, px — negative inside. Exact
+ *  for a circle; for an ellipse the radial distance, which is what the fits
+ *  here need it for. */
+function distanceFromOutline(e: PlateEllipse, p: [number, number]): number {
+  const { ux, uy, vx, vy } = axes(e.tiltDeg);
+  const dx = p[0] - e.cx;
+  const dy = p[1] - e.cy;
+  const u = dx * ux + dy * uy;
+  const v = dx * vx + dy * vy;
+  const nr = Math.hypot(u / Math.max(e.semiMajorPx, 1e-6), v / Math.max(e.semiMinorPx, 1e-6));
+  if (!(nr > 0)) return -e.semiMinorPx;
+  return Math.hypot(dx, dy) * (1 - 1 / nr);
+}
+
+/**
+ * Algebraic least-squares circle (Kåsa): linear in (cx, cy, r² − cx² − cy²),
+ * solved directly. Three unknowns, so it needs no OpenCV and cannot invent an
+ * orientation. Returned as a `PlateEllipse` with equal axes and no tilt.
+ */
+function fitCircleFromPoints(pts: Array<[number, number]>): PlateEllipse | null {
+  if (pts.length < 3) return null;
+  let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0, sz = 0;
+  const n = pts.length;
+  for (const [x, y] of pts) {
+    const z = x * x + y * y;
+    sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; sxz += x * z; syz += y * z; sz += z;
+  }
+  // Normal equations for z = 2a·x + 2b·y + c.
+  const m = [
+    [2 * sxx, 2 * sxy, sx, sxz],
+    [2 * sxy, 2 * syy, sy, syz],
+    [2 * sx, 2 * sy, n, sz],
+  ];
+  for (let col = 0; col < 3; col++) {
+    let pivot = col;
+    for (let r = col + 1; r < 3; r++) if (Math.abs(m[r][col]) > Math.abs(m[pivot][col])) pivot = r;
+    if (Math.abs(m[pivot][col]) < 1e-9) return null;
+    [m[col], m[pivot]] = [m[pivot], m[col]];
+    for (let r = 0; r < 3; r++) {
+      if (r === col) continue;
+      const f = m[r][col] / m[col][col];
+      for (let c = col; c < 4; c++) m[r][c] -= f * m[col][c];
+    }
+  }
+  const a = m[0][3] / m[0][0];
+  const b = m[1][3] / m[1][1];
+  const c = m[2][3] / m[2][2];
+  const r2 = c + a * a + b * b;
+  if (!(r2 > 0)) return null;
+  const r = Math.sqrt(r2);
+  return { cx: a, cy: b, semiMajorPx: r, semiMinorPx: r, tiltDeg: 0 };
 }
 
 /** OpenCV's RotatedRect → the engine's ellipse and tilt convention. */

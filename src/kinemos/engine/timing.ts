@@ -150,7 +150,11 @@ export function repairTiming(
     const joint = fitJoint(work, before, after, work[i].t, dt);
     if (!joint) continue;
     const { curve } = joint;
-    let stepShift = joint.shift;
+    // A step needs the slide to EXPLAIN something: the frames after must fit
+    // at least twice as well slid as where they are. A jittery track (an
+    // outline re-fitted frame by frame) otherwise grows steps out of noise,
+    // because some slide always fits a little better than none.
+    let stepShift = joint.slideHelps ? joint.shift : 0;
     const own = shiftOnto(curve, work[i], dt);
 
     if (Math.abs(stepShift) >= MIN_SHIFT_FRAMES) {
@@ -165,6 +169,7 @@ export function repairTiming(
       for (let k = i + CHECK_AFTER + 1; k <= i + 2 * CHECK_AFTER + 1; k++) if (k < n) later.push(k);
       const confirm = later.length >= CHECK_AFTER ? fitJoint(work, before, later, work[i].t, dt) : null;
       if (!confirm || Math.abs(confirm.shift - stepShift) > MIN_SHIFT_FRAMES) stepShift = 0;
+      if (confirm && !confirm.slideHelps) stepShift = 0;
     }
 
     if (Math.abs(stepShift) >= MIN_SHIFT_FRAMES) {
@@ -248,7 +253,7 @@ function fitJoint(
   after: readonly number[],
   t0: number,
   dt: number,
-): { curve: Curve; shift: number } | null {
+): { curve: Curve; shift: number; slideHelps: boolean } | null {
   const tb = before.map(k => (points[k].t - t0) / dt);
   const xb = before.map(k => points[k].x);
   const yb = before.map(k => points[k].y);
@@ -260,14 +265,28 @@ function fitJoint(
   const xs = [...xb, ...after.map(k => points[k].x)];
   const ys = [...yb, ...after.map(k => points[k].y)];
   let best: { rms: number; shift: number; fx: Quadratic; fy: Quadratic } | null = null;
+  let rmsAtZero = Infinity;
   const steps = 150;
   for (let s = -steps; s <= steps; s++) {
     const shift = (s / steps) * MAX_SHIFT_FRAMES;
     const fit = fitCurve([...tb, ...ta.map(t => t + shift)], xs, ys);
-    if (fit && (!best || fit.rms < best.rms)) best = { ...fit, shift };
+    if (!fit) continue;
+    if (s === 0) rmsAtZero = fit.rms;
+    if (!best || fit.rms < best.rms) best = { ...fit, shift };
   }
-  if (!best || best.rms > tolerancePx) return null;
-  return { curve: { t0, fx: best.fx, fy: best.fy, tolerancePx }, shift: best.shift };
+  if (!best || best.rms > tolerancePx || atBoundary(best.shift)) return null;
+  // Halving the residual, with a floor of a tenth of a pixel so a clean
+  // track's near-zero residual cannot be "halved" by rounding. A jittery
+  // track sits at 0,8–1 px either way and never clears this; a clean track
+  // with a half-frame step goes from 0,4 px to nothing.
+  const slideHelps = rmsAtZero >= 2 * Math.max(best.rms, 0.1);
+  return { curve: { t0, fx: best.fx, fy: best.fy, tolerancePx }, shift: best.shift, slideHelps };
+}
+
+/** Is a shift at the edge of the search window? A minimum found there is the
+ *  window's, not the data's, and is never acted on. */
+function atBoundary(shift: number): boolean {
+  return Math.abs(shift) >= MAX_SHIFT_FRAMES - 0.02;
 }
 
 /** The shift, in frames, that puts `p` on the curve — or null when no shift
@@ -284,7 +303,7 @@ function shiftOnto(curve: Curve, p: TrackPoint, dt: number): number | null {
     );
     if (error < best.error) best = { error, shift };
   }
-  return best.error <= curve.tolerancePx ? best.shift : null;
+  return best.error <= curve.tolerancePx && !atBoundary(best.shift) ? best.shift : null;
 }
 
 interface Quadratic {

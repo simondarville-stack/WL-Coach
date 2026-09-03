@@ -148,6 +148,61 @@ care what is printed on the plate. Picking the strongest edge rather than the
 outermost keeps the plate's shadow — which grows and shrinks with the lighting
 along the pull — from pulling the centre with it.
 
+### 3.6 The absolute scale — what a round 45 cm plate settles
+
+The plate is 45 cm and round (Simon, the morning after the first pass). On
+the perpendicular clip, then, its outline must be a circle, and it is: the
+face's edge points lie on a circle of radius **25,8 px to 0,38 px RMS** over
+88 % of the circumference. The shipped fit had read 28,2 × 25,8 px at 12°,
+because it kept the OUTERMOST edge in every direction — and a bumper plate on
+a bar is three edges, not one:
+
+- the boundary of its **face** against what is behind it — the 45 cm;
+- above that, its **thickness**: with the bar on the floor the camera looks
+  slightly down on the plate and the rim of the cylinder shows as a lighter
+  crescent past the face's top edge, about 2 px here;
+- below that, its **shadow**, merging with the bottom edge.
+
+Outermost-per-bin picked the crescent at the top and the shadow at the
+bottom and made the plate 9 % taller than it is. Both views had the same
+bias in the same direction, which is why their heights agreed with each
+other while both were wrong.
+
+The fix in `refinePlateEllipse` (`pick: 'face'`, now the default) is the
+largest edge the WHOLE circumference agrees on: a circle — three parameters
+cannot bend round a partial arc — is fitted through the outermost edge per
+bin and the points standing outside it are dropped until none do; the
+requested shape is then fitted only through the points within a few per cent
+of that circle. On the side clip that gives 26,2 × 25,7 px at tilt 0 (a
+circle fit: 25,9 px, residual 0,44 px). A `shape: 'circle'` option fits the
+circle directly for a plate a coach knows to be round and filmed square-on;
+it is a checkbox in the calibration panel.
+
+The floor frame is still the wrong place to read the scale. Re-fitting the
+outline on every frame of the track (which the re-centre assist does anyway)
+and grouping by height:
+
+| vertical semi-axis, px | bottom third | middle third | top third |
+| --- | --- | --- | --- |
+| side | 26,34 | **26,46** | 26,58 |
+| oblique | 20,45 | **20,16** | 20,15 |
+
+Mid-pull the plate is at camera height and is only itself. The oblique
+floor-frame fit read 20,98 px (the shadow of a plate resting on the floor,
+which the circle test does not fully separate at 20 px); mid-pull it reads
+20,16 px, steady to 0,3 % into the top third. So the re-centre assist now
+also reads the scale there: the median outline over the middle third of the
+track's height, placed at the frame nearest that band's centre, becomes the
+calibration. With both views read at mid-pull the heights agree — 171,6 and
+168,0 cm — where the floor-frame face fits had them 7 % apart.
+
+One more known dimension is on every clip: the bar's sleeve end, **ø50 mm**,
+at the plate's centre. At 384 × 288 it is six pixels across and no use as a
+scale; on 1080p phone footage it is 25–40 px, it IS the bar's axis, it does
+not turn, blur barely touches it and it has no rim, thickness or shadow. It
+is recorded as `BAR_SLEEVE_END_DIAMETER_CM` and is the reference the next
+accuracy step should track and calibrate on (§6).
+
 ### 3.5 What did not matter
 
 - **Frame rate and duplication.** Both clips are genuine 50 fps; no blended
@@ -190,37 +245,59 @@ Five changes, all in the engine's own terms, all tested:
    much the filter's. Fair past 4 %, weak past 8 %.
 5. **The panel says what the orientation is.** "Plate tilt" is now "Outline
    orientation", with the explanation that it does not decide which way is up.
+6. **The face is the plate** (`pick: 'face'`, default in `cv/plate.ts`): the
+   largest edge the whole circumference agrees on, settled with a circle
+   before the ellipse is fitted, so neither the shadow below nor the rim's
+   thickness above can size the plate. `shape: 'circle'` — "Round plate,
+   camera square-on" in the calibration panel — fits the circle directly.
+7. **The scale is read at mid-pull.** The re-centre assist returns the median
+   outline over the middle third of the track's height and the viewer makes
+   it the calibration, at the frame nearest that band's centre.
 
 ## 5. Before and after
 
-| | side | oblique | gap on peak |
+Every row is the full click-free path through `verify/track-clip.html`;
+the last two rows are the shipped defaults (the last with the round-plate
+circle on the perpendicular view).
+
+| | side | oblique | gap |
 | --- | --- | --- | --- |
 | 0.83.3 | 2,55 m/s · 157 cm · 46 cm loop | 2,16 m/s · 161 cm · 41 cm loop | 15 % |
 | Gravity-anchored calibration | 2,457 · 163,3 · 10,3 | 2,331 · 164,7 · 15,4 | 5,4 % |
 | + timing repair | 2,463 · 163,3 · 10,3 | 2,331 · 164,7 · 15,4 | 5,7 % |
-| + re-centred on the outline | **2,280 · 160,8 · 10,5** | **2,308 · 163,1 · 15,8** | **1,2 %** |
+| + re-centred on the outline | 2,280 · 160,8 · 10,5 | 2,308 · 163,1 · 15,8 | 1,2 % — but both scales 5–9 % small (§3.6) |
+| + face edge, scale at mid-pull | **2,323 · 171,6 · 10,4** | **2,389 · 168,0 · 16,3** | **2,8 % on the peak, 2,1 % on height** |
+| … side as a circle | 2,379 · 172,4 · 10,3 | — | 0,4 % / 2,6 % |
 
-Heights within 1,4 %, loops within 0,3 cm, peaks within 1,2 % — from two
-cameras 17° apart, with no hand correction on either. The timing repair moved
-the side peak only 0,006 m/s on this footage (it re-timed frame 46 by 0,7
-frames as a spike); its value is what it does to a clip that *does* have a
-dropped field, which the tests plant and recover to 0,5 %.
+Peak stability on the final rows: side −0,2 % / 2,1 %, oblique 1,3 % — the
+re-centred track no longer carries the frame-46 transient into the peak.
+The agreement is now between numbers whose scale is measured (§3.6), not
+between two numbers biased the same way. The timing repair moved the side
+peak only 0,006 m/s on this footage (it re-timed frame 46 by 0,7 frames as a
+spike); its value is what it does to a clip that *does* have a dropped
+field, which the tests plant and recover to 0,5 %.
 
 ## 6. Open, and honestly so
 
-- **Absolute scale.** The two views agree with each other; neither is checked
-  against a known distance. The auto-found outline on the side view reads
-  23,7° off perpendicular for a camera that was perpendicular — the
-  near-circular fit cannot place its orientation, and its axis ratio carries
-  the plate's shadow — so the *horizontal* scale on that clip is about 9 %
-  too large and the loop widths above are upper bounds. Vertical scales are
-  what the peaks and heights use and those agree.
+- **The oblique camera is above the bar, not beside it.** Its mid-pull
+  outline is 20,16 × 19,81 px with the longer axis vertical; its face edge
+  radii on the floor frame were 19,3 px at the top and 20,1 px at the side.
+  Those two readings disagree on which axis is the long one, which at 2 %
+  from circular is within what a 20 px plate can tell. If the camera is
+  elevated the vertical scale is the minor axis and 1–2 % larger still; that
+  is the size of the remaining height gap. A plate twice as many pixels
+  across would settle it, and so would the sleeve end.
+- **The sleeve end, ø50 mm**, is the better reference at phone resolution
+  (§3.6): the bar's own axis, round from every angle, no rim, no shadow.
+  Detecting it inside the plate outline and tracking it is the next step
+  for accuracy; at 384 × 288 it cannot be done.
 - **Camera roll** has a parameter and no source yet. A plumb reference (a
   rack upright, the platform edge) or the stabiliser's rotation on a handheld
   clip would give it; on a tripod it is zero.
-- **The oblique outline** can be the plate face or the far rim edge, 20 %
-  apart; the auto-find picked consistently here. A coach should see which
-  edge the snap chose.
+- **The re-centred track is jittery** — a per-frame edge fit scatters more
+  than a template match — and the timing repair drops or re-times three to
+  eight of its frames per clip, mostly in the descent. The noise gate keeps
+  it from inventing steps; the frames it does touch are listed in the grade.
 - **A second plate.** The far plate in an oblique view is a second, nearly
   independent measurement of the same bar; tracking both would average out
   what happened at frame 46.
@@ -239,8 +316,15 @@ npm i --no-save playwright-core
 OUT=/tmp/side QUERY='clip=/verify/fixtures/real/Tr%C3%A6k%20side.webm&anchor=0&auto=1&plate=45' node verify/shoot-track.mjs
 # oblique, with a hint at which plate
 OUT=/tmp/skra QUERY='clip=/verify/fixtures/real/Tr%C3%A6k%20skr%C3%A5t.webm&anchor=0,244,218&auto=1&plate=45' node verify/shoot-track.mjs
-# variants: &outline=1[&pick=strongest]  &cutoff=4  &norepair=1  &tilt=0  &roll=2
+# the shipped path: face edge, re-centred, scale at mid-pull (add &shape=circle on a square-on view)
+OUT=/tmp/side QUERY='clip=/verify/fixtures/real/Tr%C3%A6k%20side.webm&anchor=0&auto=1&plate=45&radius=28&outline=1&midpull=1' node verify/shoot-track.mjs
+# variants: &pick=strongest|outermost  &shape=circle  &cutoff=4  &norepair=1  &tilt=0  &roll=2
 ```
+
+(`radius=28` on the side clip: the template tracker gave up at the second
+pull with a template exactly the plate's face, 25,8 px; a little context
+round it keeps the lock. The viewer's FIND uses the fitted semi-major axis,
+which is the same number — worth a margin there too.)
 
 Each run logs the calibration, any timing repairs, the peak with its
 stability spread, and writes `result.json` with the series for a comparison

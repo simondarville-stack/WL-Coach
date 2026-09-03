@@ -162,8 +162,10 @@ describe('repairTiming — steps', () => {
     // (The spike is a whole-frame duplicate, so once re-timed it sits on its
     // neighbour's instant and is dropped as the copy it is.)
     const faulty = spike(step(cleanTrack(), 30, 0.5), 45, 1);
-    const { repairs } = repairTiming(faulty, { cmPerPx: 1 });
-    expect(repairs.map(r => r.action)).toEqual(['stepped', 'retimed', 'dropped']);
+    const { points, repairs } = repairTiming(faulty, { cmPerPx: 1 });
+    expect(repairs[0]).toMatchObject({ index: 30, action: 'stepped' });
+    expect(repairs[repairs.length - 1]).toMatchObject({ index: 45, action: 'dropped' });
+    expect(points).toHaveLength(faulty.length - 1);
     expect(peakError(faulty)).toBeLessThan(0.005);
   });
 });
