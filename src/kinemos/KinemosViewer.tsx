@@ -50,6 +50,8 @@ import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabilise
 import { trackSet } from './lib/setTracker';
 import { createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
 import { exportOverlayVideo } from './lib/overlayExport';
+import { formatTalkoverLength, startTalkover, talkoverMimeType, type TalkoverController } from './lib/talkover';
+import { kinemosObjectUrl, uploadTalkover } from './lib/kinemosStorage';
 import { valueAt } from './engine/phases';
 import { useCoachStore } from '../store/coachStore';
 import {
@@ -136,6 +138,9 @@ export function KinemosViewer() {
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState<{ done: number; total: number } | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [talkover, setTalkover] = useState<TalkoverController | null>(null);
+  const [talkoverBusy, setTalkoverBusy] = useState(false);
+  const [talkoverNote, setTalkoverNote] = useState<string | null>(null);
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -1074,6 +1079,12 @@ export function KinemosViewer() {
   }, [frame, server, ensureId, clip, index, points, currentT, ellipse]);
 
   // ── Sharing ───────────────────────────────────────────────────────────────
+  /** The most recent talkover of this rep, for a share to carry. */
+  const latestTalkover = useMemo(
+    () => [...annotations].reverse().find(a => a.kind === 'talkover' && a.asset_key) ?? null,
+    [annotations],
+  );
+
   /**
    * Hand this rep to its athlete: this frame with the bar path drawn, the
    * numbers as they stand, and the coach's words, into the athlete's general
@@ -1124,6 +1135,7 @@ export function KinemosViewer() {
             peakHeightCm: repSummary.peakHeightCm,
             grade: grade?.grade ?? null,
             clipUrl: clip.playbackUrl ?? null,
+            talkoverUrl: latestTalkover?.asset_key ? kinemosObjectUrl(latestTalkover.asset_key) : null,
           },
         });
         setShares(current => [share, ...current]);
@@ -1139,7 +1151,7 @@ export function KinemosViewer() {
         setShareBusy(false);
       }
     },
-    [frame, server, clip, repSummary, ensureId, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade],
+    [frame, server, clip, repSummary, ensureId, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade, latestTalkover],
   );
 
   /**
@@ -1195,6 +1207,70 @@ export function KinemosViewer() {
       setExporting(null);
     }
   }, [server, points, clip, massKg, kinematics, repIndex]);
+
+  // ── Talkover ──────────────────────────────────────────────────────────────
+  // The recorder reads the stage through refs, so scrubbing while it runs
+  // needs no re-render of the recorder and no dependency churn here.
+  const liveFrameRef = useRef(frame);
+  liveFrameRef.current = frame;
+  const liveTRef = useRef(currentT);
+  liveTRef.current = currentT;
+  const livePointsRef = useRef(points);
+  livePointsRef.current = points;
+
+  const toggleTalkover = useCallback(async () => {
+    if (talkover) {
+      // Stop, store, list.
+      setTalkoverBusy(true);
+      try {
+        const recording = await talkover.stop();
+        setTalkover(null);
+        const analysisId = await ensureId();
+        if (!analysisId) return;
+        const key = await uploadTalkover(recording.blob, recording.mimeType);
+        const row = await addAnnotation(analysisId, {
+          kind: 'talkover',
+          frameIndex: index,
+          frameT: currentT,
+          assetKey: key,
+          ownerId: getOwnerId(),
+          body: `Talkover — ${formatTalkoverLength(recording.durationS)}${recording.withAudio ? '' : ', no microphone'}`,
+          payload: { durationS: recording.durationS, mimeType: recording.mimeType, withAudio: recording.withAudio },
+        });
+        setAnnotations(current => [...current, row]);
+        setTalkoverNote(
+          recording.withAudio
+            ? `Saved — ${formatTalkoverLength(recording.durationS)}. It can go with the next share.`
+            : `Saved without sound — the microphone was not granted. ${formatTalkoverLength(recording.durationS)} of picture.`,
+        );
+      } catch (e) {
+        setTalkover(null);
+        setTalkoverNote(e instanceof Error ? e.message : 'The talkover could not be saved.');
+      } finally {
+        setTalkoverBusy(false);
+      }
+      return;
+    }
+    if (!server) return;
+    setTalkoverNote(null);
+    try {
+      const caption = [clip?.athleteName, clip?.exerciseName, clip?.date ? formatDateShort(clip.date) : null]
+        .filter(Boolean)
+        .join(' · ');
+      const controller = await startTalkover({
+        width: server.displayWidth,
+        height: server.displayHeight,
+        getFrame: () => (liveFrameRef.current?.canvas as CanvasImageSource | undefined) ?? null,
+        getT: () => liveTRef.current,
+        getPoints: () => livePointsRef.current,
+        caption,
+      });
+      setTalkover(controller);
+      if (!controller.withAudio) setTalkoverNote('Recording the picture only — the microphone was not granted.');
+    } catch (e) {
+      setTalkoverNote(e instanceof Error ? e.message : 'Recording could not start.');
+    }
+  }, [talkover, server, ensureId, index, currentT, clip]);
 
   const removeShare = useCallback(async (shareId: string) => {
     try {
@@ -1809,7 +1885,19 @@ export function KinemosViewer() {
               onExport: () => void exportNow(),
               exporting,
               exportNote,
+              talkoverIncluded: latestTalkover !== null,
             }}
+            talkover={
+              talkoverMimeType() === null
+                ? null
+                : {
+                    recording: talkover !== null,
+                    startedAt: talkover?.startedAt ?? null,
+                    busy: talkoverBusy,
+                    note: talkoverNote,
+                    onToggle: () => void toggleTalkover(),
+                  }
+            }
             measureComplete={measureComplete}
             onSaveMeasurement={() => void saveMeasurement()}
             onClearMeasurement={() => setMeasurePoints([])}

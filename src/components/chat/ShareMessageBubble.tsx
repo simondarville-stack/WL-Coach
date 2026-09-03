@@ -12,7 +12,7 @@
  * it means is the message beside it.
  */
 import { useState } from 'react';
-import { Play } from 'lucide-react';
+import { Mic, Play } from 'lucide-react';
 import type { KinemosShare } from '../../lib/database.types';
 import { formatDateShort, formatDateTimeShort, formatTime24 } from '../../lib/dateUtils';
 import { kinemosObjectUrl } from '../../kinemos/lib/kinemosStorage';
@@ -67,7 +67,7 @@ export function ShareMessageBubble({
   onOpen?: (share: KinemosShare) => void;
 }) {
   const t = THEMES[theme];
-  const [showing, setShowing] = useState<'image' | 'clip' | null>(null);
+  const [showing, setShowing] = useState<'image' | 'clip' | 'talkover' | null>(null);
   const s = share.summary;
   const imageUrl = share.asset_key ? kinemosObjectUrl(share.asset_key) : null;
 
@@ -84,7 +84,7 @@ export function ShareMessageBubble({
   if (s.peakHeightCm !== null) numbers.push({ label: 'Height', value: `${num(s.peakHeightCm, 0)} cm` });
   if (s.grade) numbers.push({ label: 'Grade', value: s.grade });
 
-  const open = (what: 'image' | 'clip') => {
+  const open = (what: 'image' | 'clip' | 'talkover') => {
     setShowing(what);
     onOpen?.(share);
   };
@@ -128,21 +128,38 @@ export function ShareMessageBubble({
             ))}
           </div>
         )}
-        {s.clipUrl && (
-          <button
-            type="button"
-            onClick={() => open('clip')}
-            className={`mt-1.5 inline-flex items-center gap-1 px-1 text-[11px] font-medium ${isOwn ? t.textOwn : t.text} underline-offset-2 hover:underline`}
-          >
-            <Play size={11} />
-            Watch the clip
-          </button>
+        {(s.clipUrl || s.talkoverUrl) && (
+          <div className="flex flex-wrap gap-x-3 mt-1.5">
+            {s.talkoverUrl && (
+              <button
+                type="button"
+                onClick={() => open('talkover')}
+                className={`inline-flex items-center gap-1 px-1 text-[11px] font-medium ${isOwn ? t.textOwn : t.text} underline-offset-2 hover:underline`}
+              >
+                <Mic size={11} />
+                Hear the coach
+              </button>
+            )}
+            {s.clipUrl && (
+              <button
+                type="button"
+                onClick={() => open('clip')}
+                className={`inline-flex items-center gap-1 px-1 text-[11px] font-medium ${isOwn ? t.textOwn : t.text} underline-offset-2 hover:underline`}
+              >
+                <Play size={11} />
+                Watch the clip
+              </button>
+            )}
+          </div>
         )}
         <div className={`text-[9px] mt-1 px-1 text-right ${isOwn ? t.stampOwn : t.stamp}`}>{formatStamp(share.created_at)}</div>
       </div>
       {showing === 'image' && imageUrl && <ImageLightbox src={imageUrl} onClose={() => setShowing(null)} />}
       {showing === 'clip' && s.clipUrl && (
         <VideoLightbox src={s.clipUrl} caption={caption} onClose={() => setShowing(null)} />
+      )}
+      {showing === 'talkover' && s.talkoverUrl && (
+        <VideoLightbox src={s.talkoverUrl} caption={`${caption} · talkover`} onClose={() => setShowing(null)} />
       )}
     </div>
   );

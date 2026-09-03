@@ -12,8 +12,8 @@
 > same ship (§7). **P3e–P3g SHIPPED** — sets and phone footage (§8, 0.85.0),
 > the German analyzer's measures (§9, 0.85.0), sets in the viewer with
 > colour re-acquisition, height charts and the knee mark (§10, 0.86.0).
-> **P3h in progress** — sharing to the athlete and overlay export (§11).
-> The rest of P3 — talkover, sharing to colleagues, the device-profile
+> **P3h in progress** — sharing to the athlete, overlay export and talkover
+> (§11). The rest of P3 — sharing to colleagues, the device-profile
 > calibration tier — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
@@ -817,5 +817,21 @@ The plate outline is not drawn: it is how the numbers were made, not part
 of the lift. `verify/track-clip.html?export=1` writes the file headlessly
 and reads it back with mediabunny to say what it holds.
 
+**Talkover — done.** Design §9: "record microphone + screen (viewer canvas)
+while scrubbing — MediaRecorder-based". The microphone button in NOTES &
+SNAPSHOTS starts a recording; the coach scrubs, steps and talks; the
+square stops it. What is recorded is not the screen but a canvas of its
+own that mirrors the stage — the frame under the playhead and the path as
+far as the bar has got, redrawn every animation frame
+(`src/kinemos/lib/talkover.ts`, the same drawing as the export) — so the
+file is the size of the clip and free of chrome. The microphone rides
+along when granted; refused, the talkover is picture only and says so.
+What MediaRecorder writes is what is stored, in R2 under the rep as a
+`talkover` annotation (the kind the P1 schema already allowed): WebM from
+Chrome and Firefox, MP4 from Safari; no transcoding. It plays from the
+rail, and the next share of the rep carries the latest one — "Hear the
+coach" on the card. Not verified headlessly: MediaRecorder over a canvas
+stream needs a real browser session; the pure parts are tested.
+
 Not in this slice: sharing to colleague coaches (needs the club layer's
-recipient model), talkover.
+recipient model).

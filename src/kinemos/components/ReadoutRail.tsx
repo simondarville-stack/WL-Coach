@@ -13,8 +13,11 @@
  * panels rather than one because they answer three different questions and a
  * coach reads them at different moments.
  */
-import { Camera, Plus, Trash2 } from 'lucide-react';
-import { useState, type CSSProperties } from 'react';
+import { Camera, Mic, Play, Plus, Square, Trash2 } from 'lucide-react';
+import { VideoLightbox } from '../../components/planner/VideoLightbox';
+import { kinemosObjectUrl } from '../lib/kinemosStorage';
+import { formatTalkoverLength } from '../lib/talkover';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Button } from '../../components/ui';
 import type { KinemosAnnotation, KinemosShare } from '../../lib/database.types';
 import { formatDateTimeShort } from '../../lib/dateUtils';
@@ -48,6 +51,9 @@ interface ReadoutRailProps {
   /** Handing this rep to its athlete. Null before there is an analysis to
    *  share. */
   share?: ShareState | null;
+  /** Recording the coach over the scrubbed lift. Absent where the browser
+   *  cannot record. */
+  talkover?: TalkoverState | null;
   onAddNote: (body: string) => void;
   onSnapshot: () => void;
   onDeleteAnnotation: (id: string) => void;
@@ -91,6 +97,18 @@ export interface ShareState {
   onExport: () => void;
   exporting: { done: number; total: number } | null;
   exportNote: string | null;
+  /** Whether the rep has a talkover that the next share will carry. */
+  talkoverIncluded: boolean;
+}
+
+export interface TalkoverState {
+  recording: boolean;
+  /** performance.now() the recording started, for the running clock. */
+  startedAt: number | null;
+  /** Stopping: the file is being stored. */
+  busy: boolean;
+  note: string | null;
+  onToggle: () => void;
 }
 
 export function ReadoutRail({
@@ -111,6 +129,7 @@ export function ReadoutRail({
   kneeMarked = false,
   annotations,
   share = null,
+  talkover = null,
   onAddNote,
   onSnapshot,
   onDeleteAnnotation,
@@ -119,6 +138,16 @@ export function ReadoutRail({
 }: ReadoutRailProps) {
   const [noteDraft, setNoteDraft] = useState('');
   const [shareDraft, setShareDraft] = useState('');
+  const [playingKey, setPlayingKey] = useState<string | null>(null);
+  // A clock for the recording in progress: re-render once a second while it
+  // runs, nothing otherwise.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!talkover?.recording) return;
+    const id = window.setInterval(() => setTick(n => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [talkover?.recording]);
+  const recordedS = talkover?.recording && talkover.startedAt !== null ? (performance.now() - talkover.startedAt) / 1000 : 0;
   const calibrated = metrics.calibrated;
 
   return (
@@ -393,7 +422,11 @@ export function ReadoutRail({
                 <Button size="sm" type="submit" disabled={share.busy}>
                   {share.busy ? 'Sending…' : `Send to ${share.athleteName}`}
                 </Button>
-                <span style={{ ...hint, margin: 0 }}>This frame, the bar path and the numbers, into their coach thread.</span>
+                <span style={{ ...hint, margin: 0 }}>
+                  {share.talkoverIncluded
+                    ? 'This frame, the bar path, the numbers and the latest talkover, into their coach thread.'
+                    : 'This frame, the bar path and the numbers, into their coach thread.'}
+                </span>
               </div>
             </form>
           )}
@@ -452,16 +485,49 @@ export function ReadoutRail({
       <section style={section}>
         <header style={header}>
           <span style={label}>NOTES & SNAPSHOTS</span>
-          <button
-            type="button"
-            onClick={onSnapshot}
-            disabled={snapshotBusy}
-            title="Save this frame with its overlays"
-            style={{ ...iconButton, opacity: snapshotBusy ? 0.5 : 1 }}
-          >
-            <Camera size={13} />
-          </button>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {talkover && (
+              <button
+                type="button"
+                onClick={talkover.onToggle}
+                disabled={talkover.busy}
+                title={
+                  talkover.recording
+                    ? 'Stop the talkover and save it'
+                    : 'Record a talkover: your voice and the lift as you scrub it, saved with this rep'
+                }
+                style={{
+                  ...iconButton,
+                  opacity: talkover.busy ? 0.5 : 1,
+                  color: talkover.recording ? 'var(--color-danger-text)' : undefined,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                {talkover.recording ? <Square size={12} /> : <Mic size={13} />}
+                {talkover.recording && (
+                  <span style={{ fontSize: 'var(--text-micro)', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatTalkoverLength(recordedS)}
+                  </span>
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onSnapshot}
+              disabled={snapshotBusy}
+              title="Save this frame with its overlays"
+              style={{ ...iconButton, opacity: snapshotBusy ? 0.5 : 1 }}
+            >
+              <Camera size={13} />
+            </button>
+          </span>
         </header>
+        {talkover?.recording && (
+          <p style={{ ...hint, color: 'var(--color-danger-text)' }}>Recording — scrub, step and talk. Press the square to stop.</p>
+        )}
+        {talkover?.note && !talkover.recording && <p style={hint}>{talkover.note}</p>}
 
         {annotations.length === 0 && <p style={hint}>Nothing saved for this rep yet.</p>}
         <ul
@@ -500,6 +566,11 @@ export function ReadoutRail({
               <span style={{ flexGrow: 1, lineHeight: 1.35 }}>
                 {a.body || (a.frame_index !== null ? `frame ${a.frame_index + 1}` : '—')}
               </span>
+              {a.kind === 'talkover' && a.asset_key && (
+                <button type="button" onClick={() => setPlayingKey(a.asset_key)} title="Play the talkover" style={iconButton}>
+                  <Play size={12} />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onDeleteAnnotation(a.id)}
@@ -543,6 +614,9 @@ export function ReadoutRail({
           </Button>
         </form>
       </section>
+      {playingKey && (
+        <VideoLightbox src={kinemosObjectUrl(playingKey)} caption="Talkover" onClose={() => setPlayingKey(null)} />
+      )}
     </div>
   );
 }

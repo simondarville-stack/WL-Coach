@@ -1378,6 +1378,8 @@ export interface KinemosShareSummary {
   grade: 'A' | 'B' | 'C' | null;
   /** Where the clip plays from, when the athlete may watch it. */
   clipUrl: string | null;
+  /** The coach talking through the lift, when a talkover was included. */
+  talkoverUrl?: string | null;
 }
 
 /** One analysed rep handed to an athlete (or, later, a colleague or an

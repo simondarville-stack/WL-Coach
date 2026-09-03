@@ -130,6 +130,16 @@ export async function uploadSnapshot(image: Blob): Promise<string> {
   return key;
 }
 
+/** A talkover recording — WebM from Chrome and Firefox, MP4 from Safari; the
+ *  key's extension follows the MIME type so playback picks the right
+ *  demuxer. */
+export async function uploadTalkover(media: Blob, mimeType: string): Promise<string> {
+  const ext = /mp4/.test(mimeType) ? 'mp4' : 'webm';
+  const key = `${crypto.randomUUID()}.${ext}`;
+  await put(key, media);
+  return key;
+}
+
 /** Remove an object. Idempotent worker-side, and best-effort here: an
  *  orphaned object is a wasted few megabytes, while a throw would leave the
  *  caller unable to delete the row it belongs to. */
