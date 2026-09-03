@@ -63,6 +63,8 @@ export interface GrayImage {
 
 /** Where frames come from. The viewer adapts the frame server to this; the
  *  tests hand it synthetic images. */
+import { medianInterval } from './signal';
+
 export interface FrameSource {
   frameCount: number;
   timestamps: readonly number[];
@@ -333,6 +335,15 @@ export async function trackDirection(
   options: TrackOptions = {},
 ): Promise<TrackResult> {
   const opts = { ...DEFAULT_TRACK_OPTIONS, ...options };
+  // The search radius follows the physics unless the caller sets it. A bar
+  // end reaches about 3 m/s; on a plate of radius R px (45 cm) at f frames a
+  // second that is 300·2R/(45·f) ≈ 13·R/f px per frame, plus a margin for
+  // the acceleration into the second pull. 14 px covers a 50 fps, 26 px
+  // plate; a 30 fps phone clip with an 85 px plate needs 40.
+  if (options.searchRadiusPx === undefined) {
+    const fps = 1 / Math.max(1e-3, medianInterval(source.timestamps));
+    opts.searchRadiusPx = Math.max(DEFAULT_TRACK_OPTIONS.searchRadiusPx, Math.ceil((15 * opts.templateRadiusPx) / fps));
+  }
   const offsets = annulusOffsets(
     opts.templateRadiusPx,
     opts.innerRadiusFraction,
@@ -358,6 +369,7 @@ export async function trackDirection(
   ];
   const lowConfidenceIndices: number[] = [];
   let consecutiveMisses = 0;
+  let lowRun = 0;
   let gaveUp = false;
 
   const total =
@@ -388,14 +400,35 @@ export async function trackDirection(
     });
 
     if (match.score < opts.minConfidence) {
+      // Reported either way — the coach sees where the tracker was unsure.
       lowConfidenceIndices.push(index);
-      consecutiveMisses++;
-      if (consecutiveMisses >= opts.giveUpAfter) {
+      // A MISS, the thing that ends a track, is a poor match that ALSO landed
+      // far from where the bar was heading. A plate blurred through the
+      // second pull of a 30 fps clip correlates at 0,3–0,4 for ten frames in
+      // a row while moving exactly as predicted; giving up on the score alone
+      // threw those reps away. A poor match that is at least plausible does
+      // not count against the track — but it does not clear the count
+      // either: only a confident match does, so a lost template wandering
+      // inside its search window still runs out of patience.
+      if (predictionErrorPx > 0.35 * radius) {
+        consecutiveMisses++;
+        if (consecutiveMisses >= opts.giveUpAfter) {
+          gaveUp = true;
+          break;
+        }
+      }
+      // And a template that has not matched confidently for a long while is
+      // lost whatever its motion looks like — sitting on a fan behind the
+      // platform is perfectly plausible motion. A blurred pull is over in
+      // fifteen frames; four times the patience is a second at 30 fps.
+      lowRun++;
+      if (lowRun >= 4 * opts.giveUpAfter) {
         gaveUp = true;
         break;
       }
     } else {
       consecutiveMisses = 0;
+      lowRun = 0;
     }
 
     options.onProgress?.(step, Math.max(1, total));

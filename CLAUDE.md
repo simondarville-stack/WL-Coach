@@ -95,7 +95,16 @@ All modules are **active** — nothing is currently disabled or hidden:
   calibration (the plate outline gives scales, never which way is up), a
   timing repair for mis-stamped frames before resampling
   (`src/kinemos/engine/timing.ts`), per-frame re-centring of the track on the
-  plate outline, and a peak-stability factor in the grade.
+  plate outline, and a peak-stability factor in the grade — and, from the
+  first phone footage of whole sets (`docs/KINEMOS_P3_PLAN.md` §8): a
+  tracker whose search radius follows the physics of the clip and that
+  survives a blurred second pull, and `src/kinemos/engine/reps.ts`, which
+  cuts a track of a set into its reps from rests and rises alone.
+  The metric set includes the German Weightlifting Analyzer's measures
+  (V1/V2/Vmax/Vmin, t_turn, S_vmax/S_max/S_fly/S_remain/S_sit/S_fall, F1–Fbr
+  as % of load, PSK) as `AnalyzerMetrics` in `engine/phases.ts` — from
+  Simon's 2018 DTU report, P3 plan §9 — and `engine/reps.ts` cuts a set into
+  reps.
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports, and it never imports `cv/`. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
   in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and

@@ -6,6 +6,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { STORED_METRICS_SCHEMA } from '../../engine/metricCatalogue';
 import type { KinemosLiftRecord } from '../../lib/analysisAdapter';
 import { TrendsView } from '../TrendsView';
 
@@ -29,7 +30,7 @@ function rep(over: Partial<KinemosLiftRecord> & { analysisId: string }): Kinemos
     gradeErrorMs: 0.02,
     phaseSetId: 'default',
     isReference: false,
-    schema: 1,
+    schema: STORED_METRICS_SCHEMA,
     analysedAt: '2026-08-10T10:00:00Z',
     values: { peakVelocity: 1.8, secondPull: 1.8, transitionLoss: 0.1, turnover: 0.5 },
     ...over,
@@ -95,7 +96,7 @@ describe('TrendsView', () => {
       // After the refresh the stale rep comes back with a number.
       return loads === 1
         ? records
-        : records.map(r => (r.analysisId === 'r3' ? { ...r, schema: 1, values: { peakVelocity: 1.78 } } : r));
+        : records.map(r => (r.analysisId === 'r3' ? { ...r, schema: STORED_METRICS_SCHEMA, values: { peakVelocity: 1.78 } } : r));
     });
     const refresh = vi.fn(async (stale: readonly KinemosLiftRecord[]) => ({
       refreshed: stale.map(r => r.analysisId),

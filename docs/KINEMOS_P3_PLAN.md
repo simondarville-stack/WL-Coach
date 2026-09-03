@@ -499,3 +499,127 @@ MP4 directly.
 - **Re-rendering a stabilised clip.** The points are corrected, the picture
   is not; a coach watching a handheld clip still sees it move.
 
+
+## 8. P3e — Sets, and the first phone footage
+
+Three Messenger clips of Caroline's snatch doubles — 576×1024, 30 fps,
+phone behind the lifter — were the first whole sets through the pipeline,
+and the first footage that was not a tripod at 50 fps. They broke three
+things and paid for the fixes (`docs/KINEMOS_ACCURACY_STUDY.md` §3.7–3.8).
+
+### What broke
+
+- **The tracker's search radius** was a fixed 14 px; the bar moves 40 px a
+  frame on this footage. It is now derived from the plate's size on screen
+  and the clip's frame rate (`engine/tracker.ts`).
+- **Giving up** counted a blurred plate as a lost one and ended every rep
+  before the catch. A miss now needs an implausible jump as well as a poor
+  match; a long run of poor matches still ends the track.
+- **A double is two reps and a drop.** The tracker loses the plate on the
+  drop, and one track from one click gave the first rep and garbage. Two
+  pieces: `engine/reps.ts` cuts a track into reps from rests and rises alone
+  (a rest is slow AND on its local floor, so a phone that moved between reps
+  and a pause at the knee are both handled; a step faster than any barbell
+  ends a rep where the tracker lost it), and the harness's `?reps=1` mode
+  finds the plate again after a loss — round is not enough, the candidate
+  must correlate with the set's own template, because the fan behind this
+  platform is round — tracks on, and calibrates each rep on the outline at
+  its own rest.
+
+### What it gives, from one click on the first frame
+
+| | rep 1 | rep 2 | own-rest scale vs the set's |
+| --- | --- | --- | --- |
+| Set 1 | 2,29 m/s · 136 cm | 2,33 m/s · 129 cm | −4 % / rejected (−14 %) |
+| Set 2 | 2,31 m/s · 134 cm | 2,32 m/s · 136 cm | −1 % / −1 % |
+| Set 3 | 2,37 m/s · 138 cm | 2,27 m/s · 129 cm | −1 % / +2 % |
+
+Every peak stable across cutoffs to within 1 %, every rep found without a
+frame window set by hand. Against the same reps measured earlier with
+hand-set windows and per-rep plate finds (2,39/2,39, 2,33/2,25, 2,40/2,20)
+the differences are 1–4 %, and all of them are the scale: an 80 px plate
+seen obliquely with its thickness and the discs behind it in view is
+outlined to ±4 % depending on the frame, which is the accuracy floor for
+this kind of footage. Filming from the side, closer, and at the phone's
+native quality rather than a Messenger copy would each buy some of it back.
+
+### Not in P3e
+
+- **The viewer does not yet split sets.** The engine and the harness do;
+  the viewer still tracks one rep from one anchor. Wiring `splitReps` and
+  the re-acquisition into KinemosViewer, with a rep picker, is the next
+  slice.
+- **Re-acquisition mid-flight.** A plate lost during a pull (the fan case)
+  is found again only at the next rest. A colour segmentation of
+  competition bumpers would find it in the air.
+- **A dense-flow tracker** was tried and is not better on this footage
+  (study §3.7).
+
+## 9. P3f — The German analyzer's measures
+
+Simon's 2018 DTU report (*Measurement Systems for Performance Training in
+Olympic Weightlifting*, §3.1) tabulates what the German Weightlifting
+Analyzer 3.0 reads off a snatch or clean, from the BVDG teaching material,
+and what a 40-year coach (Peter Käks) ranked as mattering: Vmax, the x–y
+path, t_turn, S_max, S_sit. KinEMOS had the first two and half of the rest
+under other names. `AnalyzerMetrics` in `engine/phases.ts` now carries the
+full set in EMOS units, computed from the phase spans the coach can already
+correct:
+
+| measure | read as |
+| --- | --- |
+| V1, V2, Vmax, Vmin | peak in the first pull; minimum through the transition; the overall peak; the lowest velocity after it |
+| t_turn | Vmax → Vmin |
+| S_vmax, S_max, S_fly | height at Vmax; the apex (the catch phase's start, or the first stop after Vmax); their difference |
+| S_remain | S_fly minus the ballistic rise Vmax²/2g, in cm and as a share of S_max |
+| S_sit, S_fall | the lowest height in the catch; S_max minus it |
+| F1, F2, F3, Fbr | vertical force as % of load — (1 + a/g)·100, so no mass is needed — peak in the first pull, minimum through the transition, peak in the second pull, peak in the catch |
+| PSK | load × Vmax, N·s, the material's "power"; null without a mass |
+
+Heights are above the bar's first mark; the material's "from ground" values
+are these plus the plate's radius. The jerk table (report Figure 10) needs a
+dip–drive–split phase model and is not done. The measures are in the metric
+catalogue, so the comparison table, the trends view and the Analysis builder
+list them; the viewer shows them in an ANALYZER section of the metrics rail;
+the stored-metrics schema is 2 and older rows recompute on demand.
+
+### Three rules the phone footage forced
+
+- **A guessed edge yields no analyzer number.** V1, V2, F1–F3 read off a
+  transition the engine placed by proportion would be numbers about the
+  fallback rule. They are null unless the edge was detected or set by the
+  coach (P3 plan §2 decision 3, applied to the analyzer).
+- **The transition from acceleration when velocity has no dip.** Five of
+  Caroline's six reps show a shoulder, not a trough: the bar keeps rising
+  through the knee, only slower. In acceleration the double knee bend is
+  unmistakable — a peak as the first pull drives, a trough of 1,3–1,7 m/s²
+  as the knees come under, a higher peak as the hips open. `findUnweighting`
+  reads the transition from that when `findFirstVelocityPeak` finds nothing,
+  the boundaries carry the rules `acceleration-peak` / `acceleration-trough`
+  so the coach knows which signature placed them, the threshold is the
+  coach's (`minUnweightingMs2`, default 1 m/s²), and V2 is the velocity where
+  the second pull starts rather than the span's minimum, which for a
+  monotone velocity would be V1 again.
+- **A rep ends in the catch, not at the apex.** `splitReps` now runs each
+  rep on to the deepest point of the catch — stopping at a recovery, at the
+  bar coming to rest, or at a gap in the samples — so Vmin, t_turn, S_sit,
+  S_fall and Fbr have the frames they need. `RepSegment` carries `apexT`
+  and `catchT` separately.
+
+### What Caroline's doubles read (30 fps phone clips, camera behind)
+
+| | V1 | V2 | Vmax | Vmin | t_turn | S_vmax | S_max | S_fly | S_remain | S_sit | S_fall | F1 | F2 | F3 | Fbr |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Set 1 rep 1 | 1,05 | 1,10 | 2,29 | −0,82 | 0,49 s | 92 | 130 | 38 | 9 % | 96 | 34 | 131 | 114 | 149 | 122 |
+| Set 1 rep 2 | 1,02 | 1,10 | 2,33 | −0,79 | 0,59 s | 89 | 129 | 40 | 9 % | 106 | 23 | 132 | 110 | 153 | 139 |
+| Set 2 rep 1 | 0,96 | 1,07 | 2,31 | −0,73 | 0,40 s | 91 | 133 | 43 | 12 % | 103 | 31 | 128 | 114 | 149 | 120 |
+| Set 2 rep 2 | 0,82 | 0,97 | 2,32 | −0,80 | 0,43 s | 90 | 136 | 46 | 13 % | 105 | 31 | 130 | 113 | 154 | 124 |
+| Set 3 rep 1 | — | — | 2,37 | −0,82 | 0,40 s | 96 | 136 | 40 | 9 % | 109 | 26 | — | — | — | 133 |
+| Set 3 rep 2 | 0,89 | 0,97 | 2,27 | −0,79 | 0,40 s | 95 | 134 | 39 | 9 % | 121 | 13 | 127 | 110 | 158 | 123 |
+
+Velocities in m/s, heights in cm above the start, forces in % of load. The
+consistency across reps is the point: F3 within 149–158 %, S_remain 9–13 %,
+Vmin within 0,1 m/s. The forces are second derivatives of a 30 fps track
+through a 6 Hz filter and should be read to about ±10 % of load; on 60 fps
+or better they tighten. Set 3 rep 1's transition was not found on this
+footage.
