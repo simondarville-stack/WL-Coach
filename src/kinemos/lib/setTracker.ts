@@ -125,6 +125,11 @@ const REACQUIRE_MIN_COLOUR = 0.4;
 const FLIGHT_WINDOW_S = 1.5;
 const FLIGHT_STEP = 2;
 const FLIGHT_MIN_FILL = 0.3;
+/** How many frames of the plate's last motion to carry forward when
+ *  guessing where it went. A bar changes direction within a few frames. */
+const FLIGHT_CARRY_FRAMES = 6;
+/** A hit the set's template cannot recognise at all is not the plate. */
+const SEED_MIN_SCORE = 0.25;
 const REST_FIT_FRAMES = 10;
 const REST_FIT_TOLERANCE = 0.08;
 const MAX_JOINS = 40;
@@ -198,40 +203,64 @@ export async function trackSet(
     let attempts = 0;
     while (gaveUp && attempts < MAX_JOINS) {
       attempts++;
-      // A tracker that gave up spent its last frames unsure. Which of them
-      // are still the bar depends on WHY it gave up: after a run of poor
-      // matches that jumped — misses — the bar was lost at the first jump,
-      // and the plausible, merely blurred frames before it stay; after a
-      // long run of poor matches that never jumped, it was sitting on
-      // something that is not the bar (the fan) and the whole run goes.
+      // A tracker that gave up spent its last frames unsure. A blurred plate
+      // in the second pull is unsure and still the bar; a fan the template
+      // settled on is unsure and not. Colour tells them apart: the unsure
+      // tail is kept up to the first frame that is not on the plate's
+      // colour, and cut from there. Without a colour to check, the tail is
+      // cut at the first jump the tracker made — a miss — and kept whole
+      // when it never jumped, as the single-rep tracker keeps it.
       let tail = all.length;
       while (tail > 1 && all[tail - 1].confidence < minConfidence) tail--;
       if (tail < all.length) {
-        let cut = tail;
-        for (let i = tail; i < all.length; i++) {
-          if (all[i].predictionErrorPx > 0.35 * searchRadiusPx) {
-            cut = i;
-            break;
+        let cut = all.length;
+        if (colour) {
+          for (let i = tail; i < all.length; i++) {
+            const onPlate = colourMatchFraction(
+              await source.getRgba(all[i].index),
+              { ...options.ellipse, cx: all[i].x, cy: all[i].y },
+              colour,
+            );
+            if (onPlate < REACQUIRE_MIN_COLOUR) {
+              cut = i;
+              break;
+            }
           }
-          if (i === all.length - 1) cut = tail;
+        } else {
+          for (let i = tail; i < all.length; i++) {
+            if (all[i].predictionErrorPx > 0.35 * searchRadiusPx) {
+              cut = i;
+              break;
+            }
+          }
         }
-        all.length = cut;
+        if (cut < all.length) {
+          log(`frames ${all[cut].index}–${all[all.length - 1].index} dropped: the tracker was ${colour ? 'not on the plate’s colour' : 'jumping'} there`);
+          all.length = cut;
+        }
       }
       const lastGood = all[all.length - 1];
       const startAt = Math.max(lastGood.index + 1, searchFrom);
       let found: { at: number; x: number; y: number; how: SetJoin['how'] } | null = null;
 
       // 1. In flight, by colour: the frames just after the loss, near where
-      //    the plate was heading, with a reach that grows with the frames
-      //    since it was last seen.
+      //    the plate was HEADING — its last motion carried on, for a few
+      //    frames at most — with a reach that grows with the frames since it
+      //    was last seen but never so far that the plate on the far end of
+      //    the bar, the same colour, is the nearest patch.
       if (colour) {
+        const before = all.length > 1 ? all[all.length - 2] : lastGood;
+        const frames = Math.max(1, lastGood.index - before.index);
+        const vx = (lastGood.x - before.x) / frames;
+        const vy = (lastGood.y - before.y) / frames;
         const until = Math.min(total - 1, lastGood.index + Math.round(FLIGHT_WINDOW_S * fps));
         for (let at = startAt; at <= until; at += FLIGHT_STEP) {
           report(at);
           const elapsed = at - lastGood.index;
-          const reach = Math.min(4 * R, 1.2 * R + speedPxPerFrame * elapsed);
+          const carry = Math.min(elapsed, FLIGHT_CARRY_FRAMES);
+          const reach = Math.min(2 * R, 1.2 * R + 0.5 * speedPxPerFrame * elapsed);
           const blob = findColourBlob(await source.getRgba(at), colour, {
-            near: { x: lastGood.x, y: lastGood.y },
+            near: { x: lastGood.x + vx * carry, y: lastGood.y + vy * carry },
             searchRadiusPx: reach,
             radiusPx: R,
             minFill: FLIGHT_MIN_FILL,
@@ -302,10 +331,11 @@ export async function trackSet(
         const match = searchAround(await source.getGray(from), template, found.x, found.y, R * 0.5);
         if (match.score > -1) seed = match;
       }
-      if (seed.score <= -1) {
+      if (seed.score < SEED_MIN_SCORE) {
         // The plate is too close to the frame's edge for the template to sit
-        // on it. Not a join; look on from the next frame.
-        log(`frame ${from}: the tracker could not take hold at (${found.x.toFixed(0)}, ${found.y.toFixed(0)}) — looking on`);
+        // on it, or what was found does not look like the plate at all (the
+        // far end of the bar, seen smaller). Not a join; look on.
+        log(`frame ${from}: the tracker could not take hold at (${found.x.toFixed(0)}, ${found.y.toFixed(0)}) — template scores ${seed.score.toFixed(2)}, looking on`);
         continue;
       }
       const sub: FrameSource = {
