@@ -35,6 +35,12 @@ export interface ComparisonCandidate {
    *  preselected, because "how does this compare to the good one" is the
    *  question the reference exists to answer. */
   isReference: boolean;
+  /** A model lift from the club's library (P5b): an exemplar offered whoever
+   *  the athlete is. Listed after the athlete's own lifts, because "how does
+   *  this compare to me last month" is asked far more often than "how does
+   *  this compare to a textbook". */
+  isModel: boolean;
+  modelLabel: string | null;
 }
 
 /** A loaded comparison subject: everything needed to draw and to tabulate. */
@@ -75,22 +81,31 @@ export async function findComparable(
       continue;
     }
     const clip = byKey.get(`${analysis.source_kind}:${analysis.source_id}`);
-    if (!clip || clip.athleteId !== athleteId) continue;
+    if (!clip) continue;
+    const isModel = analysis.is_model === true;
+    // The athlete's own lifts, plus the club's model lifts whoever they
+    // belong to — a model is an exemplar for everybody or it is not a model.
+    if (clip.athleteId !== athleteId && !isModel) continue;
     candidates.push({
       analysis,
       clip,
       sameExercise:
         !!exerciseName && (clip.exerciseName ?? '').toLowerCase() === exerciseName.toLowerCase(),
-      isReference: analysis.is_reference === true,
+      isReference: analysis.is_reference === true && clip.athleteId === athleteId,
+      isModel,
+      modelLabel: analysis.model_label ?? null,
     });
   }
 
-  // Same exercise first, its reference lift ahead of the rest, then newest. A
-  // coach comparing a snatch to a snatch is the common case; comparing a
-  // snatch to a clean is occasionally the point.
+  // Same exercise first; within that, the athlete's own reference, then their
+  // own other lifts, then the club's models. "How does this compare to me
+  // last month" is asked far more often than "how does this compare to a
+  // textbook", and the textbook should not push the coach's own history down
+  // the list.
   return candidates.sort((a, b) => {
     if (a.sameExercise !== b.sameExercise) return a.sameExercise ? -1 : 1;
     if (a.isReference !== b.isReference) return a.isReference ? -1 : 1;
+    if (a.isModel !== b.isModel) return a.isModel ? 1 : -1;
     return (b.clip.date ?? '').localeCompare(a.clip.date ?? '');
   });
 }

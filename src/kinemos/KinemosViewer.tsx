@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Minus, Ruler, Star, TrendingUp, Triangle } from 'lucide-react';
+import { ChevronLeft, Circle, Columns2, Crosshair, GraduationCap, Hand, Minus, Ruler, Star, TrendingUp, Triangle } from 'lucide-react';
 import { ErrorState, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
 import { getOwnerId } from '../lib/ownerContext';
@@ -183,6 +183,8 @@ export function KinemosViewer() {
   // straight through on toggle rather than via the debounced save: it is one
   // deliberate act, not a drag, and it has to clear the previous holder.
   const [isReference, setIsReference] = useState(false);
+  const [isModel, setIsModel] = useState(false);
+  const [modelLabel, setModelLabel] = useState<string | null>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
   // The OpenCV assists: which is running, and what the last one said.
   const [assist, setAssist] = useState<{ busy: 'find' | 'snap' | null; note: string | null }>({
@@ -294,6 +296,8 @@ export function KinemosViewer() {
     setCoachBoundaries(null);
     setCamera('unknown');
     setIsReference(false);
+    setIsModel(false);
+    setModelLabel(null);
     setAssist({ busy: null, note: null });
     setStabiliseNote(null);
     // The logged load is the best first guess at bar mass, and it is already on
@@ -324,6 +328,8 @@ export function KinemosViewer() {
         }
         if (bundle.analysis.camera) setCamera(bundle.analysis.camera);
         setIsReference(bundle.analysis.is_reference === true);
+        setIsModel(bundle.analysis.is_model === true);
+        setModelLabel(bundle.analysis.model_label ?? null);
         // Only a set the coach has actually touched is restored. Stored
         // proposals would go stale the moment the track changed, and silently
         // re-showing an old engine guess as if it were current is worse than
@@ -1664,6 +1670,38 @@ export function KinemosViewer() {
     }
   };
 
+  /**
+   * Mark this rep as a model lift for the whole club (P5b) — an exemplar
+   * offered when comparing ANY athlete, not only its own. Unlike the
+   * reference lift there is no one-per-anything rule: a club may keep
+   * several models of one lift, and the label is what tells them apart.
+   */
+  const toggleModel = async () => {
+    if (referenceBusy) return;
+    const next = !isModel;
+    setReferenceBusy(true);
+    try {
+      const analysisId = await ensureId();
+      if (!analysisId) return;
+      const label = next
+        ? window.prompt(
+            'What is this a model of? A model lift without a name is an anonymous bar path.',
+            modelLabel ?? [clip.athleteName, clip.exerciseName].filter(Boolean).join(' · '),
+          )
+        : null;
+      // A cancelled prompt cancels the marking; an empty one does not, because
+      // a coach who cleared the box meant to leave it unnamed.
+      if (next && label === null) return;
+      await saveAnalysisState(analysisId, { isModel: next, modelLabel: next ? label : null });
+      setIsModel(next);
+      setModelLabel(next ? label : null);
+    } catch {
+      setSaveError('The model lift could not be saved.');
+    } finally {
+      setReferenceBusy(false);
+    }
+  };
+
   const title = clip.exerciseName ?? 'Clip';
   const subtitle = [
     clip.athleteName,
@@ -1803,6 +1841,42 @@ export function KinemosViewer() {
           >
             <Star size={12} fill={isReference ? 'currentColor' : 'none'} />
             {isReference ? 'REFERENCE' : 'SET REFERENCE'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleModel()}
+            disabled={!comparable || referenceBusy}
+            aria-pressed={isModel}
+            title={
+              !comparable
+                ? 'A model lift needs a calibrated, marked lift'
+                : isModel
+                  ? `A model lift for the whole club${modelLabel ? `: “${modelLabel}”` : ''}. It is offered when comparing any athlete. Press to unmark.`
+                  : 'Make this a model lift for the whole club — an exemplar offered when comparing any athlete, not only this one.'
+            }
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 24,
+              padding: '0 9px',
+              border: '1px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: isModel ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+              color: comparable
+                ? isModel
+                  ? 'var(--color-accent)'
+                  : 'var(--color-text-primary)'
+                : 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-micro)',
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              cursor: comparable ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <GraduationCap size={12} />
+            {isModel ? 'MODEL' : 'SET MODEL'}
           </button>
           <button
             type="button"

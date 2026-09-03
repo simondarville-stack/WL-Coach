@@ -113,8 +113,8 @@ All modules are **active** — nothing is currently disabled or hidden:
   mark (KNEE tool) that checks the phase edges against the coach's eye.
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports, and it never imports `cv/`. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
-  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md`, `_P3_PLAN.md`
-  and `_P4_PLAN.md`.
+  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md`, `_P3_PLAN.md`,
+  `_P4_PLAN.md` and `_P5_PLAN.md`.
   From 0.87.0 (P3 plan §11–§12, P4 plan): **sharing** — a rep handed to its
   athlete as a card in their coach thread, to a colleague coach via "Shared
   with you" on the library, as an mp4/WebM with the bar path burned in
@@ -129,6 +129,20 @@ All modules are **active** — nothing is currently disabled or hidden:
   analysis** (`lib/autoAnalyse.ts`) — whose `persistRep` is the single
   definition of a stored rep. The learned tracker of design §6.2 tier 3 is
   deliberately not built; P4 plan §5 says what would have to be true first.
+  From 0.88.0 (P5 plan): **load–velocity profiles**
+  (`engine/loadVelocity.ts`) — expected velocity at a load, the load for a
+  target velocity, a 1RM estimated from submaximal work, and velocity loss
+  measured from the best rep of a set, with explicit refusals rather than a
+  confident line through four points; a **model-lift library** (`is_model` /
+  `model_label` on an analysis) for comparing against a lift that is simply
+  correct, alongside P3c's per-athlete reference lift; **live mode** at
+  `/kinemos/live` (`engine/liveReps.ts`, a three-state machine fed one
+  sample at a time) — which answers design §13 open question 4 as a VBT-unit
+  readout rather than live path drawing, stores nothing and grades nothing;
+  and **pre-analysed arrivals** (`lib/arrivals.ts`) running the P4c pipeline
+  on import from the local file and on a stoppable backlog sweep, since a
+  pure client-side SPA has no server to pre-analyse on. Lifter pose tracking
+  is deliberately not built; P5 plan §6 says why.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver)
   — open them under `npm run dev`; `npm run bench` scores engine variants.

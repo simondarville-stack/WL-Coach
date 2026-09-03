@@ -47,6 +47,8 @@ function rep(over: Partial<KinemosLiftRecord> & { analysisId: string }): Kinemos
     gradeErrorMs: 0.03,
     phaseSetId: 'default',
     isReference: false,
+    isModel: false,
+    modelLabel: null,
     schema: 1,
     analysedAt: '2026-06-02T10:00:00Z',
     values: { peakVelocity: 1.7, transitionLoss: 0.12, loopWidth: 6 },

@@ -211,6 +211,10 @@ export function ComparisonView({
                 c.clip.loadKg !== null ? `${num(c.clip.loadKg, 0)} kg` : null,
                 c.analysis.rep_index > 1 ? `rep ${c.analysis.rep_index}` : null,
                 c.isReference ? '★ reference' : null,
+                // A model lift is somebody else's, so it says whose and what
+                // it is a model of — comparing against an unnamed stranger's
+                // bar path teaches nothing.
+                c.isModel ? `🎓 ${c.modelLabel ?? c.clip.athleteName ?? 'model'}` : null,
                 c.sameExercise ? null : '(different exercise)',
               ]
                 .filter(Boolean)

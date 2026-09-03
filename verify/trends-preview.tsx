@@ -69,6 +69,8 @@ function season(): KinemosLiftRecord[] {
           gradeErrorMs: grade === 'A' ? 0.02 : grade === 'B' ? 0.045 : grade === 'C' ? 0.08 : null,
           phaseSetId: 'default',
           isReference: false,
+          isModel: false,
+          modelLabel: null,
           schema: stale ? 0 : 1,
           analysedAt: `${date}T18:00:00Z`,
           values: stale
@@ -111,6 +113,8 @@ function season(): KinemosLiftRecord[] {
         gradeErrorMs: 0.05,
         phaseSetId: 'default',
         isReference: false,
+        isModel: false,
+        modelLabel: null,
         schema: 1,
         analysedAt: `${date}T18:00:00Z`,
         values: {
