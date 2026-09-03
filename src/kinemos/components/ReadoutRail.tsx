@@ -59,6 +59,11 @@ export interface TrackingState {
   correctionCount: number;
   onTrack: () => void;
   onNextUncertain: () => void;
+  /** Track the whole clip as a set and make a rep of each lift. Absent
+   *  until there is an anchor and a calibration to size the plate by. */
+  onTrackSet?: () => void;
+  /** What the last set track said, in the coach's terms. */
+  setNote?: string | null;
 }
 
 export function ReadoutRail({
@@ -227,6 +232,19 @@ export function ReadoutRail({
                     ? 'Correct a frame by marking it, then re-track: everything either side is redone from your point.'
                     : 'One mark is the anchor. The tracker fills in the rest of the clip, forwards and backwards.'}
               </p>
+              {tracking.onTrackSet && (
+                <div style={{ marginTop: 'var(--space-sm)' }}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={tracking.onTrackSet}
+                    title="Track the whole clip as a set: follow the plate through every rep, find it again after each drop, cut the track into reps at their rests, and make a rep of each with its own calibration. Loads OpenCV the first time, about 13 MB."
+                  >
+                    Track the set
+                  </Button>
+                  {tracking.setNote && <p style={hint}>{tracking.setNote}</p>}
+                </div>
+              )}
             </>
           )}
 

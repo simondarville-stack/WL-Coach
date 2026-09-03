@@ -45,6 +45,7 @@ import { ComparisonView } from './components/ComparisonView';
 import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
 import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack } from './lib/assists';
+import { trackSet } from './lib/setTracker';
 import {
   findComparable,
   loadComparisonSubject,
@@ -162,6 +163,7 @@ export function KinemosViewer() {
    *  describes how the next find or snap runs, and the outline it produces is
    *  what gets stored. */
   const [plateShape, setPlateShape] = useState<'ellipse' | 'circle'>('ellipse');
+  const [setNote, setSetNote] = useState<string | null>(null);
   const [recentreProgress, setRecentreProgress] = useState<{ done: number; total: number } | null>(null);
   const [recentreNote, setRecentreNote] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
@@ -685,6 +687,109 @@ export function KinemosViewer() {
     },
     [server],
   );
+
+  /**
+   * Track the whole clip as a set and make a rep of each lift.
+   *
+   * The anchor is the mark nearest the playhead, as for TRACK. The set
+   * tracker follows the plate through every rep, cuts the joined track into
+   * reps at their rests and calibrates each on its own rest outline. Each rep
+   * is then persisted as what the rep model already is — an analysis row per
+   * rep index with its own track, calibration and cached metrics — so the
+   * rep picker, the comparison and the trends see them with no change. Rep
+   * 1 replaces the rep the coach is in; later reps take the next indices.
+   */
+  const trackSetNow = useCallback(async () => {
+    if (!server || !source || !id || currentT === null || !ellipse) return;
+    const anchorPoint = points.reduce<KinemosTrackPoint | null>(
+      (best, p) =>
+        best === null || Math.abs(p.t - currentT) < Math.abs(best.t - currentT) ? p : best,
+      null,
+    );
+    if (!anchorPoint) return;
+    setTrackProgress({ done: 0, total: server.frameCount });
+    setSetNote(null);
+    try {
+      const result = await trackSet(
+        server,
+        { index: server.nearestIndex(anchorPoint.t), x: anchorPoint.x, y: anchorPoint.y },
+        {
+          ellipse,
+          plateDiameterCm,
+          onProgress: (done, total) => setTrackProgress({ done, total }),
+        },
+      );
+      if (result.reps.length === 0) {
+        setSetNote(
+          result.points.length < 8
+            ? 'The tracker could not get hold of the bar from that mark.'
+            : 'No rep found: nothing in the track rises 40 cm from a rest. A clip that starts mid-pull is one rep — use TRACK for it.',
+        );
+        return;
+      }
+      // Persist every rep. Rep k takes index (repIndex + k), so the current
+      // analysis becomes rep 1 and a set tracked twice lands on the same rows.
+      const owner = getOwnerId();
+      const indices: number[] = [];
+      let firstApplied = false;
+      for (const rep of result.reps) {
+        const index = repIndex + rep.rep - 1;
+        const analysis = await ensureAnalysis(
+          source,
+          id,
+          index,
+          { frameWidth: server.displayWidth, frameHeight: server.displayHeight, rotation: server.rotation },
+          owner,
+        );
+        await saveTrack(analysis.id, rep.points, { tier: 'assisted', ownerId: owner });
+        await saveCalibration(
+          analysis.id,
+          rep.ellipse,
+          rep.calibration,
+          { index: server.nearestIndex(rep.segment.liftOffT), t: rep.segment.liftOffT },
+          owner,
+        );
+        const series = computeKinematics(rep.points, rep.calibration, { massKg, filter: DEFAULT_FILTER });
+        if (series) {
+          const proposal = proposePhases(series);
+          const metrics = computeLiftMetrics(series, spansFrom(proposal.boundaries, DEFAULT_PHASE_SET));
+          await saveAnalysisState(analysis.id, {
+            massKg,
+            massSource,
+            camera,
+            phaseBoundaries: proposal.boundaries,
+            phaseSetId: 'default',
+            metrics: toStoredMetrics(metrics, summariseRep(series)),
+          });
+        }
+        indices.push(index);
+        if (!firstApplied) {
+          // Rep 1 is the one on screen: take it into the viewer directly,
+          // already saved, rather than round-tripping through a reload.
+          firstApplied = true;
+          analysisIdRef.current = analysis.id;
+          dirtyRef.current = false;
+          setPoints(rep.points);
+          setEllipse(rep.ellipse);
+          setUncertainIndices(rep.lowConfidenceIndices);
+          setTrackerTier('assisted');
+          setCorrectionCount(0);
+        }
+      }
+      setRepIndices(current => [...new Set([...current, ...indices])].sort((a, b) => a - b));
+      const own = result.reps.filter(r => r.ownCalibration).length;
+      setSetNote(
+        `${result.reps.length} rep${result.reps.length === 1 ? '' : 's'} found` +
+          (result.joins > 0 ? `, the plate found again ${result.joins} time${result.joins === 1 ? '' : 's'} after a drop` : '') +
+          `; ${own} calibrated at ${own === 1 ? 'its' : 'their'} own rest` +
+          (result.lostAtEnd ? '. The tracker lost the bar at the end and did not find it again.' : '.'),
+      );
+    } catch (e) {
+      setSetNote(e instanceof Error ? e.message : 'Tracking the set failed — the clip could not be read frame by frame.');
+    } finally {
+      setTrackProgress(null);
+    }
+  }, [server, source, id, currentT, ellipse, points, plateDiameterCm, repIndex, massKg, massSource, camera]);
 
   const runTrack = useCallback(async () => {
     if (!server || currentT === null) return;
@@ -1490,6 +1595,8 @@ export function KinemosViewer() {
               correctionCount,
               onTrack: () => void runTrack(),
               onNextUncertain: jumpToNextUncertain,
+              onTrackSet: points.length > 0 && status === 'ready' && ellipse ? () => void trackSetNow() : undefined,
+              setNote,
             }}
           />
           <MetricsPanel

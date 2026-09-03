@@ -623,3 +623,40 @@ Vmin within 0,1 m/s. The forces are second derivatives of a 30 fps track
 through a 6 Hz filter and should be read to about ±10 % of load; on 60 fps
 or better they tighten. Set 3 rep 1's transition was not found on this
 footage.
+
+## 10. P3g — Sets in the viewer
+
+> **Status: in progress.** The next working phase after 0.85.0.
+
+Everything §8 proved in the harness, in the product: a coach drops a clip of
+a double or a triple into KinEMOS, clicks the bar end once, and gets a rep
+per lift. `src/kinemos/lib/setTracker.ts` is the harness's set mode as a lib
+function — track from the anchor, find the plate again after each drop (a
+candidate must correlate with the set's own template; round is not enough),
+track on, cut into reps with `engine/reps.ts`, calibrate each rep on the
+outline at its own rest with the set's calibration as the fallback. The
+viewer's TRACK THE SET button runs it and persists each rep as what the rep
+model already is — a `kinemos_analyses` row per `rep_index` with its own
+track, calibration and cached metrics — so the rep picker, the comparison,
+the trends and the Analysis builder need no change to see them.
+
+Decisions:
+
+1. **A set is reps, not a track with markers.** The rep model existed; a
+   set becomes N rows of it. Nothing downstream learns a new shape.
+2. **Rep 1 replaces the current rep.** The coach clicked on rep 1's floor
+   frame; the analysis they are in becomes rep 1. Later reps take the next
+   indices, replacing any existing rows at those indices — a set tracked
+   twice is the same set.
+3. **Each rep carries its own calibration and its own tracker tier.** Grade
+   and analyzer measures are per rep; the phone moving between reps is a
+   per-rep fact.
+4. **What could not be split is said.** No reps found, a plate lost and not
+   found again, a rest fit not believed — each is a sentence under the
+   button, not a silent partial result.
+
+Then, in this phase: the displacement-domain charts of the report's Figure 9
+(velocity, force and power against height, with V1, V2, Vmax and Vmin
+marked) as a toggle on the analysis panel; a knee-height mark for the V1/V2
+definition on every lift; and the colour-assisted re-acquisition that would
+have found the plate in the air in front of the fan.
