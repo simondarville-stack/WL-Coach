@@ -9,8 +9,11 @@
 > in 0.83.0. **P3b SHIPPED** — metric trends in 0.84.0 (§5 below). **P3c
 > SHIPPED** — the reference lift, same ship (§6). **P3d SHIPPED** — the
 > OpenCV assists: find the plate, snap the outline, stabilise the camera,
-> same ship (§7). The rest of P3 — talkover, sharing, overlay export, the
-> device-profile calibration tier — is not started.
+> same ship (§7). **P3e–P3g SHIPPED** — sets and phone footage (§8, 0.85.0),
+> the German analyzer's measures (§9, 0.85.0), sets in the viewer with
+> colour re-acquisition, height charts and the knee mark (§10, 0.86.0). The
+> rest of P3 — talkover, sharing, overlay export, the device-profile
+> calibration tier — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made
@@ -626,7 +629,7 @@ footage.
 
 ## 10. P3g — Sets in the viewer
 
-> **Status: in progress.** The next working phase after 0.85.0.
+> **Status: SHIPPED in 0.86.0.**
 
 Everything §8 proved in the harness, in the product: a coach drops a clip of
 a double or a triple into KinEMOS, clicks the bar end once, and gets a rep

@@ -444,8 +444,12 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   measures, and a TRENDS view in the viewer that never shows velocity without
   load. *P3c (the reference lift) shipped in the same 0.84.0*: a coach marks
   one analysed rep as the athlete's reference for an exercise; comparison
-  opens on it and trends draw it as a line. Sharing, talkover and the
-  calibration tiers are untouched.
+  opens on it and trends draw it as a line. *P3d–P3g shipped in 0.84.0 to
+  0.86.0*: the OpenCV assists, the two-view accuracy study, sets tracked
+  from one click with each rep at its own calibration, the German
+  analyzer's measures, colour re-acquisition, charts against height and the
+  knee mark (P3 plan §7–§10). Sharing, talkover, overlay export and the
+  device-profile calibration tier are untouched.
 - **P4 — Intelligence.** `kinemos-research` repo: literature, benchmarking on
   labelled clips, consented flywheel data collection wired in-product;
   ML-assisted detection/tracking (toward zero-click and server-side
