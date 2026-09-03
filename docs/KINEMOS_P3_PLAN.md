@@ -848,4 +848,98 @@ new) and stamps it seen. Nothing shows when nothing was shared.
 P3h is complete: all four of design §9's sharing targets — athlete,
 colleague, export, talkover — are built.
 
-Left for later, in the P3 list: the device-profile calibration tier.
+---
+
+## 12. P3i — The lens tier
+
+> **Status: SHIPPED.** The last item on design §6.1's calibration ladder.
+
+The ladder's three distortion tiers — assume it away, look the phone up,
+measure it — are one mechanism here, and two things had to change before it
+could be built.
+
+**The checkerboard route is closed, twice over.** The OpenCV build KinEMOS
+ships has no `findChessboardCorners`, no `calibrateCamera` and no
+`undistortPoints`; they are absent from the WASM whatever the TypeScript
+stubs declare (probed 03/09/2026 — `undistort`, `remap`, `solvePnP` and
+`projectPoints` are there, the calibration entry points are not). And no
+coach is going to print a checkerboard, which the design half admits by
+making the tier optional. So the lens is measured from what is already in
+every clip: **the gym is full of things that are straight**. A rack upright,
+a door frame, the line where the wall meets the floor. Whatever correction
+makes the most of them straightest is the lens — the plumb-line method, and
+the oldest trick in camera calibration.
+
+**KinEMOS tracks points, never images**, so the missing `undistortPoints`
+costs nothing. A bar end is a point and a plate outline is four; correcting
+them is arithmetic, and the whole ladder fits in a pure engine module
+(`engine/distortion.ts`) with no OpenCV at all. The model is Fitzgibbon's
+division model with one coefficient, `r_u = r_d / (1 + k₁·r_d²)`, radii
+normalised by half the image diagonal so k₁ describes the **lens** and
+transfers from a 1080p clip to a 4K one from the same phone. It inverts in
+closed form, and one parameter is all a gym clip can support.
+
+The correction is applied at READ time, like the filter: the stored track is
+what was measured on the frame, and the stage keeps drawing raw points over
+the raw picture — where they belong, the picture being distorted too — while
+everything computed from them goes through the corrected pair.
+
+**Where the tiers come from.** `kinemos_device_profiles` is keyed by the
+phone's make and model, not by the athlete. What is measured is a lens;
+several athletes in a club film on the same model; a coach who measures
+"Apple iPhone 14 Pro" once has measured it for everyone. That is what makes
+the design's "model-lookup tier" real without shipping a table of phones
+nobody measured — **the lookup table is what the coaches themselves
+measured**. A profile fitted on this athlete's own footage grades as
+`profile`; one inherited from another athlete's identical phone grades as
+`model`; the correction is the same and the confidence is not. The grade's
+`lens` factor had been designed in since P2 and never fed; it is fed now.
+
+### What the measurement actually said
+
+Run on real footage, the tier's most valuable output was a refusal — and
+then a correction to the refusal.
+
+Both study clips and Caroline's phone clips find plenty of straight edges
+(47–53) and no correction that straightens them. The first version reported
+that as *"this lens has nothing worth removing"*. **That claim was not
+supported by the data.** On the 576×1024 phone clip the edges have a median
+span of 120 px and carry 0,75 px of their own pixel noise; bending them by a
+typical phone lens (k₁ = −0,12) moves their pooled residual from 0,746 px to
+0,744. The bow a real lens puts on a short edge near the frame centre is a
+fiftieth of the noise on the edge itself. The honest reading is not "the lens
+is clean" but **"these edges cannot tell"**.
+
+So `probeSensitivity` asks, before believing any refusal, what a typical lens
+*would* have done to these chains, as a share of their own noise. Below 15 %
+the fit refuses with `insensitive` and says so in those terms — "they are too
+short to tell: bending them by a typical phone lens would move them 3 % of
+their own pixel noise". Three refusals, three different sentences, because
+`no-edges`, `insensitive` and `no-improvement` are three different facts and
+only the last says anything about the lens.
+
+The check that caught it is worth keeping: `verify/track-clip.html?lens=1`
+measures a clip's lens, and `&lensinject=<k1>` bends the clip's **real**
+detected edges by a known coefficient and reports whether the fit gets it
+back. Everything but the bend is real, so it separates "the lens is clean"
+from "the fit is blind". On caro3 it recovers nothing from an injected
+−0,12 — which is the same finding, confirmed from the other side.
+
+Two consequences for the product, both honest:
+
+- The convention tier's assumption (design §6.1: "distance framing + no
+  ultrawide ≈ negligible distortion on modern phones") is **not contradicted**
+  by anything measured here, and is not confirmed either. The clips available
+  cannot resolve the question.
+- The tier will earn its place on a full-resolution clip with a long upright
+  in shot, and the sensitivity number tells a coach when a refusal means
+  something. Until then the honest state is the one the panel shows: not
+  corrected, and why.
+
+### Known gap
+
+The comparison view loads its subjects through `comparisonService` and does
+not apply a lens. A lift measured through a profile in the viewer and the
+same lift on the comparison screen can therefore differ by the correction.
+Worth closing when a profile ever measures non-zero on real footage; until
+then it is a difference of zero.

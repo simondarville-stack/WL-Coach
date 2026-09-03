@@ -18,6 +18,7 @@ import { Trash2 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { Button, Select } from '../../components/ui';
 import { PLATE_PRESETS, type Calibration, type PlateEllipse } from '../engine/calibration';
+import type { DistortionSource } from '../engine/distortion';
 import { mmPerPx, num } from '../lib/viewerFormat';
 
 interface CalibrationPanelProps {
@@ -38,6 +39,23 @@ interface CalibrationPanelProps {
    *  for a round plate filmed square-on. */
   shape: 'ellipse' | 'circle';
   onShape: (shape: 'ellipse' | 'circle') => void;
+  /** The lens tier: which correction this clip is being measured through,
+   *  and how to measure one. */
+  lens: LensState;
+}
+
+export interface LensState {
+  /** Which of design §6.1's tiers applies. */
+  source: DistortionSource;
+  /** The coefficient in force, 0 on the convention tier. */
+  k1: number;
+  /** The phone, when the clip named one. Without it a profile cannot be
+   *  stored, because there is nothing to key it by. */
+  device: string | null;
+  busy: boolean;
+  note: string | null;
+  onMeasure: () => void;
+  onClear: () => void;
 }
 
 export function CalibrationPanel({
@@ -50,6 +68,7 @@ export function CalibrationPanel({
   onClear,
   onFind,
   onSnap,
+  lens,
   assist,
   shape,
   onShape,
@@ -195,6 +214,48 @@ export function CalibrationPanel({
               the plate edge, the centre to move it.
             </p>
           )}
+
+          {/* ── The lens ───────────────────────────────────────────────── */}
+          <div style={{ marginTop: 'var(--space-md)', borderTop: '1px solid var(--color-border-tertiary)', paddingTop: 'var(--space-sm)' }}>
+            <Row
+              term="Lens"
+              value={
+                lens.source === 'profile'
+                  ? `Measured · k₁ ${num(lens.k1, 3)}`
+                  : lens.source === 'model'
+                    ? `From ${lens.device ?? 'the phone model'} · k₁ ${num(lens.k1, 3)}`
+                    : 'Not corrected'
+              }
+              hint={
+                lens.source === 'none'
+                  ? 'Distortion bends straight lines near the frame edge, and with them the bar path. Filming from a distance on a main lens keeps it small — which is why this is optional — but measuring it removes what is left.'
+                  : 'The clip is measured through this lens: the track and the plate outline are both corrected before anything is computed from them.'
+              }
+            />
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap', marginTop: 'var(--space-xs)' }}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={lens.onMeasure}
+                disabled={lens.busy || assist.busy !== null}
+                title="Measure this clip's lens from the straight edges already in shot — a rack upright, a door frame, the line where the wall meets the floor. Whatever correction makes the most of them straightest is the lens. Stored against the phone, so every later clip from it is corrected too."
+              >
+                {lens.busy ? 'Measuring the lens…' : lens.source === 'none' ? 'Measure the lens' : 'Measure again'}
+              </Button>
+              {lens.source !== 'none' && (
+                <Button size="sm" variant="ghost" onClick={lens.onClear} title="Forget this phone's lens and go back to no correction">
+                  Forget it
+                </Button>
+              )}
+            </div>
+            {lens.note && <p style={hintStyle}>{lens.note}</p>}
+            {!lens.device && lens.source === 'none' && (
+              <p style={hintStyle}>
+                This clip does not say which phone shot it, so a measurement here cannot be stored for
+                the next one — log clips arrive stripped of that. A direct import usually keeps it.
+              </p>
+            )}
+          </div>
         </>
       )}
     </section>

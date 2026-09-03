@@ -80,6 +80,8 @@ function clip(over: Partial<LibraryVideo> & { key: string }): LibraryVideo {
     fps: 60,
     width: 1080,
     height: 1920,
+    deviceMake: null,
+    deviceModel: null,
     playbackUrl: 'blob:x',
     isEmbed: false,
     thumbnailUrl: null,

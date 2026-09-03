@@ -22,6 +22,8 @@ function video(over: Partial<LibraryVideo> = {}): LibraryVideo {
     fps: null,
     width: null,
     height: null,
+    deviceMake: null,
+    deviceModel: null,
     playbackUrl: 'https://example.test/clip.mp4',
     isEmbed: false,
     thumbnailUrl: null,

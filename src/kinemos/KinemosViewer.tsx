@@ -30,6 +30,9 @@ import {
   type PxPoint,
 } from './engine/calibration';
 import { computeKinematics, peakStability, summariseRep } from './engine/kinematics';
+import { noDistortion, undistortEllipse, undistortPoints, type DistortionSource } from './engine/distortion';
+import { deviceKeyFor, profileForClip, saveDeviceProfile } from './lib/deviceProfileService';
+import { describeFit, describeRefusal, fitClipDistortion } from './lib/distortionFit';
 import {
   DEFAULT_PHASE_SET,
   computeLiftMetrics,
@@ -348,12 +351,36 @@ export function KinemosViewer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, id, repIndex]);
 
-  const calibration = useMemo(
-    () => (ellipse ? calibrateFromEllipse(ellipse, plateDiameterCm) : null),
-    [ellipse, plateDiameterCm],
+  // ── The lens ──────────────────────────────────────────────────────────────
+  //
+  // Design §6.1's distortion tiers, applied at READ time like the filter: the
+  // stored track is what was measured on the frame, and the correction is a
+  // lens the frame was seen through, re-applied on every load. So the stage
+  // keeps drawing the raw points over the raw picture — where they belong,
+  // since the picture is distorted too — while everything computed from them
+  // is computed from the corrected pair.
+  const [lensK1, setLensK1] = useState(0);
+  const [lensSource, setLensSource] = useState<DistortionSource>('none');
+  const [lensBusy, setLensBusy] = useState(false);
+  const [lensNote, setLensNote] = useState<string | null>(null);
+
+  const lensModel = useMemo(() => {
+    const base = noDistortion(server?.displayWidth ?? 0, server?.displayHeight ?? 0);
+    return lensK1 ? { ...base, k1: lensK1 } : base;
+  }, [server?.displayWidth, server?.displayHeight, lensK1]);
+
+  const measuredPoints = useMemo(() => undistortPoints(lensModel, points), [lensModel, points]);
+  const measuredEllipse = useMemo(
+    () => (ellipse ? undistortEllipse(lensModel, ellipse) : null),
+    [lensModel, ellipse],
   );
 
-  const metrics = useMemo(() => pathMetrics(points, calibration), [points, calibration]);
+  const calibration = useMemo(
+    () => (measuredEllipse ? calibrateFromEllipse(measuredEllipse, plateDiameterCm) : null),
+    [measuredEllipse, plateDiameterCm],
+  );
+
+  const metrics = useMemo(() => pathMetrics(measuredPoints, calibration), [measuredPoints, calibration]);
 
   // ── The measurement pipeline ──────────────────────────────────────────────
   //
@@ -363,11 +390,11 @@ export function KinemosViewer() {
   // panel always shows what the current marks actually imply.
   const kinematics = useMemo(
     () =>
-      computeKinematics(points, calibration, {
+      computeKinematics(measuredPoints, calibration, {
         massKg,
         filter: DEFAULT_FILTER,
       }),
-    [points, calibration, massKg],
+    [measuredPoints, calibration, massKg],
   );
 
   const proposal = useMemo(() => (kinematics ? proposePhases(kinematics) : null), [kinematics]);
@@ -422,11 +449,11 @@ export function KinemosViewer() {
         correctionCount,
         trackedFrames: points.length,
         camera,
-        distortionSource: 'none',
+        distortionSource: lensSource,
         timingRepairs: kinematics?.timingRepairs.length ?? 0,
         peakSpread: stability?.spread ?? null,
       }),
-    [kinematics, server, calibration, camera, points.length, trackerTier, correctionCount, stability],
+    [kinematics, server, calibration, camera, points.length, trackerTier, correctionCount, stability, lensSource],
   );
 
   /**
@@ -1088,6 +1115,90 @@ export function KinemosViewer() {
       setSnapshotBusy(false);
     }
   }, [frame, server, ensureId, clip, index, points, currentT, ellipse]);
+
+  // The stored lens for this clip's phone, if one has ever been measured.
+  // Looked up by make and model, so a profile measured on one clip corrects
+  // every later clip from the same phone — which is what makes design §6.1's
+  // "model-lookup tier" real without a shipped table of phones nobody
+  // measured.
+  useEffect(() => {
+    let alive = true;
+    setLensK1(0);
+    setLensSource('none');
+    setLensNote(null);
+    if (!server || !clip) return;
+    profileForClip(clip.deviceMake, clip.deviceModel, server.displayWidth, server.displayHeight, clip.athleteId)
+      .then(found => {
+        if (!alive || found.source === 'none') return;
+        setLensK1(found.model.k1);
+        setLensSource(found.source);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [server, clip]);
+
+  /**
+   * Measure this clip's lens from the straight edges already in the gym, and
+   * remember it against the phone. A refusal is a real answer — a hall with
+   * nothing straight in shot, or a lens with nothing to correct — and says so
+   * rather than storing a confident zero.
+   */
+  const measureLens = useCallback(async () => {
+    if (!server) return;
+    setLensBusy(true);
+    setLensNote(null);
+    try {
+      const result = await fitClipDistortion(server);
+      const fit = result.fit;
+      if (!fit) {
+        setLensNote(describeRefusal(result));
+        return;
+      }
+      setLensK1(fit.model.k1);
+      const key = deviceKeyFor(clip?.deviceMake ?? null, clip?.deviceModel ?? null);
+      if (!key) {
+        // Still applied to this clip — it is measured, and it is right — but
+        // there is nothing to file it under for the next one.
+        setLensSource('profile');
+        setLensNote(`${describeFit(fit)} Applied here; not stored, because the clip does not say which phone shot it.`);
+        return;
+      }
+      await saveDeviceProfile({
+        deviceMake: clip?.deviceMake ?? null,
+        deviceModel: clip?.deviceModel ?? null,
+        athleteId: clip?.athleteId ?? null,
+        ownerId: getOwnerId(),
+        k1: fit.model.k1,
+        residualBeforePx: fit.residualBeforePx,
+        residualAfterPx: fit.residualAfterPx,
+        chains: fit.chains,
+        frames: fit.framesUsed,
+        frameWidth: server.displayWidth,
+        frameHeight: server.displayHeight,
+        sourceKind: source ?? null,
+        sourceId: id ?? null,
+      });
+      setLensSource('profile');
+      setLensNote(`${describeFit(fit)} Stored for ${key} — every clip from it is corrected from now on.`);
+    } catch (e) {
+      const text = (e as { message?: string } | null)?.message ?? '';
+      setLensNote(
+        /kinemos_device_profiles/.test(text)
+          ? 'Measuring needs the kinemos_device_profiles table — the 20260903140000 migration has not been applied.'
+          : 'The lens could not be measured.',
+      );
+    } finally {
+      setLensBusy(false);
+    }
+  }, [server, clip, source, id]);
+
+  const clearLens = useCallback(() => {
+    setLensK1(0);
+    setLensSource('none');
+    setLensNote('Back to no correction for this clip. The stored profile is still there; measuring again replaces it.');
+  }, []);
 
   // ── Sharing ───────────────────────────────────────────────────────────────
   /** The most recent talkover of this rep, for a share to carry. */
@@ -1935,6 +2046,15 @@ export function KinemosViewer() {
             assist={assist}
             shape={plateShape}
             onShape={setPlateShape}
+            lens={{
+              source: lensSource,
+              k1: lensK1,
+              device: [clip.deviceMake, clip.deviceModel].filter(Boolean).join(' ') || null,
+              busy: lensBusy,
+              note: lensNote,
+              onMeasure: () => void measureLens(),
+              onClear: clearLens,
+            }}
           />
           <ReadoutRail
             repIndices={repIndices}

@@ -40,6 +40,7 @@
  * Engine purity: numbers in, numbers out.
  */
 import type { Calibration } from './calibration';
+import type { DistortionSource } from './distortion';
 import type { FilterSettings } from './signal';
 
 /**
@@ -57,7 +58,10 @@ function fmt(value: number, decimals: number): string {
 
 export type TrackerTier = 'manual' | 'assisted' | 'marker' | 'ml';
 export type CameraStability = 'tripod' | 'stabilised' | 'handheld' | 'unknown';
-export type DistortionSource = 'none' | 'model' | 'profile';
+/** Which tier of design §6.1's lens ladder this analysis reached. Defined
+ *  with the lens arithmetic in `distortion.ts` and re-exported here, where
+ *  it has always been read from. */
+export type { DistortionSource };
 export type Verdict = 'good' | 'fair' | 'weak';
 
 /**

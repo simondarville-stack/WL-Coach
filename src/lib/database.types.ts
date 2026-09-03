@@ -1363,6 +1363,32 @@ export interface KinemosAnnotation {
   updated_at: string;
 }
 
+/** A lens, measured once and reused for every clip from the same phone
+ *  (design §6.1's model/profile tiers). `k1` is the division model's single
+ *  coefficient, normalised by half the image diagonal so it describes the
+ *  lens rather than the recording. */
+export interface KinemosDeviceProfile {
+  id: string;
+  owner_id: string | null;
+  /** Normalised "<make> <model>", lower case — what a clip is looked up by. */
+  device_key: string;
+  device_make: string | null;
+  device_model: string | null;
+  athlete_id: string | null;
+  k1: number;
+  method: 'plumb-line' | 'manual';
+  residual_before_px: number | null;
+  residual_after_px: number | null;
+  chains: number | null;
+  frames: number | null;
+  frame_width: number | null;
+  frame_height: number | null;
+  source_kind: 'log' | 'event' | 'direct' | null;
+  source_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** What a share's card says — frozen when the coach shared it, so a rep
  *  re-tracked later does not rewrite what the athlete was sent. */
 export interface KinemosShareSummary {
@@ -1758,6 +1784,13 @@ export interface Database {
           Record<string, unknown>;
         Update: Partial<Omit<KinemosAnnotation, 'id' | 'created_at' | 'updated_at'>> &
           Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_device_profiles: {
+        Row: KinemosDeviceProfile & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosDeviceProfile, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosDeviceProfile, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       kinemos_shares: {

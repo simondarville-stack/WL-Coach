@@ -52,6 +52,10 @@
       import { DEFAULT_FILTER } from '/src/kinemos/engine/signal.ts';
       import { findPlate, refinePlateEllipse } from '/src/kinemos/cv/plate.ts';
       import { estimateCameraMotion, motionSummary, stabilisePoints } from '/src/kinemos/cv/stabilise.ts';
+      import { describeFit, describeRefusal, fitClipDistortion } from '/src/kinemos/lib/distortionFit.ts';
+      import { distortPoint, distortionFor, fitDistortion, totalStraightness, undistortEllipse, undistortPoints } from '/src/kinemos/engine/distortion.ts';
+      import { selectPlumbLines, traceChains } from '/src/kinemos/engine/edgeChains.ts';
+      import { cannyEdges } from '/src/kinemos/cv/edges.ts';
 
       const params = new URLSearchParams(location.search);
       const logEl = document.getElementById('log');
@@ -540,7 +544,61 @@
             framesEl.appendChild(ec);
           }
 
+          // `&lens=1`: measure the clip's lens from the straight edges in the
+          // gym behind the lifter (P3i), and say what it found. Reported
+          // only — the analysis above is not re-run through it, so the two
+          // numbers can be compared.
+          let lens = null;
+          if (params.get('lens') === '1') {
+            const tL = performance.now();
+            const result = await fitClipDistortion(server, { frames: Number(params.get('lensframes') ?? 5) });
+            const fit = result.fit;
+            lens = fit
+              ? { k1: fit.model.k1, chains: fit.chains, points: fit.points, frames: fit.framesUsed, residualBeforePx: fit.residualBeforePx, residualAfterPx: fit.residualAfterPx, improvement: fit.improvement }
+              : { reason: result.reason, chainsFound: result.chainsFound, frames: result.framesUsed };
+            log(`lens: ${fit ? describeFit(fit) : describeRefusal(result)} (${(performance.now() - tL).toFixed(0)} ms)`);
+            // `&lensinject=<k1>`: the honesty check on a refusal. Take the
+            // REAL edges this clip's gym produced, bend them by a known k1,
+            // and see whether the fit gets it back. Everything but the bend
+            // is real, so a pass means the refusal above was the lens being
+            // clean rather than the fit being blind.
+            const inject = params.get('lensinject');
+            if (inject) {
+              const src = trackerSourceFrom(server);
+              const chains = [];
+              const n = 5;
+              for (let i = 0; i < n; i++) {
+                const idx = Math.min(server.frameCount - 1, Math.round(((i + 0.5) / n) * server.frameCount));
+                const g = await src.getGray(idx);
+                const em = await cannyEdges(g);
+                chains.push(...selectPlumbLines(traceChains(em.mask, em.width, em.height), em.width, em.height));
+              }
+              src.dispose();
+              const truth = Number(inject);
+              const bendModel = distortionFor(server.displayWidth, server.displayHeight, truth);
+              const bent = chains.map(c => c.map(p => distortPoint(bendModel, p)));
+              const spans = chains.map(c => Math.hypot(c[c.length - 1].x - c[0].x, c[c.length - 1].y - c[0].y)).sort((a, b) => a - b);
+              log(`lens: frame ${server.displayWidth}×${server.displayHeight}, chain spans px min ${spans[0]?.toFixed(0)} median ${spans[spans.length >> 1]?.toFixed(0)} max ${spans[spans.length - 1]?.toFixed(0)}; residual bent ${totalStraightness(distortionFor(server.displayWidth, server.displayHeight, 0), bent).toFixed(3)} → at truth ${totalStraightness(bendModel, bent).toFixed(3)} px`);
+              const recovered = fitDistortion(bent, server.displayWidth, server.displayHeight, { minChains: 3 });
+              lens.injected = recovered ? { truth, recovered: recovered.model.k1, chains: recovered.chains, improvement: recovered.improvement } : { truth, recovered: null };
+              log(`lens: injected k₁ ${truth} into ${chains.length} real edges → recovered ${recovered ? recovered.model.k1.toFixed(4) : 'nothing'}${recovered ? ` (error ${(recovered.model.k1 - truth).toFixed(4)}, ${(recovered.improvement * 100).toFixed(0)} % straighter)` : ''}`);
+            }
+            if (fit && series) {
+              // What the correction is worth here: the same track and outline
+              // measured through the fitted lens.
+              const ue = undistortEllipse(fit.model, { cx: plate[0], cy: plate[1], semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg: plate[4] });
+              const uc = calibrateFromEllipse(ue, plate[5], { rollDeg: Number(params.get('roll') ?? 0) });
+              const us = computeKinematics(undistortPoints(fit.model, track), uc, { massKg: mass, filter });
+              if (us) {
+                const usum = summariseRep(us);
+                lens.corrected = { vmax: usum.peakVerticalVelocityMs, peakHeightCm: usum.peakHeightCm, loopWidthCm: usum.loopWidthCm, cmPerPxV: uc.cmPerPxV };
+                log(`lens: corrected Vmax ${usum.peakVerticalVelocityMs.toFixed(3)} m/s vs ${summary.peakVerticalVelocityMs.toFixed(3)} uncorrected (${(((usum.peakVerticalVelocityMs / summary.peakVerticalVelocityMs) - 1) * 100).toFixed(2)} %), height ${usum.peakHeightCm.toFixed(1)} vs ${summary.peakHeightCm.toFixed(1)} cm, loop ${usum.loopWidthCm.toFixed(1)} vs ${summary.loopWidthCm.toFixed(1)} cm`);
+              }
+            }
+          }
+
           window.__RESULT__ = {
+            lens,
             exported,
             frames: server.frameCount,
             tracked: result.points.length,

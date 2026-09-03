@@ -57,6 +57,12 @@ export interface LibraryVideo {
   width: number | null;
   height: number | null;
 
+  /** The phone, where the container kept it. Only direct imports carry it —
+   *  a log clip has been through Stream and arrives stripped — and it is
+   *  what a lens profile is looked up by (design §6.1's model tier). */
+  deviceMake: string | null;
+  deviceModel: string | null;
+
   /** What a player should load. For Stream-hosted log clips this is an
    *  iframe embed URL, not a media file — see `isEmbed`. */
   playbackUrl: string;
@@ -136,6 +142,8 @@ interface KinemosVideoRow {
   fps: number | null;
   width: number | null;
   height: number | null;
+  device_make: string | null;
+  device_model: string | null;
   recorded_at: string | null;
   note: string | null;
   created_at: string;
@@ -181,7 +189,7 @@ async function loadDirectVideos(): Promise<KinemosVideoRow[]> {
     supabase
       .from('kinemos_videos')
       .select(
-        'id, athlete_id, exercise_id, r2_key, thumb_key, original_name, duration_s, fps, width, height, recorded_at, note, created_at',
+        'id, athlete_id, exercise_id, r2_key, thumb_key, original_name, duration_s, fps, width, height, device_make, device_model, recorded_at, note, created_at',
       )
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
@@ -334,6 +342,8 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       fps: null,
       width: null,
       height: null,
+      deviceMake: null,
+      deviceModel: null,
       playbackUrl: v.video_url,
       isEmbed: isStreamPlaybackUrl(v.video_url),
       thumbnailUrl: v.thumbnail_url,
@@ -360,6 +370,8 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       fps: null,
       width: null,
       height: null,
+      deviceMake: null,
+      deviceModel: null,
       playbackUrl: v.video_url,
       isEmbed: isStreamPlaybackUrl(v.video_url),
       thumbnailUrl: null,
@@ -385,6 +397,8 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       fps: v.fps,
       width: v.width,
       height: v.height,
+      deviceMake: v.device_make,
+      deviceModel: v.device_model,
       playbackUrl: kinemosObjectUrl(v.r2_key),
       isEmbed: false,
       thumbnailUrl: v.thumb_key ? kinemosObjectUrl(v.thumb_key) : null,
