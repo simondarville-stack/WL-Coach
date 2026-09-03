@@ -44,6 +44,7 @@
       import { trackFromAnchor, trackDirection } from '/src/kinemos/engine/tracker.ts';
       import { splitReps } from '/src/kinemos/engine/reps.ts';
       import { trackSet } from '/src/kinemos/lib/setTracker.ts';
+      import { drawOverlay, exportOverlayVideo } from '/src/kinemos/lib/overlayExport.ts';
       import { trackerSourceFrom } from '/src/kinemos/lib/trackerSource.ts';
       import { calibrateFromEllipse } from '/src/kinemos/engine/calibration.ts';
       import { computeKinematics, peakStability, summariseRep } from '/src/kinemos/engine/kinematics.ts';
@@ -492,7 +493,55 @@
             framesEl.appendChild(v);
           }
 
+          // `&export=1`: write the clip with the bar path burned in, the way
+          // the viewer's EXPORT does, then read the file back with mediabunny
+          // and say what it holds. Headless Chromium has no H.264 encoder,
+          // so here it is WebM; the codec line says which.
+          let exported = null;
+          if (params.get('export') === '1') {
+            const tE = performance.now();
+            const out = await exportOverlayVideo({
+              server,
+              points: track,
+              caption: 'KinEMOS export check',
+              readout: series ? t => { const i = series.t.findIndex(x => x >= t); return i < 0 ? null : `${series.vyMs[i].toFixed(2)} m/s`; } : null,
+            });
+            const { ALL_FORMATS, BufferSource, Input } = await import('mediabunny');
+            const back = new Input({ source: new BufferSource(await out.blob.arrayBuffer()), formats: ALL_FORMATS });
+            const vt = await back.getPrimaryVideoTrack();
+            let packets = null;
+            if (vt) {
+              const { EncodedPacketSink } = await import('mediabunny');
+              packets = 0;
+              for await (const _ of new EncodedPacketSink(vt).packets()) packets++;
+            }
+            exported = {
+              codec: out.codec,
+              extension: out.extension,
+              bytes: out.blob.size,
+              frames: out.frames,
+              durationS: out.durationS,
+              readBack: vt ? { codec: vt.codec, width: vt.displayWidth, height: vt.displayHeight, packets, durationS: await back.computeDuration() } : null,
+            };
+            log(`export: ${out.codec} in ${out.extension}, ${(out.blob.size / 1e6).toFixed(2)} MB, ${out.frames} frames over ${out.durationS.toFixed(2)} s, in ${(performance.now() - tE).toFixed(0)} ms; read back: ${exported.readBack ? `${exported.readBack.codec} ${exported.readBack.width}×${exported.readBack.height}, ${exported.readBack.packets} packets, ${exported.readBack.durationS.toFixed(2)} s` : 'no video track'}`);
+            // One exported frame, drawn the same way, so the look can be seen:
+            // the frame at the peak of the track's rise.
+            const sortedPts = [...track].sort((a, b) => a.t - b.t);
+            const peak = sortedPts.reduce((best, p) => (p.y < best.y ? p : best), sortedPts[0]);
+            const midIndex = server.nearestIndex(peak.t - 0.3);
+            const mid = await server.frameAt(midIndex);
+            const ec = document.createElement('canvas');
+            ec.id = 'export-frame';
+            ec.width = server.displayWidth;
+            ec.height = server.displayHeight;
+            const ectx = ec.getContext('2d');
+            ectx.drawImage(mid.canvas, 0, 0);
+            drawOverlay(ectx, sortedPts, server.timestamps[midIndex], Math.max(1, server.displayHeight / 560), server.displayWidth, server.displayHeight, 'Caroline · Snatch 62,5 kg · 03/09', series ? `${series.vyMs[Math.max(0, series.t.findIndex(x => x >= server.timestamps[midIndex]))].toFixed(2).replace('.', ',')} m/s` : null);
+            framesEl.appendChild(ec);
+          }
+
           window.__RESULT__ = {
+            exported,
             frames: server.frameCount,
             tracked: result.points.length,
             gaveUp: result.gaveUp,

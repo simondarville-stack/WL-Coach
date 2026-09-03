@@ -49,6 +49,8 @@ import { markAsReference } from './lib/referenceService';
 import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack } from './lib/assists';
 import { trackSet } from './lib/setTracker';
 import { createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
+import { exportOverlayVideo } from './lib/overlayExport';
+import { valueAt } from './engine/phases';
 import { useCoachStore } from '../store/coachStore';
 import {
   findComparable,
@@ -132,6 +134,8 @@ export function KinemosViewer() {
   const [shares, setShares] = useState<KinemosShare[]>([]);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareNote, setShareNote] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<{ done: number; total: number } | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -1138,6 +1142,60 @@ export function KinemosViewer() {
     [frame, server, clip, repSummary, ensureId, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade],
   );
 
+  /**
+   * The clip with the bar path burned in, as a file the coach's browser
+   * downloads. The caption names the lift; the readout is the bar's
+   * vertical velocity at each frame when there is a calibration to give one.
+   */
+  const exportNow = useCallback(async () => {
+    if (!server || points.length < 2) return;
+    setExporting({ done: 0, total: 1 });
+    setExportNote(null);
+    try {
+      const caption = [
+        clip?.athleteName,
+        [clip?.exerciseName, massKg !== null ? `${num(massKg, Number.isInteger(massKg) ? 0 : 1)} kg` : null].filter(Boolean).join(' '),
+        clip?.date ? formatDateShort(clip.date) : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      const series = kinematics;
+      const result = await exportOverlayVideo({
+        server,
+        points,
+        caption,
+        readout: series
+          ? t => {
+              const v = valueAt(series.t, series.vyMs, t);
+              return v === null || t < series.t[0] || t > series.t[series.t.length - 1] ? null : `${num(v, 2)} m/s`;
+            }
+          : null,
+        onProgress: (done, total) => setExporting({ done, total }),
+      });
+      const stem = [clip?.athleteName, clip?.exerciseName, clip?.date, `rep${repIndex}`]
+        .filter(Boolean)
+        .join('-')
+        .replace(/[^\p{L}\p{N}-]+/gu, '_');
+      const name = `${stem || 'kinemos'}.${result.extension}`;
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setExportNote(
+        `${name} — ${num(result.blob.size / 1_000_000, 1)} MB, ${result.frames} frames, ${num(result.durationS, 1)} s` +
+          (result.extension === 'webm' ? '. This browser has no H.264 encoder, so it is WebM; Chrome or Edge on a desktop writes MP4.' : '.'),
+      );
+    } catch (e) {
+      setExportNote(e instanceof Error ? e.message : 'The export failed.');
+    } finally {
+      setExporting(null);
+    }
+  }, [server, points, clip, massKg, kinematics, repIndex]);
+
   const removeShare = useCallback(async (shareId: string) => {
     try {
       await deleteShare(shareId);
@@ -1748,6 +1806,9 @@ export function KinemosViewer() {
               ready: points.length > 1 && calibration !== null && repSummary !== null,
               onShare: message => void shareNow(message),
               onDelete: shareId => void removeShare(shareId),
+              onExport: () => void exportNow(),
+              exporting,
+              exportNote,
             }}
             measureComplete={measureComplete}
             onSaveMeasurement={() => void saveMeasurement()}

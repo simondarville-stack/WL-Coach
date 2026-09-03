@@ -12,8 +12,8 @@
 > same ship (§7). **P3e–P3g SHIPPED** — sets and phone footage (§8, 0.85.0),
 > the German analyzer's measures (§9, 0.85.0), sets in the viewer with
 > colour re-acquisition, height charts and the knee mark (§10, 0.86.0).
-> **P3h in progress** — sharing to the athlete (§11). The rest of P3 —
-> talkover, sharing to colleagues, overlay export, the device-profile
+> **P3h in progress** — sharing to the athlete and overlay export (§11).
+> The rest of P3 — talkover, sharing to colleagues, the device-profile
 > calibration tier — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
@@ -804,5 +804,18 @@ Decisions:
 4. **Nothing is judged on the card.** The numbers are what the coach chose
    to send; what they mean is the message beside them.
 
+**Overlay export — done.** Design §9's third target: "mp4 with burned-in
+overlay for external use — seminars, socials". EXPORT under SHARE writes
+the tracked range of the clip (half a second either side) with the path as
+far as the bar has got, a ring on the bar end, a caption naming the lift
+and the bar's vertical velocity as a live readout, through mediabunny's
+`CanvasSource` (`src/kinemos/lib/overlayExport.ts`). Each frame keeps its
+own timestamp and duration, so a variable-frame-rate phone clip comes out
+at its real timing. H.264 in MP4 where the browser can encode it; VP9 in
+WebM otherwise — headless Chromium, and the note under the button says so.
+The plate outline is not drawn: it is how the numbers were made, not part
+of the lift. `verify/track-clip.html?export=1` writes the file headlessly
+and reads it back with mediabunny to say what it holds.
+
 Not in this slice: sharing to colleague coaches (needs the club layer's
-recipient model), overlay export (mp4 with the path burned in), talkover.
+recipient model), talkover.

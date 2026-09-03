@@ -87,6 +87,10 @@ export interface ShareState {
   ready: boolean;
   onShare: (message: string) => void;
   onDelete: (shareId: string) => void;
+  /** The clip with the bar path burned in, as a file — for outside EMOS. */
+  onExport: () => void;
+  exporting: { done: number; total: number } | null;
+  exportNote: string | null;
 }
 
 export function ReadoutRail({
@@ -365,7 +369,7 @@ export function ReadoutRail({
             <span style={label}>SHARE</span>
           </header>
           {share.athleteName === null ? (
-            <p style={hint}>This clip has no athlete. Attach one in the library and the rep can be sent to them.</p>
+            <p style={hint}>This clip has no athlete. Attach one in the library and the rep can be sent to them; the export below works either way.</p>
           ) : !share.ready ? (
             <p style={hint}>Track and calibrate the rep first — the athlete gets this frame with the bar path, and the numbers.</p>
           ) : (
@@ -394,6 +398,33 @@ export function ReadoutRail({
             </form>
           )}
           {share.note && <p style={hint}>{share.note}</p>}
+          <div style={{ marginTop: 'var(--space-sm)' }}>
+            {share.exporting ? (
+              <>
+                <div style={{ height: 4, borderRadius: 2, background: 'var(--color-bg-secondary)', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${Math.round((share.exporting.done / Math.max(1, share.exporting.total)) * 100)}%`,
+                      background: 'var(--color-accent)',
+                    }}
+                  />
+                </div>
+                <p style={hint}>{`Writing the video — frame ${share.exporting.done} of ${share.exporting.total}.`}</p>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!share.ready}
+                onClick={share.onExport}
+                title="Download this clip with the bar path burned in — for a seminar, a post, anywhere outside EMOS. H.264 in MP4 where the browser can encode it, otherwise WebM."
+              >
+                Export video
+              </Button>
+            )}
+            {share.exportNote && <p style={hint}>{share.exportNote}</p>}
+          </div>
           {share.shares.length > 0 && (
             <ul style={{ listStyle: 'none', margin: 'var(--space-xs) 0 0', padding: 0, display: 'grid', gap: 4 }}>
               {share.shares.map(s => (
