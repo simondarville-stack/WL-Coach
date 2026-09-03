@@ -11,8 +11,9 @@
 > OpenCV assists: find the plate, snap the outline, stabilise the camera,
 > same ship (§7). **P3e–P3g SHIPPED** — sets and phone footage (§8, 0.85.0),
 > the German analyzer's measures (§9, 0.85.0), sets in the viewer with
-> colour re-acquisition, height charts and the knee mark (§10, 0.86.0). The
-> rest of P3 — talkover, sharing, overlay export, the device-profile
+> colour re-acquisition, height charts and the knee mark (§10, 0.86.0).
+> **P3h in progress** — sharing to the athlete (§11). The rest of P3 —
+> talkover, sharing to colleagues, overlay export, the device-profile
 > calibration tier — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
@@ -733,3 +734,75 @@ colour and only motion tells them apart, so a loss while the bar is
 overhead and still can find the wrong end; a size prior (the far plate is
 smaller in perspective) would settle it. And a black plate has none of
 this — the shape-only path is what it gets.
+
+---
+
+## 11. P3h — Sharing to the athlete
+
+> **Status: in progress.** The next working phase after 0.86.0.
+
+The design's consumer (§2) is the athlete, who "receives annotated
+snapshots, talkover clips, numbers via the athlete app/Inbox", and its rule
+for the channel is one line (§9): *sharing rides existing EMOS channels; no
+new messaging infrastructure.* So a share is a coach handing an athlete one
+analysed rep, through the coach↔athlete thread every surface already has.
+
+**What a share is.** Three writes that belong together
+(`src/kinemos/lib/shareService.ts`):
+
+1. **The picture** — this frame with the bar path and the outline drawn, the
+   same JPEG a saved snapshot is (`composeSnapshot`), into R2.
+2. **The coach's words** — an ordinary message in the athlete's *general*
+   coach thread (`training_log_messages`, no session), stamped with the
+   athlete's own environment as the inbox does when it creates a session.
+   That is what makes it reach every surface, count as unread and light the
+   badges, with nothing new. When the coach writes nothing the message says
+   what was shared: "Shared a lift analysis: Snatch 62,5 kg — Vmax 2,31 m/s,
+   height 134 cm".
+3. **The card** — a `kinemos_shares` row (design §11) pointing at both, with
+   the numbers **frozen** in `summary`: athlete, exercise, date, load, rep,
+   Vmax, peak height, grade, and where the clip plays from. A coach who
+   re-tracks the rep tomorrow changes the analysis; the athlete still sees
+   what they were sent.
+
+Migration `20260903120000_kinemos_shares.sql`. It has to be applied by hand
+(the Supabase connector was not authorised in the session that wrote it);
+until it is, the viewer's SHARE says so and every thread loads without the
+cards.
+
+**Where it shows.** `ShareMessageBubble` (`src/components/chat/`) is the
+card: the picture, "Snatch · 62,5 kg · 03/09/2026 · rep 2", the numbers as
+chips, "Watch the clip" when the clip is reachable, no judgement. The three
+thread surfaces interleave it by time the way session clips already are —
+the athlete app's coach thread (dark), the desktop coach inbox (light; a
+card opened by the athlete is labelled so), the coach field app. The athlete
+opening the picture or the clip stamps `athlete_read_at`, one-way like
+message read state: the coach sees it under SHARE, the athlete never sees
+the coach's.
+
+**Where it starts.** A SHARE section in the viewer rail: a line to the
+athlete (optional) and "Send to Caroline". Absent an athlete on the clip it
+says to attach one in the library; absent a track or calibration it says
+what the athlete would get. Earlier shares of the rep list underneath with
+when they were sent and opened, and can be taken back (the card goes; the
+message stays, as anything said stays).
+
+Decisions:
+
+1. **The general thread, not a session thread.** A lift analysed in KinEMOS
+   may come from a log clip, a competition attempt or a direct import; only
+   the first has a session. The general thread is the one every athlete
+   has.
+2. **A message plus a card, not a message with a payload.** The message
+   table stays what it is — text — and the card is a KinEMOS object with a
+   KinEMOS schema, read by the surfaces as an extra: a failed read leaves
+   the thread whole.
+3. **The athlete may watch the clip.** R2 reads are open (the write token
+   is the only gate) and log clips play from Stream already; the card
+   carries the playback URL the library already resolves. A future auth
+   phase gates it with everything else.
+4. **Nothing is judged on the card.** The numbers are what the coach chose
+   to send; what they mean is the message beside them.
+
+Not in this slice: sharing to colleague coaches (needs the club layer's
+recipient model), overlay export (mp4 with the path burned in), talkover.

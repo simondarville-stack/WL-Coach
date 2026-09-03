@@ -61,6 +61,9 @@ import {
 import { describeError } from '../lib/errorMessage';
 import { emitInboxChanged, onInboxChanged } from '../lib/inboxEvents';
 import { VideoMessageBubble } from './chat/VideoMessageBubble';
+import { ShareMessageBubble } from './chat/ShareMessageBubble';
+import { fetchSharesForAthlete } from '../kinemos/lib/shareService';
+import type { KinemosShare } from '../lib/database.types';
 import {
   isNotifyEnabled,
   notifyPermission,
@@ -1032,13 +1035,29 @@ function ChatPane({
       .catch(() => undefined);
   };
 
-  // The thread timeline: messages and clips merged by timestamp. ISO
+  // Lift analyses shared with this athlete from KinEMOS — cards in the
+  // general thread, beside the message that carried each. An extra, like the
+  // clips: a failed read leaves the thread whole.
+  const shareAthleteId = thread.kind === 'general' ? athleteId : null;
+  const [shares, setShares] = useState<KinemosShare[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setShares([]);
+    if (!shareAthleteId) return;
+    fetchSharesForAthlete(shareAthleteId)
+      .then(s => { if (alive) setShares(s); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [shareAthleteId, messages.length]);
+
+  // The thread timeline: messages, clips and shares merged by timestamp. ISO
   // timestamps from PostgREST share the +00:00 offset, so a string compare
   // orders them correctly.
   const threadRows = useMemo(() => {
     type Row =
       | { key: string; at: string; kind: 'message'; message: TrainingLogMessage }
-      | { key: string; at: string; kind: 'video'; item: SessionVideoItem };
+      | { key: string; at: string; kind: 'video'; item: SessionVideoItem }
+      | { key: string; at: string; kind: 'share'; share: KinemosShare };
     const rows: Row[] = [
       ...messages.map(m => ({
         key: `m:${m.id}`, at: m.created_at, kind: 'message' as const, message: m,
@@ -1046,9 +1065,12 @@ function ChatPane({
       ...sessionVideos.map(v => ({
         key: `v:${v.video.id}`, at: v.video.created_at, kind: 'video' as const, item: v,
       })),
+      ...shares.map(s => ({
+        key: `s:${s.id}`, at: s.created_at, kind: 'share' as const, share: s,
+      })),
     ];
     return rows.sort((a, b) => a.at.localeCompare(b.at));
-  }, [messages, sessionVideos]);
+  }, [messages, sessionVideos, shares]);
 
   // Land the coach ON the first unread message rather than at the bottom of a
   // long thread. Keyed on the id, so it fires once per thread — scrolling on
@@ -1191,6 +1213,14 @@ function ChatPane({
                 theme="light"
                 unreviewed={row.item.video.coach_reviewed_at == null}
                 onOpen={onOpenSessionVideo}
+              />
+            ) : row.kind === 'share' ? (
+              <ShareMessageBubble
+                key={row.key}
+                share={row.share}
+                isOwn
+                theme="light"
+                senderLabel={row.share.athlete_read_at ? 'Opened by the athlete' : null}
               />
             ) : (
             <Fragment key={row.key}>

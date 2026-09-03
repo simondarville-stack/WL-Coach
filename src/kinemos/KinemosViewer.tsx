@@ -18,7 +18,7 @@ import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Minus, Ruler, Star, Tre
 import { ErrorState, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
 import { getOwnerId } from '../lib/ownerContext';
-import type { KinemosAnnotation, KinemosTrackPoint } from '../lib/database.types';
+import type { KinemosAnnotation, KinemosShare, KinemosTrackPoint } from '../lib/database.types';
 import {
   DEFAULT_PLATE_DIAMETER_CM,
   angleDeg,
@@ -48,6 +48,8 @@ import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
 import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack } from './lib/assists';
 import { trackSet } from './lib/setTracker';
+import { createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
+import { useCoachStore } from '../store/coachStore';
 import {
   findComparable,
   loadComparisonSubject,
@@ -127,6 +129,10 @@ export function KinemosViewer() {
   const [annotations, setAnnotations] = useState<KinemosAnnotation[]>([]);
   const [measurePoints, setMeasurePoints] = useState<PxPoint[]>([]);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [shares, setShares] = useState<KinemosShare[]>([]);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [massKg, setMassKg] = useState<number | null>(null);
@@ -258,6 +264,8 @@ export function KinemosViewer() {
     setPoints([]);
     setEllipse(null);
     setAnnotations([]);
+    setShares([]);
+    setShareNote(null);
     setMeasurePoints([]);
     setCoachBoundaries(null);
     setCamera('unknown');
@@ -275,6 +283,13 @@ export function KinemosViewer() {
         analysisIdRef.current = bundle.analysis.id;
         setPoints(bundle.track?.points ?? []);
         setAnnotations(bundle.annotations);
+        // Shares are an extra: a missing table (the migration not yet
+        // applied) must not stop the rep from loading.
+        listSharesForAnalysis(bundle.analysis.id)
+          .then(s => {
+            if (!cancelled) setShares(s);
+          })
+          .catch(() => undefined);
         if (bundle.track) {
           setTrackerTier(bundle.track.tracker_tier);
           setCorrectionCount(bundle.track.correction_count);
@@ -1054,6 +1069,84 @@ export function KinemosViewer() {
     }
   }, [frame, server, ensureId, clip, index, points, currentT, ellipse]);
 
+  // ── Sharing ───────────────────────────────────────────────────────────────
+  /**
+   * Hand this rep to its athlete: this frame with the bar path drawn, the
+   * numbers as they stand, and the coach's words, into the athlete's general
+   * coach thread. The message is stamped with the athlete's own environment,
+   * as the inbox does, or the athlete app never finds it.
+   */
+  const shareNow = useCallback(
+    async (message: string) => {
+      if (!frame || !server || !clip?.athleteId || !repSummary) return;
+      setShareBusy(true);
+      setShareNote(null);
+      try {
+        const analysisId = await ensureId();
+        if (!analysisId) return;
+        const caption = [clip.athleteName, clip.exerciseName, clip.date ? formatDateShort(clip.date) : null]
+          .filter(Boolean)
+          .join(' · ');
+        const image = await composeSnapshot({
+          frame: frame.canvas as CanvasImageSource,
+          width: server.displayWidth,
+          height: server.displayHeight,
+          points,
+          currentT,
+          ellipse,
+          caption,
+        });
+        const coachEnv = getOwnerId();
+        const ownerId = await fetchAthleteOwnerId(clip.athleteId, coachEnv ?? '');
+        if (!ownerId) {
+          setShareNote('The athlete has no environment to send into.');
+          return;
+        }
+        const share = await createShare({
+          analysisId,
+          athleteId: clip.athleteId,
+          ownerId,
+          senderCoachId: activeCoachId,
+          note: message,
+          image,
+          summary: {
+            athleteName: clip.athleteName,
+            exerciseName: clip.exerciseName,
+            date: clip.date,
+            loadKg: massKg,
+            repIndex,
+            label: null,
+            vmaxMs: repSummary.peakVerticalVelocityMs,
+            peakHeightCm: repSummary.peakHeightCm,
+            grade: grade?.grade ?? null,
+            clipUrl: clip.playbackUrl ?? null,
+          },
+        });
+        setShares(current => [share, ...current]);
+        setShareNote(`Sent to ${clip.athleteName ?? 'the athlete'} — it is in their coach thread now.`);
+      } catch (e) {
+        const text = (e as { message?: string } | null)?.message ?? '';
+        setShareNote(
+          /kinemos_shares/.test(text)
+            ? 'Sharing needs the kinemos_shares table — the 20260903120000 migration has not been applied.'
+            : 'The share could not be sent.',
+        );
+      } finally {
+        setShareBusy(false);
+      }
+    },
+    [frame, server, clip, repSummary, ensureId, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade],
+  );
+
+  const removeShare = useCallback(async (shareId: string) => {
+    try {
+      await deleteShare(shareId);
+      setShares(current => current.filter(s => s.id !== shareId));
+    } catch {
+      setShareNote('That share could not be taken back.');
+    }
+  }, []);
+
   const removeAnnotation = useCallback(async (annotationId: string) => {
     try {
       await deleteAnnotationRow(annotationId);
@@ -1647,6 +1740,15 @@ export function KinemosViewer() {
             measureValue={measureValue}
             kneeCm={kneeCm}
             kneeMarked={kneePoint !== null}
+            share={{
+              athleteName: clip.athleteId ? clip.athleteName ?? 'the athlete' : null,
+              shares,
+              busy: shareBusy,
+              note: shareNote,
+              ready: points.length > 1 && calibration !== null && repSummary !== null,
+              onShare: message => void shareNow(message),
+              onDelete: shareId => void removeShare(shareId),
+            }}
             measureComplete={measureComplete}
             onSaveMeasurement={() => void saveMeasurement()}
             onClearMeasurement={() => setMeasurePoints([])}

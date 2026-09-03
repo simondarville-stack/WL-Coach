@@ -47,7 +47,8 @@ import {
 } from '../../lib/dateUtils';
 import { UnitPickerSheet, type PickedUnit } from '../../athlete/v2/components/UnitPickerSheet';
 import { InitialsAvatar } from './FieldInboxScreen';
-import type { TrainingLogMessage, TrainingLogVideo } from '../../lib/database.types';
+import type { KinemosShare, TrainingLogMessage, TrainingLogVideo } from '../../lib/database.types';
+import { fetchSharesForAthlete } from '../../kinemos/lib/shareService';
 
 /** A unit thread target. sessionId is null until the first message
  *  creates the session row (attach flow on a not-yet-logged unit). */
@@ -180,6 +181,19 @@ export function FieldConversationScreen() {
     return () => { alive = false; };
   }, [videoSessionId]);
 
+  // Lift analyses shared with this athlete from KinEMOS — cards in the
+  // general thread, an extra like the clips.
+  const [shares, setShares] = useState<KinemosShare[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setShares([]);
+    if (view.kind !== 'general' || !athleteId) return;
+    fetchSharesForAthlete(athleteId)
+      .then(s => { if (alive) setShares(s); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [view.kind, athleteId]);
+
   const onOpenSessionVideo = (v: TrainingLogVideo) => {
     if (v.coach_reviewed_at != null) return;
     setSessionVideos(prev =>
@@ -264,6 +278,7 @@ export function FieldConversationScreen() {
           onMessagesChanged={loadThreads}
           onAttach={!inUnit ? () => setPickerOpen(true) : null}
           videos={inUnit ? sessionVideos : []}
+          shares={inUnit ? [] : shares}
           onOpenVideo={onOpenSessionVideo}
         />
       </div>
@@ -370,6 +385,7 @@ function ThreadChat({
   onAttach,
   videos,
   onOpenVideo,
+  shares,
 }: {
   athleteId: string;
   /** The athlete's host environment — sessions created by the attach
@@ -386,6 +402,8 @@ function ThreadChat({
   /** The unit's session clips, interleaved into the thread by timestamp. */
   videos: SessionVideoItem[];
   onOpenVideo: (video: TrainingLogVideo) => void;
+  /** Lift analyses shared with the athlete — the general thread's cards. */
+  shares: KinemosShare[];
 }) {
   return (
     <MobileThreadPane
@@ -413,6 +431,7 @@ function ThreadChat({
       safeArea
       videos={videos}
       onOpenVideo={onOpenVideo}
+      shares={shares}
     />
   );
 }

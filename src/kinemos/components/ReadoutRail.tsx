@@ -16,7 +16,8 @@
 import { Camera, Plus, Trash2 } from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
 import { Button } from '../../components/ui';
-import type { KinemosAnnotation } from '../../lib/database.types';
+import type { KinemosAnnotation, KinemosShare } from '../../lib/database.types';
+import { formatDateTimeShort } from '../../lib/dateUtils';
 import type { PathMetrics } from '../engine/calibration';
 import { distance, drift, num } from '../lib/viewerFormat';
 import type { ViewerTool } from './ViewerStage';
@@ -44,6 +45,9 @@ interface ReadoutRailProps {
   kneeMarked?: boolean;
 
   annotations: KinemosAnnotation[];
+  /** Handing this rep to its athlete. Null before there is an analysis to
+   *  share. */
+  share?: ShareState | null;
   onAddNote: (body: string) => void;
   onSnapshot: () => void;
   onDeleteAnnotation: (id: string) => void;
@@ -71,6 +75,20 @@ export interface TrackingState {
   setNote?: string | null;
 }
 
+export interface ShareState {
+  /** Who the rep goes to — the clip's athlete. Null when the clip has none. */
+  athleteName: string | null;
+  /** Earlier shares of this rep, newest first. */
+  shares: KinemosShare[];
+  busy: boolean;
+  /** What the last share said, in the coach's terms. */
+  note: string | null;
+  /** Whether there is anything to send yet — a track and a calibration. */
+  ready: boolean;
+  onShare: (message: string) => void;
+  onDelete: (shareId: string) => void;
+}
+
 export function ReadoutRail({
   repIndices,
   repIndex,
@@ -88,6 +106,7 @@ export function ReadoutRail({
   kneeCm = null,
   kneeMarked = false,
   annotations,
+  share = null,
   onAddNote,
   onSnapshot,
   onDeleteAnnotation,
@@ -95,6 +114,7 @@ export function ReadoutRail({
   tracking,
 }: ReadoutRailProps) {
   const [noteDraft, setNoteDraft] = useState('');
+  const [shareDraft, setShareDraft] = useState('');
   const calibrated = metrics.calibrated;
 
   return (
@@ -334,6 +354,65 @@ export function ReadoutRail({
                 Discard
               </Button>
             </div>
+          )}
+        </section>
+      )}
+
+      {/* ── Share ───────────────────────────────────────────────────────── */}
+      {share && (
+        <section style={section}>
+          <header style={header}>
+            <span style={label}>SHARE</span>
+          </header>
+          {share.athleteName === null ? (
+            <p style={hint}>This clip has no athlete. Attach one in the library and the rep can be sent to them.</p>
+          ) : !share.ready ? (
+            <p style={hint}>Track and calibrate the rep first — the athlete gets this frame with the bar path, and the numbers.</p>
+          ) : (
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                share.onShare(shareDraft.trim());
+                setShareDraft('');
+              }}
+              style={{ display: 'grid', gap: 'var(--space-xs)' }}
+            >
+              <textarea
+                value={shareDraft}
+                onChange={e => setShareDraft(e.target.value)}
+                placeholder={`A word to ${share.athleteName}… (optional)`}
+                className="emos-input"
+                rows={2}
+                style={{ resize: 'vertical', fontSize: 'var(--text-caption)' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                <Button size="sm" type="submit" disabled={share.busy}>
+                  {share.busy ? 'Sending…' : `Send to ${share.athleteName}`}
+                </Button>
+                <span style={{ ...hint, margin: 0 }}>This frame, the bar path and the numbers, into their coach thread.</span>
+              </div>
+            </form>
+          )}
+          {share.note && <p style={hint}>{share.note}</p>}
+          {share.shares.length > 0 && (
+            <ul style={{ listStyle: 'none', margin: 'var(--space-xs) 0 0', padding: 0, display: 'grid', gap: 4 }}>
+              {share.shares.map(s => (
+                <li
+                  key={s.id}
+                  style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}
+                >
+                  <span style={{ flexGrow: 1 }}>
+                    {`Sent ${formatDateTimeShort(new Date(s.created_at))}`}
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>
+                      {s.athlete_read_at ? ` · opened ${formatDateTimeShort(new Date(s.athlete_read_at))}` : ' · not opened yet'}
+                    </span>
+                  </span>
+                  <button type="button" onClick={() => share.onDelete(s.id)} title="Take it back — removes the card from the athlete's thread" style={iconButton}>
+                    <Trash2 size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       )}

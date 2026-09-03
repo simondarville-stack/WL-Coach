@@ -21,8 +21,9 @@ import { Loader2, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { useThreadChat, type UseThreadChatArgs } from '../../hooks/useThreadChat';
 import { AutoGrowTextarea } from '../ui';
 import { formatTime24, formatDateTimeShort } from '../../lib/dateUtils';
-import type { TrainingLogMessage, TrainingLogVideo } from '../../lib/database.types';
+import type { KinemosShare, TrainingLogMessage, TrainingLogVideo } from '../../lib/database.types';
 import type { SessionVideoItem } from '../../lib/trainingLogService';
+import { ShareMessageBubble } from './ShareMessageBubble';
 import { VideoMessageBubble } from './VideoMessageBubble';
 
 export interface MobileThreadPaneProps {
@@ -46,6 +47,10 @@ export interface MobileThreadPaneProps {
   videos?: SessionVideoItem[];
   /** Fired when a clip is opened — coach surfaces stamp coach_reviewed_at. */
   onOpenVideo?: (video: TrainingLogVideo) => void;
+  /** Lift analyses the coach shared, interleaved as cards (general threads). */
+  shares?: KinemosShare[];
+  /** Fired when a share is opened — the athlete app stamps athlete_read_at. */
+  onOpenShare?: (share: KinemosShare) => void;
 }
 
 export function MobileThreadPane({
@@ -58,6 +63,8 @@ export function MobileThreadPane({
   safeArea = false,
   videos = [],
   onOpenVideo,
+  shares = [],
+  onOpenShare,
 }: MobileThreadPaneProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const firstUnreadRef = useRef<HTMLDivElement | null>(null);
@@ -69,7 +76,8 @@ export function MobileThreadPane({
   const rows = useMemo(() => {
     type Row =
       | { key: string; at: string; kind: 'message'; message: TrainingLogMessage }
-      | { key: string; at: string; kind: 'video'; item: SessionVideoItem };
+      | { key: string; at: string; kind: 'video'; item: SessionVideoItem }
+      | { key: string; at: string; kind: 'share'; share: KinemosShare };
     const merged: Row[] = [
       ...messages.map(m => ({
         key: `m:${m.id}`, at: m.created_at, kind: 'message' as const, message: m,
@@ -77,9 +85,14 @@ export function MobileThreadPane({
       ...videos.map(v => ({
         key: `v:${v.video.id}`, at: v.video.created_at, kind: 'video' as const, item: v,
       })),
+      // A share's card sits right after the message that carries its words:
+      // the two are written in that order, microseconds apart.
+      ...shares.map(s => ({
+        key: `s:${s.id}`, at: s.created_at, kind: 'share' as const, share: s,
+      })),
     ];
     return merged.sort((a, b) => a.at.localeCompare(b.at));
-  }, [messages, videos]);
+  }, [messages, videos, shares]);
 
   // Open on the first unread message when there is one; otherwise at the
   // bottom, as before. Jumping to the bottom past a block of unread messages is
@@ -131,6 +144,14 @@ export function MobileThreadPane({
                 // the athlete, same one-way policy as read receipts.
                 unreviewed={chat.role === 'coach' && row.item.video.coach_reviewed_at == null}
                 onOpen={onOpenVideo}
+              />
+            ) : row.kind === 'share' ? (
+              <ShareMessageBubble
+                key={row.key}
+                share={row.share}
+                isOwn={chat.role === 'coach'}
+                theme="dark"
+                onOpen={onOpenShare}
               />
             ) : (
             <Fragment key={row.key}>

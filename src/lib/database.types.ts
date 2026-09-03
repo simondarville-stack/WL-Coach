@@ -1363,6 +1363,41 @@ export interface KinemosAnnotation {
   updated_at: string;
 }
 
+/** What a share's card says — frozen when the coach shared it, so a rep
+ *  re-tracked later does not rewrite what the athlete was sent. */
+export interface KinemosShareSummary {
+  athleteName: string | null;
+  exerciseName: string | null;
+  /** The lift's date, YYYY-MM-DD. */
+  date: string | null;
+  loadKg: number | null;
+  repIndex: number;
+  label: string | null;
+  vmaxMs: number | null;
+  peakHeightCm: number | null;
+  grade: 'A' | 'B' | 'C' | null;
+  /** Where the clip plays from, when the athlete may watch it. */
+  clipUrl: string | null;
+}
+
+/** One analysed rep handed to an athlete (or, later, a colleague or an
+ *  export): the picture, the numbers as they stood, and a reference to the
+ *  message that carried the coach's words. */
+export interface KinemosShare {
+  id: string;
+  owner_id: string | null;
+  analysis_id: string;
+  channel: 'athlete' | 'club' | 'export';
+  athlete_id: string | null;
+  sender_coach_id: string | null;
+  message_id: string | null;
+  /** R2 key of the share's picture. Only the key, never a URL. */
+  asset_key: string | null;
+  summary: KinemosShareSummary;
+  created_at: string;
+  athlete_read_at: string | null;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -1714,6 +1749,12 @@ export interface Database {
           Record<string, unknown>;
         Update: Partial<Omit<KinemosAnnotation, 'id' | 'created_at' | 'updated_at'>> &
           Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_shares: {
+        Row: KinemosShare & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosShare, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<KinemosShare, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       kinemos_videos: {
