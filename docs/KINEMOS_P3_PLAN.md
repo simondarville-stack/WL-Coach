@@ -12,9 +12,9 @@
 > same ship (§7). **P3e–P3g SHIPPED** — sets and phone footage (§8, 0.85.0),
 > the German analyzer's measures (§9, 0.85.0), sets in the viewer with
 > colour re-acquisition, height charts and the knee mark (§10, 0.86.0).
-> **P3h in progress** — sharing to the athlete, overlay export and talkover
-> (§11). The rest of P3 — sharing to colleagues, the device-profile
-> calibration tier — is not started.
+> **P3h SHIPPED** — sharing to the athlete and to a colleague, overlay
+> export and talkover (§11). Left in P3: the device-profile calibration
+> tier.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made
@@ -833,5 +833,19 @@ rail, and the next share of the rep carries the latest one — "Hear the
 coach" on the card. Not verified headlessly: MediaRecorder over a canvas
 stream needs a real browser session; the pure parts are tested.
 
-Not in this slice: sharing to colleague coaches (needs the club layer's
-recipient model).
+**Sharing with a colleague — done.** Design §9's second target. The
+club layer's recipients turned out to exist already: the coach profiles of
+the environment, which the shared inbox uses to label who wrote a message.
+So under SHARE, next to "Send to Caroline", a picker of the other coaches
+and a Send. Coaches have no thread of their own, so a club share has no
+message row: the share carries the words (`note`, `recipient_coach_id`,
+`coach_read_at` on the same table) and the colleague finds it where a
+coach goes to look at lifts — a "Shared with you" strip above the video
+library, newest first, the picture, the lift, the numbers, who sent it and
+what they said, and Open, which lands the viewer on that rep (`?rep=N`,
+new) and stamps it seen. Nothing shows when nothing was shared.
+
+P3h is complete: all four of design §9's sharing targets — athlete,
+colleague, export, talkover — are built.
+
+Left for later, in the P3 list: the device-profile calibration tier.

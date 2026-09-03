@@ -99,6 +99,9 @@ export interface ShareState {
   exportNote: string | null;
   /** Whether the rep has a talkover that the next share will carry. */
   talkoverIncluded: boolean;
+  /** The other coaches in this environment — the club channel's recipients. */
+  colleagues: Array<{ id: string; name: string }>;
+  onShareWithCoach: (coachId: string, message: string) => void;
 }
 
 export interface TalkoverState {
@@ -138,6 +141,7 @@ export function ReadoutRail({
 }: ReadoutRailProps) {
   const [noteDraft, setNoteDraft] = useState('');
   const [shareDraft, setShareDraft] = useState('');
+  const [colleagueId, setColleagueId] = useState('');
   const [playingKey, setPlayingKey] = useState<string | null>(null);
   // A clock for the recording in progress: re-render once a second while it
   // runs, nothing otherwise.
@@ -428,6 +432,35 @@ export function ReadoutRail({
                     : 'This frame, the bar path and the numbers, into their coach thread.'}
                 </span>
               </div>
+            </form>
+          )}
+          {share.ready && share.colleagues.length > 0 && (
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                if (!colleagueId) return;
+                share.onShareWithCoach(colleagueId, shareDraft.trim());
+                setShareDraft('');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', marginTop: 'var(--space-xs)' }}
+            >
+              <select
+                value={colleagueId}
+                onChange={e => setColleagueId(e.target.value)}
+                className="emos-input"
+                style={{ height: 28, fontSize: 'var(--text-caption)', flexGrow: 1, minWidth: 0 }}
+                title="A colleague coach in this environment. The words above go with it; they find it on the video library under “Shared with you”."
+              >
+                <option value="">or a colleague…</option>
+                {share.colleagues.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <Button size="sm" variant="secondary" type="submit" disabled={share.busy || !colleagueId}>
+                Send
+              </Button>
             </form>
           )}
           {share.note && <p style={hint}>{share.note}</p>}

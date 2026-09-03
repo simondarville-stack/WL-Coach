@@ -133,6 +133,73 @@ export async function markShareOpened(shareId: string): Promise<void> {
   if (error) throw error;
 }
 
+// ── The club channel ────────────────────────────────────────────────────────
+
+export interface CreateClubShareArgs {
+  analysisId: string;
+  ownerId: string;
+  senderCoachId: string | null;
+  recipientCoachId: string;
+  note: string;
+  image: Blob;
+  summary: KinemosShareSummary;
+}
+
+/**
+ * Hand a rep to a colleague. Coaches have no thread of their own, so there
+ * is no message: the share carries the words, and the colleague finds it on
+ * the KinEMOS library under "Shared with you".
+ */
+export async function createClubShare(args: CreateClubShareArgs): Promise<KinemosShare> {
+  const assetKey = await uploadSnapshot(args.image);
+  const { data, error } = await supabase
+    .from('kinemos_shares')
+    .insert({
+      owner_id: args.ownerId,
+      analysis_id: args.analysisId,
+      channel: 'club',
+      athlete_id: null,
+      sender_coach_id: args.senderCoachId,
+      recipient_coach_id: args.recipientCoachId,
+      note: args.note.trim() || null,
+      asset_key: assetKey,
+      summary: args.summary,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as KinemosShare;
+}
+
+/** A club share with where its rep lives, so the library can open it. */
+export interface SharedWithCoach extends KinemosShare {
+  analysis: { source_kind: 'log' | 'event' | 'direct'; source_id: string; rep_index: number } | null;
+}
+
+/** Everything shared with one coach by colleagues, newest first. */
+export async function fetchSharesForCoach(coachId: string): Promise<SharedWithCoach[]> {
+  const { data, error } = await supabase
+    .from('kinemos_shares')
+    .select('*, analysis:kinemos_analyses(source_kind, source_id, rep_index)')
+    .eq('recipient_coach_id', coachId)
+    .eq('channel', 'club')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  // The embedded `analysis` is a PostgREST join the generated types cannot
+  // express; the row shape is what the select above says it is.
+  return (data ?? []) as unknown as SharedWithCoach[];
+}
+
+/** The colleague opened it. */
+export async function markShareSeenByCoach(shareId: string): Promise<void> {
+  const { error } = await supabase
+    .from('kinemos_shares')
+    .update({ coach_read_at: new Date().toISOString() })
+    .eq('id', shareId)
+    .is('coach_read_at', null);
+  if (error) throw error;
+}
+
 export async function deleteShare(shareId: string): Promise<void> {
   const { error } = await supabase.from('kinemos_shares').delete().eq('id', shareId);
   if (error) throw error;

@@ -33,6 +33,8 @@ import { ClipPlayerModal } from './components/ClipPlayerModal';
 import { ImportControl } from './components/ImportControl';
 import { deleteDirectVideo } from './lib/directImport';
 import { loadLibrary, type LibraryFilters, type LibrarySource, type LibraryVideo } from './lib/videoLibrary';
+import { SharedWithYou } from './components/SharedWithYou';
+import { useCoachStore } from '../store/coachStore';
 
 const SOURCE_LABEL: Record<LibrarySource, string> = {
   log: 'Log',
@@ -63,6 +65,9 @@ export function KinemosLibrary() {
 
   const { athletes, fetchAthletes } = useAthletes();
   const { exercises, fetchExercises } = useExercises();
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
+  const coaches = useCoachStore(s => s.coaches);
+  const coachNames = useMemo(() => new Map(coaches.map(c => [c.id, c.name])), [coaches]);
 
   const [rows, setRows] = useState<LibraryVideo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -294,6 +299,8 @@ export function KinemosLibrary() {
           subtitle="Every lift video in EMOS — log clips, competition footage, and direct imports."
           metadata={`${visible.length} of ${rows.length} clips`}
         />
+
+        <SharedWithYou coachId={activeCoachId} coachNames={coachNames} />
 
         <div
           style={{

@@ -1393,11 +1393,18 @@ export interface KinemosShare {
   athlete_id: string | null;
   sender_coach_id: string | null;
   message_id: string | null;
+  /** The colleague it went to, on the club channel. */
+  recipient_coach_id: string | null;
+  /** The sender's words on a club share — coaches have no thread of their
+   *  own to carry them. */
+  note: string | null;
   /** R2 key of the share's picture. Only the key, never a URL. */
   asset_key: string | null;
   summary: KinemosShareSummary;
   created_at: string;
   athlete_read_at: string | null;
+  /** When the colleague first opened a club share. */
+  coach_read_at: string | null;
 }
 
 export interface Database {

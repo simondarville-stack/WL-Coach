@@ -15,6 +15,9 @@ const share: KinemosShare = {
   athlete_id: 'athlete-1',
   sender_coach_id: 'coach-1',
   message_id: 'message-1',
+  recipient_coach_id: null,
+  note: null,
+  coach_read_at: null,
   asset_key: 'abc.jpg',
   summary: {
     athleteName: 'Caroline',

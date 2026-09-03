@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS kinemos_shares (
   athlete_id uuid NULL REFERENCES athletes(id) ON DELETE CASCADE,
   -- Which coach shared it; labels the card in a shared inbox.
   sender_coach_id uuid NULL,
+  -- The colleague it went to, on the club channel. Coaches have no thread
+  -- of their own, so the share itself carries the words (`note`) and the
+  -- colleague finds it on the KinEMOS library under "Shared with you".
+  recipient_coach_id uuid NULL REFERENCES coach_profiles(id) ON DELETE CASCADE,
+  note text NULL,
+  -- When the colleague first opened it.
+  coach_read_at timestamptz NULL,
   -- The message row that carries the coach's words, when one was written.
   message_id uuid NULL REFERENCES training_log_messages(id) ON DELETE SET NULL,
   -- R2 key of the share's picture — the frame with the bar path drawn.
@@ -41,3 +48,4 @@ CREATE TABLE IF NOT EXISTS kinemos_shares (
 -- The athlete app reads its own shares by athlete; the viewer lists a rep's.
 CREATE INDEX IF NOT EXISTS kinemos_shares_athlete_idx ON kinemos_shares (athlete_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS kinemos_shares_analysis_idx ON kinemos_shares (analysis_id);
+CREATE INDEX IF NOT EXISTS kinemos_shares_recipient_idx ON kinemos_shares (recipient_coach_id, created_at DESC);

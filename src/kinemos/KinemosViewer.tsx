@@ -13,7 +13,7 @@
  * everywhere (CLAUDE.md core principle 4) and this is no different.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Minus, Ruler, Star, TrendingUp, Triangle } from 'lucide-react';
 import { ErrorState, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
@@ -48,7 +48,7 @@ import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
 import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack } from './lib/assists';
 import { trackSet } from './lib/setTracker';
-import { createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
+import { createClubShare, createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
 import { exportOverlayVideo } from './lib/overlayExport';
 import { formatTalkoverLength, startTalkover, talkoverMimeType, type TalkoverController } from './lib/talkover';
 import { kinemosObjectUrl, uploadTalkover } from './lib/kinemosStorage';
@@ -124,7 +124,13 @@ export function KinemosViewer() {
   const [loadingClip, setLoadingClip] = useState(true);
 
   const [tool, setTool] = useState<ViewerTool>('look');
-  const [repIndex, setRepIndex] = useState(1);
+  // `?rep=N` opens a particular rep — how a lift shared with a colleague
+  // lands on the rep that was shared rather than rep 1.
+  const [searchParams] = useSearchParams();
+  const [repIndex, setRepIndex] = useState(() => {
+    const rep = Number(searchParams.get('rep'));
+    return Number.isInteger(rep) && rep >= 1 ? rep : 1;
+  });
   const [repIndices, setRepIndices] = useState<number[]>([1]);
 
   const [points, setPoints] = useState<KinemosTrackPoint[]>([]);
@@ -142,6 +148,11 @@ export function KinemosViewer() {
   const [talkoverBusy, setTalkoverBusy] = useState(false);
   const [talkoverNote, setTalkoverNote] = useState<string | null>(null);
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
+  const coaches = useCoachStore(s => s.coaches);
+  const colleagues = useMemo(
+    () => coaches.filter(c => c.id !== activeCoachId).map(c => ({ id: c.id, name: c.name })),
+    [coaches, activeCoachId],
+  );
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [massKg, setMassKg] = useState<number | null>(null);
@@ -1272,6 +1283,70 @@ export function KinemosViewer() {
     }
   }, [talkover, server, ensureId, index, currentT, clip]);
 
+  /** The same picture and numbers, to a colleague coach. */
+  const shareWithCoach = useCallback(
+    async (coachId: string, message: string) => {
+      if (!frame || !server || !repSummary) return;
+      setShareBusy(true);
+      setShareNote(null);
+      try {
+        const analysisId = await ensureId();
+        if (!analysisId) return;
+        const caption = [clip?.athleteName, clip?.exerciseName, clip?.date ? formatDateShort(clip.date) : null]
+          .filter(Boolean)
+          .join(' · ');
+        const image = await composeSnapshot({
+          frame: frame.canvas as CanvasImageSource,
+          width: server.displayWidth,
+          height: server.displayHeight,
+          points,
+          currentT,
+          ellipse,
+          caption,
+        });
+        const ownerId = getOwnerId();
+        if (!ownerId) {
+          setShareNote('No environment to share within.');
+          return;
+        }
+        const share = await createClubShare({
+          analysisId,
+          ownerId,
+          senderCoachId: activeCoachId,
+          recipientCoachId: coachId,
+          note: message,
+          image,
+          summary: {
+            athleteName: clip?.athleteName ?? null,
+            exerciseName: clip?.exerciseName ?? null,
+            date: clip?.date ?? null,
+            loadKg: massKg,
+            repIndex,
+            label: null,
+            vmaxMs: repSummary.peakVerticalVelocityMs,
+            peakHeightCm: repSummary.peakHeightCm,
+            grade: grade?.grade ?? null,
+            clipUrl: clip?.playbackUrl ?? null,
+            talkoverUrl: latestTalkover?.asset_key ? kinemosObjectUrl(latestTalkover.asset_key) : null,
+          },
+        });
+        setShares(current => [share, ...current]);
+        const name = colleagues.find(c => c.id === coachId)?.name ?? 'your colleague';
+        setShareNote(`Sent to ${name} — it is on their video library under “Shared with you”.`);
+      } catch (e) {
+        const text = (e as { message?: string } | null)?.message ?? '';
+        setShareNote(
+          /kinemos_shares/.test(text)
+            ? 'Sharing needs the kinemos_shares table — the 20260903120000 migration has not been applied.'
+            : 'The share could not be sent.',
+        );
+      } finally {
+        setShareBusy(false);
+      }
+    },
+    [frame, server, repSummary, ensureId, clip, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade, latestTalkover, colleagues],
+  );
+
   const removeShare = useCallback(async (shareId: string) => {
     try {
       await deleteShare(shareId);
@@ -1886,6 +1961,8 @@ export function KinemosViewer() {
               exporting,
               exportNote,
               talkoverIncluded: latestTalkover !== null,
+              colleagues,
+              onShareWithCoach: (coachId, message) => void shareWithCoach(coachId, message),
             }}
             talkover={
               talkoverMimeType() === null
