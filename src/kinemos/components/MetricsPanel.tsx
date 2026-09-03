@@ -26,6 +26,9 @@ interface MetricsPanelProps {
   onMass: (kg: number | null) => void;
   /** Why there are no numbers, when there are none. */
   emptyReason: string | null;
+  /** The marked knee height, and the bar's velocity as it passed it on the
+   *  way up — null velocity when it never got that high before Vmax. */
+  knee?: { heightCm: number; t: number | null; velocityMs: number | null } | null;
 }
 
 export function MetricsPanel({
@@ -35,6 +38,7 @@ export function MetricsPanel({
   massSource,
   onMass,
   emptyReason,
+  knee = null,
 }: MetricsPanelProps) {
   const firstPull = metrics?.phases.find(p => p.phaseId === 'first_pull') ?? metrics?.phases[0];
   const secondPull = metrics?.phases.find(p => p.phaseId === 'second_pull') ?? metrics?.phases[2];
@@ -140,6 +144,17 @@ export function MetricsPanel({
           <dl style={list}>
             <Row term="V1 · end of first pull" value={unit(metrics.analyzer.v1Ms, 'm/s')} hint="Peak vertical velocity at the end of the first pull." />
             <Row term="V2 · knee passing" value={unit(metrics.analyzer.v2Ms, 'm/s')} hint="Minimum vertical velocity through the transition." />
+            {knee && (
+              <Row
+                term={`V at the knee · ${num(knee.heightCm, 0)} cm`}
+                value={knee.velocityMs === null ? 'not reached' : unit(knee.velocityMs, 'm/s')}
+                hint={
+                  knee.velocityMs === null
+                    ? 'The bar never rose to the marked knee height before Vmax — a lift from above the knee, or a mark on the wrong frame.'
+                    : `The bar's velocity as it passed the knee you marked${knee.t !== null ? `, at ${num(knee.t, 2)} s` : ''}. V1 and V2 are defined around the knee: if this sits far from both, the phase edges want a look.`
+                }
+              />
+            )}
             <Row term="Vmax" value={unit(metrics.analyzer.vmaxMs, 'm/s')} strong />
             <Row term="Vmin · drop under" value={unit(metrics.analyzer.vminMs, 'm/s')} hint="The lowest (negative) vertical velocity after Vmax." />
             <Row term="t_turn · Vmax → Vmin" value={unit(metrics.analyzer.tTurnS, 's')} hint="Time from Vmax to Vmin — the speed of the lifter under the bar. Käks' third measure." />

@@ -30,6 +30,7 @@ import {
 import type { KinematicSeries } from '../engine/kinematics';
 import {
   forcePercentOf,
+  kneeCrossing,
   locateAnalyzerEvents,
   type AnalyzerEvent,
   type AnalyzerEvents,
@@ -99,6 +100,10 @@ interface AnalysisPanelProps {
   onSeekT: (t: number) => void;
   /** Why there is nothing to draw, when there is nothing to draw. */
   emptyReason: string | null;
+  /** The marked knee height above the bar's start, cm — drawn as a line at
+   *  that height against height, and at the moment the bar crosses it
+   *  against time. */
+  kneeCm?: number | null;
 }
 
 
@@ -128,6 +133,7 @@ export function AnalysisPanel({
   currentT,
   onSeekT,
   emptyReason,
+  kneeCm = null,
 }: AnalysisPanelProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<number | null>(null);
@@ -142,6 +148,10 @@ export function AnalysisPanel({
 
   const forcePct = useMemo(() => (series ? forcePercentOf(series) : null), [series]);
   const events = useMemo(() => (series ? locateAnalyzerEvents(series, spans) : null), [series, spans]);
+  const knee = useMemo(
+    () => (series && kneeCm !== null ? kneeCrossing(series, kneeCm) : null),
+    [series, kneeCm],
+  );
 
   const timeFromClient = useCallback(
     (clientX: number) => {
@@ -408,6 +418,18 @@ export function AnalysisPanel({
             onSeekT={onSeekT}
           />
         )}
+        {/* The knee: a height against height, a moment against time. Only
+            drawn against time when the bar actually crossed it. */}
+        {kneeCm !== null && (domain === 'height' || knee) && (
+          <KneeLine
+            x={domain === 'height' ? heightFraction(series.yCm, kneeCm) : fractionOf(knee!.t)}
+            title={
+              domain === 'height'
+                ? `Knee height — ${num(kneeCm, 1)} cm above the bar's start`
+                : `The bar passes the knee (${num(kneeCm, 1)} cm) at ${num(knee!.t, 2)} s, ${num(knee!.valueMs, 2)} m/s`
+            }
+          />
+        )}
         {events && (
           <EventMarks
             events={events}
@@ -561,6 +583,41 @@ function EventMarks({
         );
       })}
     </>
+  );
+}
+
+/** A vertical dashed line with "knee" at its foot, at a fraction of the
+ *  plot's width. The same colour as the knee line on the stage. */
+function KneeLine({ x, title }: { x: number; title: string }) {
+  if (!(x >= 0 && x <= 1)) return null;
+  return (
+    <span
+      title={title}
+      style={{
+        position: 'absolute',
+        left: `${x * 100}%`,
+        top: 0,
+        bottom: 0,
+        width: 0,
+        borderLeft: '1.5px dashed #5FB59B',
+        pointerEvents: 'none',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          left: 4,
+          bottom: 14,
+          fontSize: 'var(--text-micro)',
+          fontWeight: 600,
+          color: '#5FB59B',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'auto',
+        }}
+      >
+        knee
+      </span>
+    </span>
   );
 }
 

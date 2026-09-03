@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Ruler, Star, TrendingUp, Triangle } from 'lucide-react';
+import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Minus, Ruler, Star, TrendingUp, Triangle } from 'lucide-react';
 import { ErrorState, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
 import { getOwnerId } from '../lib/ownerContext';
@@ -23,6 +23,7 @@ import {
   DEFAULT_PLATE_DIAMETER_CM,
   angleDeg,
   calibrateFromEllipse,
+  displacementToCm,
   distanceCm,
   pathMetrics,
   type PlateEllipse,
@@ -33,6 +34,7 @@ import {
   DEFAULT_PHASE_SET,
   computeLiftMetrics,
   enforceMonotonic,
+  kneeCrossing,
   proposePhases,
   spansFrom,
   type PhaseBoundary,
@@ -104,6 +106,7 @@ const TOOLS: Array<{
   { id: 'mark', label: 'Mark the bar end', icon: Crosshair, key: 'M' },
   { id: 'distance', label: 'Measure a distance', icon: Ruler, key: 'D' },
   { id: 'angle', label: 'Measure an angle', icon: Triangle, key: 'A' },
+  { id: 'knee', label: 'Mark the knee height — click the knee on the start frame', icon: Minus, key: 'K' },
 ];
 
 export function KinemosViewer() {
@@ -1055,6 +1058,62 @@ export function KinemosViewer() {
     }
   }, []);
 
+  // ── Knee height ───────────────────────────────────────────────────────────
+  // The knee is an annotation — a measurement whose payload says what it
+  // is — so it travels with the rep, lists in the rail and deletes like any
+  // other. One per rep: a new click replaces the old row.
+  const kneeAnnotation = useMemo(
+    () => annotations.find(a => a.kind === 'measurement' && a.payload?.type === 'knee') ?? null,
+    [annotations],
+  );
+  const kneePoint = useMemo<PxPoint | null>(() => {
+    const p = kneeAnnotation?.payload?.point as { x?: unknown; y?: unknown } | undefined;
+    return p && typeof p.x === 'number' && typeof p.y === 'number' ? { x: p.x, y: p.y } : null;
+  }, [kneeAnnotation]);
+  /** Knee height above the bar's first mark, cm — the height the charts
+   *  and the analyzer measure from. Null until there is a track to measure
+   *  from and a calibration to measure with. */
+  const kneeCm = useMemo(() => {
+    if (!kneePoint || !calibration || points.length === 0) return null;
+    const origin = points.reduce((first, p) => (p.t < first.t ? p : first), points[0]);
+    return displacementToCm(calibration, kneePoint.x - origin.x, kneePoint.y - origin.y).y;
+  }, [kneePoint, calibration, points]);
+  const kneeReadout = useMemo(() => {
+    if (kneeCm === null) return null;
+    const crossing = kinematics ? kneeCrossing(kinematics, kneeCm) : null;
+    return { heightCm: kneeCm, t: crossing?.t ?? null, velocityMs: crossing?.valueMs ?? null };
+  }, [kneeCm, kinematics]);
+
+  const markKnee = useCallback(
+    async (point: PxPoint) => {
+      try {
+        const analysisId = await ensureId();
+        if (!analysisId) return;
+        if (kneeAnnotation) await deleteAnnotationRow(kneeAnnotation.id);
+        const heightCm =
+          calibration && points.length > 0
+            ? displacementToCm(
+                calibration,
+                point.x - points.reduce((first, p) => (p.t < first.t ? p : first), points[0]).x,
+                point.y - points.reduce((first, p) => (p.t < first.t ? p : first), points[0]).y,
+              ).y
+            : null;
+        const row = await addAnnotation(analysisId, {
+          kind: 'measurement',
+          frameIndex: index,
+          frameT: currentT,
+          ownerId: getOwnerId(),
+          body: heightCm === null ? 'Knee height' : `Knee height — ${num(heightCm, 1)} cm above the bar`,
+          payload: { type: 'knee', point, heightCm },
+        });
+        setAnnotations(current => [...current.filter(a => a.id !== kneeAnnotation?.id), row]);
+      } catch {
+        setSaveError('The knee mark could not be saved.');
+      }
+    },
+    [ensureId, kneeAnnotation, calibration, points, index, currentT],
+  );
+
   const clearCalibrationNow = useCallback(async () => {
     setEllipse(null);
     dirtyRef.current = true;
@@ -1509,6 +1568,8 @@ export function KinemosViewer() {
                 measurePoints={measurePoints}
                 onMeasurePoint={addMeasurePoint}
                 onMark={handleMark}
+                knee={kneePoint}
+                onKnee={p => void markKnee(p)}
               />
               <ViewerTransport
                 index={index}
@@ -1579,6 +1640,8 @@ export function KinemosViewer() {
             onClearMarks={() => void clearMarks()}
             tool={tool}
             measureValue={measureValue}
+            kneeCm={kneeCm}
+            kneeMarked={kneePoint !== null}
             measureComplete={measureComplete}
             onSaveMeasurement={() => void saveMeasurement()}
             onClearMeasurement={() => setMeasurePoints([])}
@@ -1610,6 +1673,7 @@ export function KinemosViewer() {
               setMassSource(kg === null ? null : 'manual');
             }}
             emptyReason={metricsEmptyReason}
+            knee={kneeReadout}
           />
           <GradePanel
             grade={grade}
@@ -1644,6 +1708,7 @@ export function KinemosViewer() {
             if (server) seek(server.nearestIndex(t));
           }}
           emptyReason={analysisEmptyReason}
+          kneeCm={kneeCm}
         />
       )}
     </div>

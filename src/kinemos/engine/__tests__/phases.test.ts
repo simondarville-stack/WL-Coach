@@ -17,6 +17,7 @@ import {
   computeLiftMetrics,
   enforceMonotonic,
   forcePercentOf,
+  kneeCrossing,
   locateAnalyzerEvents,
   proposePhases,
   spansFrom,
@@ -416,6 +417,17 @@ describe('locateAnalyzerEvents — the landmarks the charts draw', () => {
     expect(bare.v1).toBeNull();
     expect(bare.v2).toBeNull();
     expect(bare.vmax!.valueMs).toBeCloseTo(1.85, 1);
+  });
+
+  it('finds the bar passing a knee height on the way up, and not one it never reaches', () => {
+    // Half way up to Vmax's height: crossed once, between V1 and Vmax.
+    const knee = events.vmax!.heightCm / 2;
+    const crossing = kneeCrossing(series, knee)!;
+    expect(crossing.heightCm).toBe(knee);
+    expect(crossing.t).toBeGreaterThan(series.t[0]);
+    expect(crossing.t).toBeLessThan(events.vmax!.t);
+    expect(crossing.valueMs).toBeGreaterThan(0);
+    expect(kneeCrossing(series, events.apex!.heightCm + 50)).toBeNull();
   });
 
   it('gives force as a share of the load, sample by sample', () => {

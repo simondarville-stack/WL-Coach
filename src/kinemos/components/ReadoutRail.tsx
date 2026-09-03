@@ -38,6 +38,11 @@ interface ReadoutRailProps {
   onSaveMeasurement: () => void;
   onClearMeasurement: () => void;
 
+  /** The marked knee's height above the bar's start, cm; null when there is
+   *  no mark, or no calibration or track to measure it against. */
+  kneeCm?: number | null;
+  kneeMarked?: boolean;
+
   annotations: KinemosAnnotation[];
   onAddNote: (body: string) => void;
   onSnapshot: () => void;
@@ -80,6 +85,8 @@ export function ReadoutRail({
   measureComplete,
   onSaveMeasurement,
   onClearMeasurement,
+  kneeCm = null,
+  kneeMarked = false,
   annotations,
   onAddNote,
   onSnapshot,
@@ -268,6 +275,29 @@ export function ReadoutRail({
           )}
         </div>
       </section>
+
+      {/* ── Knee height ─────────────────────────────────────────────────── */}
+      {tool === 'knee' && (
+        <section style={section}>
+          <header style={header}>
+            <span style={label}>KNEE</span>
+          </header>
+          <p style={hint}>
+            {kneeMarked
+              ? 'Click again to move it. The line on the frame is the knee height; the charts mark where the bar crosses it.'
+              : 'Click the athlete’s knee on the start frame, with the bar on the floor. V1 and V2 are defined around the knee — this is how to check the phase edges against it.'}
+          </p>
+          <div
+            style={{
+              fontSize: 'var(--text-section)',
+              fontVariantNumeric: 'tabular-nums',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {kneeCm === null ? (kneeMarked ? 'marked — calibrate and mark the bar to measure it' : '—') : `${num(kneeCm, 1)} cm above the bar`}
+          </div>
+        </section>
+      )}
 
       {/* ── Measurement ─────────────────────────────────────────────────── */}
       {(tool === 'distance' || tool === 'angle') && (

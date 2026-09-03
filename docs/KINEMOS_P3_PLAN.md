@@ -668,6 +668,17 @@ is the V2 in the table. A press on either plot seeks: by x against time, to
 the nearest sample of the curve against height, so the drop-under leg is
 reachable where it lies over the pull.
 
-Still in this phase: a knee-height mark for the V1/V2 definition on every
-lift, and the colour-assisted re-acquisition that would have found the plate
-in the air in front of the fan.
+**Knee-height mark — done.** A KNEE tool (`K`): one click on the athlete's
+knee on the start frame. The mark is an annotation (a `measurement` whose
+payload says `type: 'knee'`), so it travels with the rep, lists in the rail
+and deletes like any other; a second click replaces it. The stage draws the
+height as a dashed line across the frame, so the bar can be watched crossing
+it; the charts draw it as a line at that height against height and at the
+crossing moment against time (`engine/phases.ts::kneeCrossing`, the first
+sample at or above the knee before Vmax); the ANALYZER section adds "V at
+the knee" between V2 and Vmax — the check that the engine's transition is
+where the coach's eye puts the knee. Height is measured from the bar's first
+mark with the rep's calibration, so it is recomputed, never stored as truth.
+
+Still in this phase: the colour-assisted re-acquisition that would have
+found the plate in the air in front of the fan.

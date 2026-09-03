@@ -673,6 +673,34 @@ export function locateAnalyzerEvents(
   };
 }
 
+/**
+ * The bar passing a marked knee height on its way up: the first sample at or
+ * above `kneeCm` before Vmax, and the velocity there. The analyzer's V1 and
+ * V2 are defined around the knee; this is the check that the phase edges
+ * the engine found are where the coach's eye says the knee is. Null when the
+ * bar never gets that high before its peak — a hang lift above the knee, or
+ * a mark on the wrong frame.
+ */
+export function kneeCrossing(
+  series: KinematicSeries,
+  kneeCm: number,
+): { t: number; valueMs: number; heightCm: number } | null {
+  const n = series.t.length;
+  if (n < 2) return null;
+  const vmax = peakOver(series.t, series.vyMs, series.t[0], series.t[n - 1]);
+  if (!vmax) return null;
+  for (let i = 1; i < n; i++) {
+    if (series.t[i] > vmax.t) break;
+    if (series.yCm[i] >= kneeCm && series.yCm[i - 1] < kneeCm) {
+      // Interpolate the crossing between the two samples.
+      const frac = (kneeCm - series.yCm[i - 1]) / (series.yCm[i] - series.yCm[i - 1] || 1);
+      const t = series.t[i - 1] + (series.t[i] - series.t[i - 1]) * frac;
+      return { t, valueMs: valueAt(series.t, series.vyMs, t) ?? series.vyMs[i], heightCm: kneeCm };
+    }
+  }
+  return null;
+}
+
 export function computeAnalyzerMetrics(
   series: KinematicSeries,
   spans: readonly PhaseSpan[],
