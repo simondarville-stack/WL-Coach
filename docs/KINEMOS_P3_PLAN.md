@@ -499,3 +499,58 @@ MP4 directly.
 - **Re-rendering a stabilised clip.** The points are corrected, the picture
   is not; a coach watching a handheld clip still sees it move.
 
+
+## 8. P3e — Sets, and the first phone footage
+
+Three Messenger clips of Caroline's snatch doubles — 576×1024, 30 fps,
+phone behind the lifter — were the first whole sets through the pipeline,
+and the first footage that was not a tripod at 50 fps. They broke three
+things and paid for the fixes (`docs/KINEMOS_ACCURACY_STUDY.md` §3.7–3.8).
+
+### What broke
+
+- **The tracker's search radius** was a fixed 14 px; the bar moves 40 px a
+  frame on this footage. It is now derived from the plate's size on screen
+  and the clip's frame rate (`engine/tracker.ts`).
+- **Giving up** counted a blurred plate as a lost one and ended every rep
+  before the catch. A miss now needs an implausible jump as well as a poor
+  match; a long run of poor matches still ends the track.
+- **A double is two reps and a drop.** The tracker loses the plate on the
+  drop, and one track from one click gave the first rep and garbage. Two
+  pieces: `engine/reps.ts` cuts a track into reps from rests and rises alone
+  (a rest is slow AND on its local floor, so a phone that moved between reps
+  and a pause at the knee are both handled; a step faster than any barbell
+  ends a rep where the tracker lost it), and the harness's `?reps=1` mode
+  finds the plate again after a loss — round is not enough, the candidate
+  must correlate with the set's own template, because the fan behind this
+  platform is round — tracks on, and calibrates each rep on the outline at
+  its own rest.
+
+### What it gives, from one click on the first frame
+
+| | rep 1 | rep 2 | own-rest scale vs the set's |
+| --- | --- | --- | --- |
+| Set 1 | 2,29 m/s · 136 cm | 2,33 m/s · 129 cm | −4 % / rejected (−14 %) |
+| Set 2 | 2,31 m/s · 134 cm | 2,32 m/s · 136 cm | −1 % / −1 % |
+| Set 3 | 2,37 m/s · 138 cm | 2,27 m/s · 129 cm | −1 % / +2 % |
+
+Every peak stable across cutoffs to within 1 %, every rep found without a
+frame window set by hand. Against the same reps measured earlier with
+hand-set windows and per-rep plate finds (2,39/2,39, 2,33/2,25, 2,40/2,20)
+the differences are 1–4 %, and all of them are the scale: an 80 px plate
+seen obliquely with its thickness and the discs behind it in view is
+outlined to ±4 % depending on the frame, which is the accuracy floor for
+this kind of footage. Filming from the side, closer, and at the phone's
+native quality rather than a Messenger copy would each buy some of it back.
+
+### Not in P3e
+
+- **The viewer does not yet split sets.** The engine and the harness do;
+  the viewer still tracks one rep from one anchor. Wiring `splitReps` and
+  the re-acquisition into KinemosViewer, with a rep picker, is the next
+  slice.
+- **Re-acquisition mid-flight.** A plate lost during a pull (the fan case)
+  is found again only at the next rest. A colour segmentation of
+  competition bumpers would find it in the air.
+- **A dense-flow tracker** was tried and is not better on this footage
+  (study §3.7).

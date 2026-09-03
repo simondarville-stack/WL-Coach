@@ -23,7 +23,9 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
 page.on('pageerror', e => console.log('PAGEERROR', e.message));
 await page.goto(`http://localhost:5173/verify/track-clip.html?${QUERY}`);
-await page.waitForFunction(() => window.__DONE__ === true, null, { timeout: 120_000 });
+// A whole set at phone resolution — tracking, losing the plate on the drop,
+// finding it again, tracking on — runs several minutes headless.
+await page.waitForFunction(() => window.__DONE__ === true, null, { timeout: Number(process.env.TIMEOUT_MS ?? 900_000) });
 
 const log = await page.locator('#log').textContent();
 writeFileSync(`${OUT}/log.txt`, log ?? '');

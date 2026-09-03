@@ -203,6 +203,53 @@ not turn, blur barely touches it and it has no rim, thickness or shadow. It
 is recorded as `BAR_SLEEVE_END_DIAMETER_CM` and is the reference the next
 accuracy step should track and calibrate on (§6).
 
+### 3.7 Averaging the motion of every pixel in the plate — tried
+
+A natural question: rather than a template, why not segment the whole plate
+and average the motion of all its pixels for a steadier velocity? Two
+answers, one from the maths and one from a trial.
+
+The template tracker already is that, in the form that is right for a rigid
+disc: normalised cross-correlation over every pixel of the template finds
+the single displacement that best explains ALL of them at once. Averaging
+per-pixel flow vectors is the same estimate for a pure translation, and
+worse where they differ — inside a uniform blue face there is no texture, so
+a per-pixel flow is undefined there (the aperture problem) and the average
+is carried by the rim and the hub alone; motion blur smears each pixel's
+vector; and the plate turns on the sleeve, which a symmetric mask cancels
+only if the mask is centred exactly.
+
+The trial (dense Farnebäck flow, median over a disc mask at the last
+position, integrated frame to frame) on two of the phone reps: on the clean
+one it read **2,32 m/s against the template's 2,39**, with the same 137 cm
+rise — agreement to 3 %, no better. On the rep the template lost in front
+of the fan, the flow lost it on the same frames. Neither method is the
+bottleneck on this footage; the scale (§3.6) and the 30 fps are. Where a
+mask does earn its place is re-acquisition: a colour segmentation found the
+plate in front of the fan when the template could not, and that is the
+assist to build (§6).
+
+### 3.8 The tracker on phone footage — what the sets taught
+
+Three Messenger clips of snatch doubles, 576×1024 at 30 fps, camera behind
+the lifter, showed two defaults set for 50 fps side footage to be wrong for
+a phone:
+
+- **The search radius** was a fixed 14 px. A bar end at 3 m/s on an 85 px
+  plate at 30 fps moves 40 px a frame. The radius is now derived per clip,
+  15·R/f px with R the template radius and f the frame rate, floored at 14.
+- **Giving up** counted every low-correlation frame as a miss. A plate
+  blurred through the second pull correlates at 0,3–0,4 for ten frames in a
+  row while moving exactly as predicted, and eight of those ended the track
+  before the catch on every phone rep. A miss is now a poor match that also
+  landed implausibly far from the predicted position; a plausible poor
+  match neither counts nor clears the count, and a run of thirty-two
+  poor matches ends the track regardless — a template sitting on a fan
+  moves very plausibly.
+
+With those two, all six reps of the three sets track from a single click on
+the first frame, drop and re-acquisition included (§8 of the P3 plan).
+
 ### 3.5 What did not matter
 
 - **Frame rate and duplication.** Both clips are genuine 50 fps; no blended

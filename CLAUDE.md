@@ -95,7 +95,11 @@ All modules are **active** — nothing is currently disabled or hidden:
   calibration (the plate outline gives scales, never which way is up), a
   timing repair for mis-stamped frames before resampling
   (`src/kinemos/engine/timing.ts`), per-frame re-centring of the track on the
-  plate outline, and a peak-stability factor in the grade.
+  plate outline, and a peak-stability factor in the grade — and, from the
+  first phone footage of whole sets (`docs/KINEMOS_P3_PLAN.md` §8): a
+  tracker whose search radius follows the physics of the clip and that
+  survives a blurred second pull, and `src/kinemos/engine/reps.ts`, which
+  cuts a track of a set into its reps from rests and rises alone.
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports, and it never imports `cv/`. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
   in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
