@@ -43,6 +43,7 @@
       import { openFrameServer } from '/src/kinemos/engine/frameServer.ts';
       import { trackFromAnchor, trackDirection } from '/src/kinemos/engine/tracker.ts';
       import { splitReps } from '/src/kinemos/engine/reps.ts';
+      import { trackSet } from '/src/kinemos/lib/setTracker.ts';
       import { trackerSourceFrom } from '/src/kinemos/lib/trackerSource.ts';
       import { calibrateFromEllipse } from '/src/kinemos/engine/calibration.ts';
       import { computeKinematics, peakStability, summariseRep } from '/src/kinemos/engine/kinematics.ts';
@@ -225,7 +226,25 @@
           // clip the tracker cannot hold (a fan behind the plate, say) but a
           // colour segmentation can; the rest of the pipeline is unchanged.
           let result;
-          if (params.has('track')) {
+          // `&reps=1`: a set — the product's own `trackSet` (lib/setTracker):
+          // track from the anchor, find the plate again after each loss (in
+          // flight by its colour, or at the next rest by shape), track on,
+          // cut into reps, calibrate each at its own rest. `&nocolour=1`
+          // turns the colour off to see what it bought. The whole clip is
+          // tracked; `from`/`to` do not apply.
+          let set = null;
+          if (params.get('reps') === '1') {
+            set = await trackSet(server, { index: aIndex, x: ax, y: ay }, {
+              ellipse: { cx: plate[0], cy: plate[1], semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg: plate[4] },
+              plateDiameterCm: plate[5],
+              rollDeg: Number(params.get('roll') ?? 0),
+              colour: params.get('nocolour') !== '1',
+              trackOptions,
+              onLog: line => log(`set: ${line}`),
+            });
+            result = { points: set.tracked, lowConfidenceIndices: set.lowConfidenceIndices, gaveUp: set.lostAtEnd };
+            window.__JOINS__ = set.joins;
+          } else if (params.has('track')) {
             const own = await (await fetch(params.get('track'))).json();
             const points = own
               .filter(p => p.index >= from && p.index <= to)
@@ -236,47 +255,6 @@
             result = await trackFromAnchor(ranged, { index: aIndex - from, x: ax, y: ay }, trackOptions);
             for (const p of result.points) p.index += from;
             result.lowConfidenceIndices = result.lowConfidenceIndices.map(i => i + from);
-          }
-
-          // `&reps=1`: a set. When the tracker gives up — on the drop between
-          // reps, usually — look for the plate again near where the set
-          // started, on later frames, and track on from there. The reps are
-          // then cut from the joined track by the engine (reps.ts).
-          if (params.get('reps') === '1' && result.gaveUp) {
-            const radiusOpts = { minRadiusPx: Math.round(server.displayHeight * 0.03), maxRadiusPx: Math.round(server.displayHeight * 0.22), near: { x: ax, y: ay } };
-            let resumeFrom = result.points[result.points.length - 1].index + 10;
-            let joins = 0;
-            window.__JOINS__ = [];
-            while (resumeFrom < to - 10) {
-              let found = null;
-              let at = resumeFrom;
-              const anchorGray = await source.getGray(aIndex);
-              for (; at <= to; at += 8) {
-                const g = await source.getGray(at);
-                const f = await findPlate(g, radiusOpts);
-                if (!f || f.support < 0.7 || Math.hypot(f.ellipse.cx - ax, f.ellipse.cy - ay) >= plate[2] * 1.5) continue;
-                // Round is not enough — a fan behind the platform is round.
-                // The candidate has to look like the plate the set started
-                // with: the anchor's template, matched on this frame near the
-                // candidate, must correlate.
-                const pair = { frameCount: 2, timestamps: [0, 1], getGray: i => Promise.resolve(i === 0 ? anchorGray : g) };
-                const check = await trackDirection(pair, { index: 0, x: ax, y: ay }, 1, { ...trackOptions, searchRadiusPx: Math.hypot(f.ellipse.cx - ax, f.ellipse.cy - ay) + 12, giveUpAfter: 1 });
-                const score = check.points[1] ? check.points[1].confidence : 0;
-                if (score >= 0.5 && Math.hypot(check.points[1].x - f.ellipse.cx, check.points[1].y - f.ellipse.cy) < plate[2] * 0.5) { found = f; break; }
-                log(`rep join: round thing on frame ${at} at (${f.ellipse.cx.toFixed(0)}, ${f.ellipse.cy.toFixed(0)}) rejected — template correlation ${score.toFixed(2)}`);
-              }
-              if (!found) break;
-              const sub = { frameCount: to - at + 1, timestamps: source.timestamps.slice(at, to + 1), getGray: i => source.getGray(i + at) };
-              const more = await trackDirection(sub, { index: 0, x: found.ellipse.cx, y: found.ellipse.cy }, 1, trackOptions);
-              for (const p of more.points) p.index += at;
-              result.points.push(...more.points);
-              result.lowConfidenceIndices.push(...more.lowConfidenceIndices.map(i => i + at));
-              joins++;
-              window.__JOINS__.push({ at, ellipse: found.ellipse });
-              log(`rep join ${joins}: plate found again on frame ${at} at (${found.ellipse.cx.toFixed(1)}, ${found.ellipse.cy.toFixed(1)}), tracked ${more.points.length} more frames${more.gaveUp ? ' until it was lost again' : ''}`);
-              if (!more.gaveUp) break;
-              resumeFrom = more.points[more.points.length - 1].index + at - at + 10;
-            }
           }
           if (from > 0 || to < server.frameCount - 1) log(`tracking frames ${from}–${to} only`);
           const ms = performance.now() - t0;
@@ -393,38 +371,13 @@
           const filter = params.has('cutoff') ? { ...DEFAULT_FILTER, cutoffHz: Number(params.get('cutoff')) } : DEFAULT_FILTER;
           // A set: cut the track into reps and measure each on its own.
           let reps = [];
-          if (params.get('reps') === '1') {
-            const segments = splitReps(track, calibration);
+          if (set) {
+            const segments = set.reps.map(r => r.segment);
             log(`reps: ${segments.length} found${segments.length ? ' — ' + segments.map(s => `lift-off ${s.liftOffT.toFixed(2)} s, catch ${s.catchT.toFixed(2)} s, rise ${s.riseCm.toFixed(0)} cm`).join(' | ') : ''}`);
-            for (const [k, seg] of segments.entries()) {
-              const repTrack = track.slice(seg.from, seg.to + 1);
-              // Each rep is calibrated on the plate at ITS rest — the phone,
-              // or the bar, may have moved between reps: the outline is
-              // re-fitted on the last ten rest frames before lift-off, seeded
-              // by the tracked point, and the median taken. A fit that
-              // disagrees with the set's first calibration by more than 8 %
-              // is not believed (a lifter standing over the bar, the plates
-              // behind peeking out) and the set's calibration stands.
-              let repCal = calibration;
-              const restFrames = track.slice(Math.max(0, seg.from - 10), seg.from + 1);
-              const fits = [];
-              for (const p of restFrames) {
-                const g = await source.getGray(server.nearestIndex(p.t));
-                const f = await refinePlateEllipse(g, { cx: p.x, cy: p.y, semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg: plate[4] });
-                if (f && f.support >= 0.6) fits.push(f.ellipse);
-              }
-              if (fits.length >= 3) {
-                const med = arr => { const s = [...arr].sort((u, v) => u - v); return s[s.length >> 1]; };
-                const e = { cx: med(fits.map(f => f.cx)), cy: med(fits.map(f => f.cy)), semiMajorPx: med(fits.map(f => f.semiMajorPx)), semiMinorPx: med(fits.map(f => f.semiMinorPx)), tiltDeg: med(fits.map(f => f.tiltDeg)) };
-                const cal = calibrateFromEllipse(e, plate[5], { rollDeg: Number(params.get('roll') ?? 0) });
-                const ratio = cal.cmPerPxV / calibration.cmPerPxV;
-                if (ratio > 0.92 && ratio < 1.08) {
-                  repCal = cal;
-                  log(`rep ${k + 1}: calibrated at its own rest from ${fits.length} frames: semi-axes ${e.semiMajorPx.toFixed(2)}×${e.semiMinorPx.toFixed(2)} px, ${cal.cmPerPxV.toFixed(4)} cm/px vertical (set: ${calibration.cmPerPxV.toFixed(4)})`);
-                } else {
-                  log(`rep ${k + 1}: rest outline ${e.semiMajorPx.toFixed(1)} px disagrees with the set's ${plate[2].toFixed(1)} px by ${((ratio - 1) * 100).toFixed(0)} % — keeping the set's calibration`);
-                }
-              }
+            for (const [k, rep] of set.reps.entries()) {
+              const seg = rep.segment;
+              const repTrack = rep.points;
+              const repCal = rep.calibration;
               const s = computeKinematics(repTrack, repCal, { massKg: mass, filter });
               if (!s) continue;
               const sum = summariseRep(s);

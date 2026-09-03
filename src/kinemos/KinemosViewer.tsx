@@ -781,10 +781,15 @@ export function KinemosViewer() {
       }
       setRepIndices(current => [...new Set([...current, ...indices])].sort((a, b) => a - b));
       const own = result.reps.filter(r => r.ownCalibration).length;
+      const byColour = result.joins.filter(j => j.how === 'colour').length;
       setSetNote(
         `${result.reps.length} rep${result.reps.length === 1 ? '' : 's'} found` +
-          (result.joins > 0 ? `, the plate found again ${result.joins} time${result.joins === 1 ? '' : 's'} after a drop` : '') +
+          (result.joins.length > 0
+            ? `, the plate found again ${result.joins.length} time${result.joins.length === 1 ? '' : 's'}` +
+              (byColour > 0 ? ` (${byColour} by its colour, in flight)` : '')
+            : '') +
           `; ${own} calibrated at ${own === 1 ? 'its' : 'their'} own rest` +
+          (result.colour ? '' : '. The plate has no colour to find it by, so it is found again by shape at each rest') +
           (result.lostAtEnd ? '. The tracker lost the bar at the end and did not find it again.' : '.'),
       );
     } catch (e) {
