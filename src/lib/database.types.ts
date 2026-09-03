@@ -1277,6 +1277,11 @@ export interface KinemosAnalysis {
    *  infer it, and worth about half the error budget. */
   camera: 'tripod' | 'stabilised' | 'handheld' | 'unknown' | null;
 
+  /** The athlete's reference lift for this exercise — the one their other
+   *  lifts are judged against. One per (athlete, exercise), enforced by
+   *  `referenceService`, not the database (see migration 20260902200000). */
+  is_reference: boolean;
+
   created_at: string;
   updated_at: string;
 }

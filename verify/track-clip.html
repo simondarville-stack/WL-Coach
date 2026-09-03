@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KinEMOS — track a real clip</title>
+    <style>
+      body { margin: 0; padding: 16px; font: 12px/1.5 ui-monospace, Menlo, monospace; background: #fafaf9; color: #1a1a18; }
+      h1 { font: 600 15px system-ui, sans-serif; margin: 0 0 8px; }
+      pre { margin: 0 0 12px; white-space: pre-wrap; }
+      #frames { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+      canvas { border: 1px solid #ccc; background: #000; image-rendering: pixelated; }
+    </style>
+  </head>
+  <body>
+    <h1>Track a real clip</h1>
+    <pre id="log">starting…</pre>
+    <div id="frames"></div>
+
+    <script type="module">
+      /**
+       * The tracker through the real path on a REAL clip, headlessly drivable.
+       *
+       *   ?clip=/verify/fixtures/x.mp4            the clip (any URL the page can fetch)
+       *   &frame=12&zoom=3                        dump frame 12 at 3× and stop — for
+       *                                           picking the anchor and plate by eye
+       *   &anchor=12,180,210                      frame index, x, y of the bar end
+       *   &plate=180,210,22,21,0,45               ellipse cx,cy,a,b,tiltDeg + plate cm
+       *   &mass=60                                bar mass for power (optional)
+       *   &radius=22                              template radius (default: plate a)
+       *   &auto=1                                 find the plate on the anchor frame with OpenCV
+       *                                           (anchor= needs only the frame index; plate= only the cm)
+       *   &stabilise=1                            estimate camera motion on the background and
+       *                                           map the track into the anchor frame first
+       *   &outline=1                              re-fit the plate outline on every frame, starting
+       *                                           from the tracker's point, and track its CENTRE —
+       *                                           the geometric plate rather than its appearance
+       *   &roll=2&tilt=0&cutoff=4&norepair=1      calibration roll, outline orientation override,
+       *                                           filter cutoff, timing repair off
+       *
+       * Writes the result to `window.__RESULT__` and draws the track over the
+       * anchor frame plus a bar-path panel in centimetres, equal aspect.
+       */
+      import { openFrameServer } from '/src/kinemos/engine/frameServer.ts';
+      import { trackFromAnchor } from '/src/kinemos/engine/tracker.ts';
+      import { trackerSourceFrom } from '/src/kinemos/lib/trackerSource.ts';
+      import { calibrateFromEllipse } from '/src/kinemos/engine/calibration.ts';
+      import { computeKinematics, peakStability, summariseRep } from '/src/kinemos/engine/kinematics.ts';
+      import { computeLiftMetrics, proposePhases, spansFrom } from '/src/kinemos/engine/phases.ts';
+      import { DEFAULT_FILTER } from '/src/kinemos/engine/signal.ts';
+      import { findPlate, refinePlateEllipse } from '/src/kinemos/cv/plate.ts';
+      import { estimateCameraMotion, motionSummary, stabilisePoints } from '/src/kinemos/cv/stabilise.ts';
+
+      const params = new URLSearchParams(location.search);
+      const logEl = document.getElementById('log');
+      const framesEl = document.getElementById('frames');
+      const lines = [];
+      const log = (...parts) => {
+        lines.push(parts.join(' '));
+        logEl.textContent = lines.join('\n');
+        console.log('[track-clip]', ...parts);
+      };
+      const nums = key => (params.get(key) ?? '').split(',').map(Number).filter(n => Number.isFinite(n));
+
+      const show = (canvas, scale, label, draw) => {
+        const c = document.createElement('canvas');
+        c.width = Math.round(canvas.width * scale);
+        c.height = Math.round(canvas.height * scale);
+        c.title = label;
+        c.id = label;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(canvas, 0, 0, c.width, c.height);
+        if (draw) draw(ctx, scale);
+        framesEl.appendChild(c);
+        return c;
+      };
+
+      /**
+       * `?synthetic=1`: the tracker harness's own scene — an S-pull of a
+       * branded plate that turns through a full rotation, encoded in-page —
+       * so this harness can be exercised end to end where no real clip is
+       * reachable. Anchor at frame 0 is (190,37, 250,61); plate radius 34.
+       */
+      async function syntheticClip() {
+        const W = 480, H = 320, FRAMES = 40, FPS = 30, PLATE_R = 34;
+        const truthAt = i => {
+          const u = i / (FRAMES - 1);
+          return { x: 190 + 16 * Math.sin(u * Math.PI * 2) + 0.37, y: 250 - 170 * u + 0.61 };
+        };
+        const draw = (ctx, i) => {
+          const { x, y } = truthAt(i);
+          const rotation = (i / (FRAMES - 1)) * Math.PI * 2;
+          ctx.fillStyle = '#232320'; ctx.fillRect(0, 0, W, H);
+          ctx.fillStyle = '#3a3a35'; ctx.fillRect(0, H - 40, W, 40);
+          ctx.fillStyle = '#b9b9b2'; ctx.fillRect(392, 0, 18, H);
+          ctx.save(); ctx.translate(x, y);
+          ctx.fillStyle = '#7a7a74'; ctx.fillRect(-PLATE_R * 3, -5, PLATE_R * 6, 10);
+          ctx.beginPath(); ctx.arc(0, 0, PLATE_R, 0, Math.PI * 2);
+          ctx.fillStyle = '#6f6f68'; ctx.fill();
+          ctx.lineWidth = 6; ctx.strokeStyle = '#dcdcd6'; ctx.stroke();
+          ctx.rotate(rotation);
+          ctx.fillStyle = '#2b2b28';
+          ctx.fillRect(-PLATE_R * 0.72, -PLATE_R * 0.26, PLATE_R * 1.44, PLATE_R * 0.52);
+          ctx.restore();
+        };
+        const { Output, BufferTarget, CanvasSource, Mp4OutputFormat, WebMOutputFormat } = await import('mediabunny');
+        let chosen = null;
+        for (const c of [
+          { codec: 'avc', container: 'mp4', config: 'avc1.42001f' },
+          { codec: 'vp9', container: 'webm', config: 'vp09.00.10.08' },
+          { codec: 'vp8', container: 'webm', config: 'vp8' },
+        ]) {
+          const s = await VideoEncoder.isConfigSupported({ codec: c.config, width: W, height: H, bitrate: 8_000_000 }).catch(() => null);
+          if (s?.supported) { chosen = c; break; }
+        }
+        if (!chosen) throw new Error('no encoder');
+        log(`synthetic clip via ${chosen.codec}/${chosen.container}`);
+        const canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = H;
+        const ctx = canvas.getContext('2d');
+        const output = new Output({
+          format: chosen.container === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(),
+          target: new BufferTarget(),
+        });
+        const source = new CanvasSource(canvas, { codec: chosen.codec, bitrate: 12_000_000 });
+        output.addVideoTrack(source);
+        await output.start();
+        for (let i = 0; i < FRAMES; i++) { draw(ctx, i); await source.add(i / FPS, 1 / FPS); }
+        source.close();
+        await output.finalize();
+        window.__TRUTH__ = Array.from({ length: FRAMES }, (_, i) => truthAt(i));
+        return new Blob([output.target.buffer], { type: chosen.container === 'mp4' ? 'video/mp4' : 'video/webm' });
+      }
+
+      try {
+        const clip = params.get('clip');
+        if (!clip && !params.has('synthetic')) throw new Error('need ?clip= or ?synthetic=1');
+        const blob = params.has('synthetic') ? await syntheticClip() : await (await fetch(clip)).blob();
+        const server = await openFrameServer(blob);
+        log(`opened: ${server.frameCount} frames, ${server.displayWidth}×${server.displayHeight}, ${server.averageFps.toFixed(2)} fps, vfr=${server.isVfr}, rotation=${server.rotation}`);
+
+        if (params.has('frame')) {
+          const zoom = Number(params.get('zoom') ?? 3);
+          for (const idx of nums('frame')) {
+            const frame = await server.frameAt(idx);
+            show(frame.canvas, zoom, `frame-${idx}`, (ctx, s) => {
+              // A 20 px grid so coordinates can be read off the screenshot.
+              ctx.strokeStyle = 'rgba(255,255,0,0.35)';
+              ctx.lineWidth = 1;
+              for (let x = 0; x < server.displayWidth; x += 20) {
+                ctx.beginPath(); ctx.moveTo(x * s, 0); ctx.lineTo(x * s, server.displayHeight * s); ctx.stroke();
+              }
+              for (let y = 0; y < server.displayHeight; y += 20) {
+                ctx.beginPath(); ctx.moveTo(0, y * s); ctx.lineTo(server.displayWidth * s, y * s); ctx.stroke();
+              }
+              ctx.fillStyle = 'yellow';
+              ctx.font = `${10}px monospace`;
+              for (let x = 0; x < server.displayWidth; x += 40) ctx.fillText(String(x), x * s + 2, 10);
+              for (let y = 0; y < server.displayHeight; y += 40) ctx.fillText(String(y), 2, y * s + 10);
+              const plate = nums('plate');
+              if (plate.length >= 4) {
+                ctx.strokeStyle = 'cyan';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.ellipse(plate[0] * s, plate[1] * s, plate[2] * s, plate[3] * s, ((plate[4] ?? 0) * Math.PI) / 180, 0, Math.PI * 2);
+                ctx.stroke();
+              }
+              const anchor = nums('anchor');
+              if (anchor.length === 3) {
+                ctx.fillStyle = 'magenta';
+                ctx.beginPath(); ctx.arc(anchor[1] * s, anchor[2] * s, 3, 0, Math.PI * 2); ctx.fill();
+              }
+            });
+            log(`frame ${idx} at t=${server.timestamps[idx]?.toFixed(3)} s`);
+          }
+          window.__DONE__ = true;
+          log('done (frame dump)');
+        } else {
+          let [aIndex, ax, ay] = nums('anchor');
+          let plate = nums('plate');
+          const source = trackerSourceFrom(server);
+          if (params.has('auto')) {
+            if (!Number.isFinite(aIndex)) throw new Error('auto needs ?anchor=<frame index>');
+            const cm = plate[plate.length - 1] ?? 45;
+            const gray = await source.getGray(aIndex);
+            const tAuto = performance.now();
+            // `?pick=face|strongest|outermost` chooses which edge is the plate
+            // (default: the face); `?shape=circle` fits a circle for a round
+            // plate filmed square-on.
+            const found = await findPlate(gray, {
+              minRadiusPx: Math.round(server.displayHeight * 0.03),
+              maxRadiusPx: Math.round(server.displayHeight * 0.22),
+              near: Number.isFinite(ax) && Number.isFinite(ay) ? { x: ax, y: ay } : undefined,
+              pick: params.get('pick') ?? undefined,
+              shape: params.get('shape') ?? undefined,
+            });
+            if (!found) throw new Error('auto: no plate found on the anchor frame');
+            const e = found.ellipse;
+            log(`auto plate in ${(performance.now() - tAuto).toFixed(0)} ms: centre (${e.cx.toFixed(2)}, ${e.cy.toFixed(2)}) semi-axes ${e.semiMajorPx.toFixed(2)}×${e.semiMinorPx.toFixed(2)} tilt ${e.tiltDeg.toFixed(1)}°, edge support ${found.support.toFixed(2)} on ${found.points} points, residual ${found.residualPx.toFixed(2)} px (hough r ${found.candidate.r.toFixed(1)}, pick ${params.get('pick') ?? 'face'}, shape ${params.get('shape') ?? 'ellipse'})`);
+            ax = e.cx; ay = e.cy;
+            plate = [e.cx, e.cy, e.semiMajorPx, e.semiMinorPx, e.tiltDeg, cm];
+          }
+          if (!Number.isFinite(aIndex) || plate.length < 6) throw new Error('need ?anchor=i,x,y&plate=cx,cy,a,b,tilt,cm');
+          const radius = Number(params.get('radius') ?? plate[2]);
+          const t0 = performance.now();
+          const result = await trackFromAnchor(source, { index: aIndex, x: ax, y: ay }, { templateRadiusPx: radius });
+          const ms = performance.now() - t0;
+          log(`tracked ${result.points.length}/${server.frameCount} frames in ${ms.toFixed(0)} ms (${(ms / Math.max(1, result.points.length)).toFixed(1)} ms/frame), gaveUp=${result.gaveUp}, low-confidence frames: ${result.lowConfidenceIndices.length} [${result.lowConfidenceIndices.slice(0, 20).join(',')}]`);
+          const confs = result.points.map(p => p.confidence);
+          log(`confidence min ${Math.min(...confs).toFixed(3)} median ${confs.slice().sort((a, b) => a - b)[Math.floor(confs.length / 2)].toFixed(3)} max ${Math.max(...confs).toFixed(3)}`);
+          const predErr = result.points.map(p => p.predictionErrorPx);
+          log(`prediction error px: max ${Math.max(...predErr).toFixed(2)}, mean ${(predErr.reduce((a, b) => a + b, 0) / predErr.length).toFixed(2)}`);
+
+          // Raw jitter: second differences of the raw track, px. A smooth
+          // track has small ones; a jumpy one does not.
+          const pts = result.points;
+          let jit = 0;
+          let jitMax = 0;
+          for (let i = 1; i < pts.length - 1; i++) {
+            const ddx = pts[i + 1].x - 2 * pts[i].x + pts[i - 1].x;
+            const ddy = pts[i + 1].y - 2 * pts[i].y + pts[i - 1].y;
+            const d = Math.hypot(ddx, ddy);
+            jit += d * d;
+            jitMax = Math.max(jitMax, d);
+          }
+          const jitRms = Math.sqrt(jit / Math.max(1, pts.length - 2));
+          log(`raw jitter (2nd difference) rms ${jitRms.toFixed(3)} px, max ${jitMax.toFixed(3)} px`);
+
+          if (params.has('stabilise')) {
+            const tS = performance.now();
+            const byIndex = new Map(pts.map(p => [p.index, p]));
+            const motions = await estimateCameraMotion(source, aIndex, {
+              exclude: i => {
+                const p = byIndex.get(i);
+                return p ? { x: p.x, y: p.y, r: radius } : null;
+              },
+            });
+            const sum = motionSummary(motions);
+            log(`stabilised in ${(performance.now() - tS).toFixed(0)} ms: camera moved up to ${sum.maxShiftPx.toFixed(2)} px (rms ${sum.rmsShiftPx.toFixed(2)}), ${sum.weakFrames} weak frames`);
+            const before = pts.map(p => ({ x: p.x, y: p.y }));
+            const stabilised = stabilisePoints(pts, motions);
+            let moved = 0;
+            for (let i = 0; i < pts.length; i++) moved = Math.max(moved, Math.hypot(stabilised[i].x - before[i].x, stabilised[i].y - before[i].y));
+            log(`track moved by up to ${moved.toFixed(2)} px after stabilisation`);
+            for (let i = 0; i < pts.length; i++) { pts[i].x = stabilised[i].x; pts[i].y = stabilised[i].y; }
+            window.__MOTIONS__ = motions.map(m => [m.index, ...m.toAnchor, m.inliers]);
+            // Jitter again, now on the stabilised track.
+            let j2 = 0; let j2max = 0;
+            for (let i = 1; i < pts.length - 1; i++) {
+              const ddx = pts[i + 1].x - 2 * pts[i].x + pts[i - 1].x;
+              const ddy = pts[i + 1].y - 2 * pts[i].y + pts[i - 1].y;
+              const d = Math.hypot(ddx, ddy); j2 += d * d; j2max = Math.max(j2max, d);
+            }
+            log(`stabilised jitter (2nd difference) rms ${Math.sqrt(j2 / Math.max(1, pts.length - 2)).toFixed(3)} px, max ${j2max.toFixed(3)} px`);
+          }
+
+          // `?roll=` is the camera roll in degrees (default 0, a tripod);
+          // `?tilt=` overrides the outline orientation the find/snap produced,
+          // for showing what the orientation does and does not change.
+          const tiltDeg = params.has('tilt') ? Number(params.get('tilt')) : plate[4];
+          if (params.get('outline') === '1') {
+            // The outline tracker: the tracker's point seeds a per-frame
+            // edge fit and the fit's centre replaces it. Frames where the
+            // fit finds too little rim keep the tracker's point.
+            const tO = performance.now();
+            let kept = 0;
+            let weak = 0;
+            let moved = 0;
+            const perFrame = [];
+            for (const p of pts) {
+              const gray = await source.getGray(p.index);
+              const guess = { cx: p.x, cy: p.y, semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg: plate[4] };
+              const fit = await refinePlateEllipse(gray, guess, { pick: params.get('pick') ?? undefined, shape: params.get('shape') ?? undefined });
+              if (!fit || fit.support < 0.6) { weak++; continue; }
+              moved = Math.max(moved, Math.hypot(fit.ellipse.cx - p.x, fit.ellipse.cy - p.y));
+              p.x = fit.ellipse.cx; p.y = fit.ellipse.cy; kept++;
+              perFrame.push({ index: p.index, y: p.y, a: fit.ellipse.semiMajorPx, b: fit.ellipse.semiMinorPx, tilt: fit.ellipse.tiltDeg, residual: fit.residualPx });
+            }
+            log(`outline tracker in ${(performance.now() - tO).toFixed(0)} ms: ${kept} frames re-centred on the fitted outline, ${weak} kept the tracker's point (support < 0,6), largest move ${moved.toFixed(2)} px`);
+            // How the fitted plate changes with height — the scale the
+            // calibration would have read had it been taken on that frame.
+            // Three bands of image height over the track: floor, middle, top.
+            const ys = perFrame.map(f => f.y);
+            const yMin = Math.min(...ys), yMax = Math.max(...ys);
+            const median = arr => { const s = [...arr].sort((u, v) => u - v); return s.length ? s[s.length >> 1] : NaN; };
+            const bands = ['top third', 'middle third', 'bottom third'].map((label, k) => {
+              const lo = yMin + (k / 3) * (yMax - yMin), hi = yMin + ((k + 1) / 3) * (yMax - yMin);
+              const rows = perFrame.filter(f => f.y >= lo - 1e-6 && f.y <= hi + 1e-6);
+              const vertical = rows.map(f => Math.abs(Math.cos((f.tilt * Math.PI) / 180)) >= Math.SQRT1_2 ? f.a : f.b);
+              return `${label}: ${rows.length} frames, semi-axes ${median(rows.map(f => f.a)).toFixed(2)}×${median(rows.map(f => f.b)).toFixed(2)}, vertical semi ${median(vertical).toFixed(2)} px, residual ${median(rows.map(f => f.residual)).toFixed(2)} px`;
+            });
+            log(`outline by height — ${bands.join(' | ')}`);
+            window.__PERFRAME__ = perFrame;
+            // `&midpull=1`: read the scale from the middle third, as the
+            // viewer's re-centre assist does (assists.ts midPullOutline).
+            if (params.get('midpull') === '1') {
+              const lo = yMin + (yMax - yMin) / 3, hi = yMin + (2 * (yMax - yMin)) / 3;
+              const rows = perFrame.filter(f => f.y >= lo && f.y <= hi);
+              if (rows.length >= 8) {
+                const a = median(rows.map(f => f.a)), b = median(rows.map(f => f.b)), tilt = median(rows.map(f => f.tilt));
+                log(`mid-pull calibration: semi-axes ${a.toFixed(2)}×${b.toFixed(2)} tilt ${tilt.toFixed(1)}° from ${rows.length} frames (was ${plate[2].toFixed(2)}×${plate[3].toFixed(2)} on the anchor frame)`);
+                plate = [plate[0], plate[1], a, b, tilt, plate[5]];
+              }
+            }
+          }
+
+          const calibration = calibrateFromEllipse(
+            { cx: plate[0], cy: plate[1], semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg },
+            plate[5],
+            { rollDeg: Number(params.get('roll') ?? 0) },
+          );
+          log(`calibration: ${calibration.cmPerPxV.toFixed(4)} cm/px vertical, ${calibration.cmPerPxH.toFixed(4)} horizontal, viewing angle ${calibration.viewingAngleDeg.toFixed(1)}°, outline orientation ${calibration.tiltDeg.toFixed(1)}°, roll ${calibration.rollDeg}°, confidence ${calibration.confidence}`);
+
+          const track = pts.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' }));
+          const mass = params.has('mass') ? Number(params.get('mass')) : null;
+          // `?cutoff=` tries another filter cutoff; `?norepair=1` shows the
+          // series with mis-stamped frames left in.
+          const filter = params.has('cutoff') ? { ...DEFAULT_FILTER, cutoffHz: Number(params.get('cutoff')) } : DEFAULT_FILTER;
+          const series = computeKinematics(track, calibration, { massKg: mass, filter, repairTiming: params.get('norepair') !== '1' });
+          if (series && series.timingRepairs.length > 0) {
+            log(`timing: ${series.timingRepairs.map(r => `frame ${r.index} (t=${r.t.toFixed(2)}) ${r.action}${r.action !== 'dropped' ? ` by ${r.shiftFrames.toFixed(2)} frames` : ''} (step change ${r.stepChangePx.toFixed(1)} px)`).join('; ')}`);
+          } else if (series) {
+            log('timing: no frame needed re-timing');
+          }
+          let metrics = null;
+          let summary = null;
+          let boundaries = [];
+          if (series) {
+            const proposal = proposePhases(series);
+            boundaries = proposal.boundaries;
+            metrics = computeLiftMetrics(series, spansFrom(boundaries));
+            summary = summariseRep(series);
+            log(`kinematics: ${series.t.length} samples at ${series.sampleRateHz} Hz, filtered=${series.filtered}`);
+            log(`peak vertical velocity ${summary.peakVerticalVelocityMs.toFixed(3)} m/s at t=${summary.peakVerticalVelocityT.toFixed(2)} s; peak height ${summary.peakHeightCm.toFixed(1)} cm; loop width ${summary.loopWidthCm.toFixed(1)} cm; duration ${summary.durationS.toFixed(2)} s`);
+            const stability = peakStability(track, calibration, { massKg: mass, filter, repairTiming: params.get('norepair') !== '1' });
+            if (stability) log(`peak stability: ${stability.peakAtLowerMs.toFixed(3)} / ${stability.peakMs.toFixed(3)} / ${stability.peakAtHigherMs.toFixed(3)} m/s at ${(filter.cutoffHz * 2 / 3).toFixed(1)} / ${filter.cutoffHz} / ${(filter.cutoffHz * 4 / 3).toFixed(1)} Hz — spread ${(stability.spread * 100).toFixed(1)} %`);
+            log(`phases: ${metrics.phases.map(p => `${p.phaseId} ${p.durationS.toFixed(2)}s pk ${p.peakVelocityMs?.toFixed(2) ?? '—'}`).join(' | ')}; fully detected=${proposal.fullyDetected}`);
+            log(`transition loss ${metrics.transitionVelocityLossMs?.toFixed(3) ?? '—'} m/s, turnover ${metrics.turnoverVelocityMs?.toFixed(3) ?? '—'} m/s, peak power ${metrics.peakPowerW?.toFixed(0) ?? '—'} W`);
+          } else {
+            log('kinematics: not enough points');
+          }
+
+          // The anchor frame with the whole track over it.
+          const frame = await server.frameAt(aIndex);
+          const zoom = Number(params.get('zoom') ?? 2);
+          show(frame.canvas, zoom, 'track', (ctx, s) => {
+            ctx.strokeStyle = 'cyan';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(plate[0] * s, plate[1] * s, plate[2] * s, plate[3] * s, (plate[4] * Math.PI) / 180, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = '#ff3fd0';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x * s, p.y * s) : ctx.lineTo(p.x * s, p.y * s)));
+            ctx.stroke();
+            for (const i of result.lowConfidenceIndices) {
+              const p = pts.find(q => q.index === i);
+              if (!p) continue;
+              ctx.fillStyle = 'orange';
+              ctx.beginPath(); ctx.arc(p.x * s, p.y * s, 2.5, 0, Math.PI * 2); ctx.fill();
+            }
+          });
+
+          // Bar path in centimetres, equal aspect, from the calibrated series.
+          if (series) {
+            const c = document.createElement('canvas');
+            const W = 260, H = 420;
+            c.width = W; c.height = H; c.id = 'path';
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+            const minX = Math.min(...series.xCm), maxX = Math.max(...series.xCm);
+            const minY = Math.min(...series.yCm), maxY = Math.max(...series.yCm);
+            const span = Math.max(maxX - minX, maxY - minY) + 10;
+            const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+            const k = Math.min(W, H) / span;
+            const X = v => W / 2 + (v - cx) * k;
+            const Y = v => H / 2 - (v - cy) * k;
+            ctx.strokeStyle = '#ddd';
+            ctx.beginPath(); ctx.moveTo(X(series.xCm[0]), 0); ctx.lineTo(X(series.xCm[0]), H); ctx.stroke();
+            // 10 cm scale bar
+            ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(10, H - 10); ctx.lineTo(10 + 10 * k, H - 10); ctx.lineTo(10 + 10 * k, H - 10 - 10 * k); ctx.stroke();
+            ctx.fillStyle = '#555'; ctx.font = '10px monospace'; ctx.fillText('10 cm', 12, H - 14);
+            ctx.strokeStyle = '#185FA5'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            series.xCm.forEach((x, i) => (i === 0 ? ctx.moveTo(X(x), Y(series.yCm[i])) : ctx.lineTo(X(x), Y(series.yCm[i]))));
+            ctx.stroke();
+            // phase marks
+            for (const b of boundaries) {
+              const i = series.t.findIndex(t => t >= b.t);
+              if (i < 0) continue;
+              ctx.fillStyle = b.source === 'fallback' ? 'orange' : '#185FA5';
+              ctx.beginPath(); ctx.arc(X(series.xCm[i]), Y(series.yCm[i]), 3, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = '#333';
+              ctx.fillText(`${b.phaseId ?? 'end'} ${b.t.toFixed(2)}s`, X(series.xCm[i]) + 6, Y(series.yCm[i]) + 3);
+            }
+            framesEl.appendChild(c);
+
+            // Velocity curve.
+            const v = document.createElement('canvas');
+            v.width = 420; v.height = 160; v.id = 'velocity';
+            const vc = v.getContext('2d');
+            vc.fillStyle = '#fff'; vc.fillRect(0, 0, v.width, v.height);
+            const vmin = Math.min(...series.vyMs), vmax = Math.max(...series.vyMs);
+            const tmin = series.t[0], tmax = series.t[series.t.length - 1];
+            const VX = t => ((t - tmin) / (tmax - tmin || 1)) * v.width;
+            const VY = val => v.height - ((val - vmin) / (vmax - vmin || 1)) * v.height;
+            vc.strokeStyle = '#ddd'; vc.beginPath(); vc.moveTo(0, VY(0)); vc.lineTo(v.width, VY(0)); vc.stroke();
+            vc.strokeStyle = '#185FA5'; vc.lineWidth = 1.5; vc.beginPath();
+            series.t.forEach((t, i) => (i === 0 ? vc.moveTo(VX(t), VY(series.vyMs[i])) : vc.lineTo(VX(t), VY(series.vyMs[i]))));
+            vc.stroke();
+            vc.fillStyle = '#555'; vc.fillText(`vy: ${vmin.toFixed(2)} … ${vmax.toFixed(2)} m/s over ${tmin.toFixed(2)}–${tmax.toFixed(2)} s`, 4, 12);
+            framesEl.appendChild(v);
+          }
+
+          window.__RESULT__ = {
+            frames: server.frameCount,
+            tracked: result.points.length,
+            gaveUp: result.gaveUp,
+            lowConfidence: result.lowConfidenceIndices,
+            confidence: confs,
+            points: pts.map(p => [p.index, +p.t.toFixed(4), +p.x.toFixed(2), +p.y.toFixed(2), +p.confidence.toFixed(3)]),
+            jitterRms: jitRms,
+            calibration,
+            series: series ? { t: series.t, xCm: series.xCm, yCm: series.yCm, vyMs: series.vyMs } : null,
+            timingRepairs: series ? series.timingRepairs : [],
+            summary,
+            metrics,
+            boundaries,
+          };
+          window.__DONE__ = true;
+          log('done');
+        }
+      } catch (err) {
+        log('FAILED', err instanceof Error ? err.stack ?? err.message : String(err));
+        window.__DONE__ = true;
+      }
+    </script>
+  </body>
+</html>

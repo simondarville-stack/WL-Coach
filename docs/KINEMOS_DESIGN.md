@@ -235,7 +235,12 @@ Coach-visible quality/effort tiers:
    - **Corrected by measurement (P2b, 0.81.0).** Two of the three assumptions
      above did not survive contact with a ground-truth test. The details are in
      `docs/KINEMOS_P2_PLAN.md` §4; in short:
-     - **OpenCV was not needed at all.** For this target — one large,
+     - **OpenCV was not needed for the tracker** — and, measured again in
+       P3d against the library's own trackers on degraded footage, still is
+       not (`docs/KINEMOS_P3_PLAN.md` §7). It IS used, lazily loaded, for the
+       work around the tracker: plate detection, sub-pixel outline snapping,
+       and the stabiliser tier of the calibration ladder (`src/kinemos/cv/*`).
+     - For this target — one large,
        high-contrast disc, anchored by the coach — normalised cross-correlation
        over a masked template with parabolic sub-pixel refinement reaches
        0,04 px RMS on synthetic images and 0,09 px through a real
@@ -433,8 +438,14 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   **decode stall that had shipped with the frame server in 0.79.0**: overlapping
   `getCanvas` calls stop resolving past a few dozen and never reject, freezing
   the picture under a transport that carries on. Fixed with a serial decode
-  queue; see the P3 plan. Trends and the model lift stay deferred; sharing,
-  talkover and the calibration tiers are untouched.
+  queue; see the P3 plan. *P3b (metric trends) shipped in 0.84.0* once §13 Q3
+  was decided: one metric catalogue in the engine, a read-only adapter that
+  projects stored analyses for the trend view and for the Analysis module's
+  measures, and a TRENDS view in the viewer that never shows velocity without
+  load. *P3c (the reference lift) shipped in the same 0.84.0*: a coach marks
+  one analysed rep as the athlete's reference for an exercise; comparison
+  opens on it and trends draw it as a line. Sharing, talkover and the
+  calibration tiers are untouched.
 - **P4 — Intelligence.** `kinemos-research` repo: literature, benchmarking on
   labelled clips, consented flywheel data collection wired in-product;
   ML-assisted detection/tracking (toward zero-click and server-side
@@ -463,6 +474,9 @@ dedicated `git worktree` (shared-working-tree hazard).
    exercise, date, metric id, value, plus the grade as a quality flag — so
    trend views and Soll-Ist can chart peak velocity per phase or power next
    to load and volume without the Analysis code importing the engine.
+   *Built in 0.84.0 (P3b): `analysisAdapter.ts` projects the records,
+   `analysisMetrics.ts` declares the measures, `factFetch` carries the values
+   on a KinEMOS fact row that counts nothing towards training totals.*
    Rationale: the engine stays pure (§4 rule 1), the schema needs no
    surgery, and a KinEMOS metric definition can change without a migration
    of Analysis facts. Revisit only if a coach-defined Analysis metric ever

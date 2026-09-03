@@ -210,6 +210,7 @@ export function ComparisonView({
                 c.clip.exerciseName ?? 'Clip',
                 c.clip.loadKg !== null ? `${num(c.clip.loadKg, 0)} kg` : null,
                 c.analysis.rep_index > 1 ? `rep ${c.analysis.rep_index}` : null,
+                c.isReference ? '★ reference' : null,
                 c.sameExercise ? null : '(different exercise)',
               ]
                 .filter(Boolean)

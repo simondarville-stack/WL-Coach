@@ -113,12 +113,57 @@ describe('displacementToCm', () => {
     expect(displacementToCm(cal, 100, 0).x).toBeCloseTo(90, 6);
   });
 
-  it('decomposes onto the plates own axes when the camera is tilted', () => {
-    const tilted = calibrateFromEllipse({ ...perpendicular, tiltDeg: 90 });
-    // With the major axis lying along image x, a horizontal pixel run is now
-    // the unforeshortened direction.
+  it('swaps the scales, not the axes, when the major axis lies along image x', () => {
+    // A camera looking down on the bar foreshortens the plate VERTICALLY: the
+    // major axis is horizontal, so image-vertical is the compressed direction
+    // and gets the larger scale. Up stays up.
+    const tilted = calibrateFromEllipse({ ...perpendicular, semiMinorPx: 25, tiltDeg: 90 });
     expect(tilted.tiltDeg).toBeCloseTo(90, 6);
-    expect(displacementToCm(tilted, 100, 0).y).toBeCloseTo(45, 6);
+    expect(displacementToCm(tilted, 100, 0)).toEqual({ x: expect.closeTo(45, 6), y: expect.closeTo(0, 6) });
+    expect(displacementToCm(tilted, 0, -100)).toEqual({ x: expect.closeTo(0, 6), y: expect.closeTo(90, 6) });
+  });
+
+  it('never leaks a vertical displacement into the loop, whatever the outline says', () => {
+    // The old model rotated by the fitted tilt and turned a 160 cm pull into
+    // a 40 cm sideways excursion on a 12° orientation error.
+    for (const tiltDeg of [-17, -5, 12, 40, 89]) {
+      const cal = calibrateFromEllipse({ ...perpendicular, semiMinorPx: 46, tiltDeg });
+      const d = displacementToCm(cal, 0, -300);
+      expect(Math.abs(d.x)).toBeLessThan(1e-9);
+      expect(d.y).toBeGreaterThan(0);
+    }
+  });
+
+  it('is insensitive to the orientation of a nearly circular outline', () => {
+    // 2 % from circular — a few degrees off perpendicular — is where the
+    // fitted orientation is pure noise. The scales must not follow it.
+    const at = (tiltDeg: number) =>
+      displacementToCm(calibrateFromEllipse({ ...perpendicular, semiMinorPx: 49, tiltDeg }), 60, -200);
+    const a = at(0);
+    const b = at(-17);
+    const c = at(12);
+    expect(Math.abs(b.y / a.y - 1)).toBeLessThan(0.01);
+    expect(Math.abs(c.y / a.y - 1)).toBeLessThan(0.01);
+    expect(Math.abs(b.x / a.x - 1)).toBeLessThan(0.03);
+  });
+
+  it('reduces to the plain anisotropic model at tilt 0', () => {
+    const d = displacementToCm(cal, 100, -100);
+    expect(d.x).toBeCloseTo(90, 6);
+    expect(d.y).toBeCloseTo(45, 6);
+  });
+
+  it('takes which way is up from the camera roll, not from the plate', () => {
+    // Camera rolled 10° clockwise: gravity in the image is 10° off vertical.
+    // A displacement along that direction is a pure rise.
+    const rolled = calibrateFromEllipse(perpendicular, 45, { rollDeg: 10 });
+    expect(rolled.rollDeg).toBe(10);
+    const phi = (10 * Math.PI) / 180;
+    const d = displacementToCm(rolled, 100 * Math.sin(phi), -100 * Math.cos(phi));
+    expect(d.y).toBeCloseTo(45, 6);
+    expect(Math.abs(d.x)).toBeLessThan(1e-9);
+    // And roll defaults to 0 — a tripod — when nobody says otherwise.
+    expect(calibrateFromEllipse(perpendicular).rollDeg).toBe(0);
   });
 });
 

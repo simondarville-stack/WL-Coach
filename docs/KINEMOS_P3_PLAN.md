@@ -6,8 +6,11 @@
 0.81.x).
 
 > **Status: P3a SHIPPED** — the charts in 0.82.0, synced side-by-side playback
-> in 0.83.0. The rest of P3 — trends, talkover, sharing, overlay export, the
-> calibration tiers — is not started.
+> in 0.83.0. **P3b SHIPPED** — metric trends in 0.84.0 (§5 below). **P3c
+> SHIPPED** — the reference lift, same ship (§6). **P3d SHIPPED** — the
+> OpenCV assists: find the plate, snap the outline, stabilise the camera,
+> same ship (§7). The rest of P3 — talkover, sharing, overlay export, the
+> device-profile calibration tier — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made
@@ -199,11 +202,300 @@ Deliberately deferred, in the order they are likely to be picked up:
 - **Synced side-by-side playback.** Design §8 pairs it with the path overlay.
   Deferred because it needs two frame servers and two decoders live at once,
   and the overlay carries most of the value on its own.
-- **Metric trends over time.** Gated on design §13 open question 3.
-- **Model-lift comparison.** Third in the design's own ordering; wants a notion
-  of a reference lift that does not exist yet.
+- **Metric trends over time.** Was gated on design §13 open question 3;
+  decided 02/09/2026 and shipped as P3b (§5).
+- **Model-lift comparison.** Third in the design's own ordering; wanted a
+  notion of a reference lift, which P3c supplied (§6).
 - **Talkover recording, sharing, overlay export.** The rest of P3.
 - **Device-profile and phone-model calibration tiers.** Listed under P3 in the
-  design plan; unrelated to comparison and independently schedulable.
+  design plan; unrelated to comparison and independently schedulable. The
+  stabiliser tier landed in P3d (§7); the device-profile tier has not.
 - **Comparing more than two lifts.** Three curves on one chart is a different
   design problem, and no coach has asked yet.
+
+---
+
+## 5. P3b — Metric trends (shipped 0.84.0)
+
+Design §8's second comparison need: *"is the second pull getting faster over
+the block"*. Unblocked by the §13 Q3 decision — KinEMOS metrics stay adjacent
+to the Analysis registry, and Analysis reads them through an adapter.
+
+### Architecture decisions
+
+1. **One metric catalogue.** `engine/metricCatalogue.ts` is the single list of
+   what KinEMOS measures — id, label, unit, decimals, which way is up, why it
+   matters, and a reader that pulls the value off a computed lift. The delta
+   table (`compareMetrics`) now maps over it instead of carrying its own copy,
+   and the trend view and the Analysis measures list exactly the same set
+   (CLAUDE.md core principle 3).
+2. **The cache column has a schema.** `kinemos_analyses.metrics` was a bare
+   `LiftMetrics`; it is now `LiftMetrics` plus the rep summary under
+   `schema: 1` (`toStoredMetrics` / `fromStoredMetrics`). A row from before the
+   number reads as schema 0 with no summary, so peak height, loop width and
+   duration are null on it rather than zero, and a future change to what is
+   stored can be told apart from a season of older rows instead of drawn
+   through as one line. No migration: the column was already JSONB and every
+   reader is lenient about shape and strict about numbers.
+3. **Trends read the cache; comparison recomputes.** Unchanged from P2's
+   intent: a trend over a season must not run the pipeline per rep, and a
+   comparison the coach is looking at must agree with the viewer beside it.
+   A rep with no stored number is *counted* in the trend view's caption, not
+   hidden — the missing ones are usually the oldest, and a rising line that
+   starts where the data starts is a different claim from one that starts
+   where the athlete started.
+4. **Velocity is never shown without load.** The time view stacks a load panel
+   under the metric on the same time axis — two panels, one scale each, never
+   two y-axes on one plot — and the load view puts the metric against the
+   kilograms directly. Quality rides on the mark's shape (A filled, B ring,
+   C diamond, ungraded cross), never on colour alone.
+5. **A KinEMOS rep counts nothing towards training totals in Analysis.** It is
+   the set the log already counted, seen on video. Its fact row carries zero
+   sets, zero reps, no kilogram load and `countsTowardsTotals: false`; only
+   its `custom['kinemos:*']` values are readable, through measures registered
+   at runtime beside the coach's own — nothing KinEMOS is in the registry's
+   seed, as Q3 was decided.
+
+### What shipped
+
+**Engine (pure)** — `engine/metricCatalogue.ts`: `METRIC_CATALOGUE`,
+`metricById`, `toStoredMetrics`, `fromStoredMetrics`, `STORED_METRICS_SCHEMA`.
+`compare.ts` refactored onto it; its 28 tests unchanged and green.
+
+**Adapter (`src/kinemos/lib/analysisAdapter.ts`)** — `projectLiftRecords`
+(analyses ⋈ library → one flat record per rep with a value per catalogue
+metric, grade, error, load, mass, schema), `factsFrom` (long form),
+`filterLiftRecords`, `loadKinemosLiftRecords`. `analysisMetrics.ts` —
+`kinemosAnalysisMetrics()`: one Analysis `BaseMetricDef` per catalogue metric
+(default aggregation by the metric's own sense of "up": max, min or mean) plus
+an analysed-rep count and the estimated velocity error behind the grade.
+
+**Viewer (`components/TrendsView.tsx`)** — a TRENDS toggle beside COMPARE.
+Metric picker, this-exercise / all-exercises, over-time / against-load, 3–12
+months or all. Hover reads the rep out in the header; click opens it. A
+dense table of every rep in view underneath.
+
+**Analysis module** — `buildFacts` gained a KinEMOS stream (fed by `fetchFacts`
+through the adapter; a KinEMOS read failure leaves the training facts intact),
+`AnalysisModule` registers the measures at runtime, `format.ts` knows m/s, cm,
+W and s. A coach can now put "Second pull (KinEMOS)" in a pivot next to max
+load and tonnage, per week or per date.
+
+**Cache refresh (`lib/recompute.ts`)** — `computeFromBundle` is the one
+pipeline over a stored rep, shared by the comparison loader and by
+`refreshStoredMetrics`, which rewrites the metrics cache of reps whose stored
+schema is behind the current one. The Trends view offers it as a
+RECOMPUTE N REPS action beside the caption that counts them, reports what it
+could not do (not calibrated, no track, gone) and reads the history again.
+The grade is deliberately left alone: it needs the frame server's sample rate
+and its variable-frame-rate verdict, which only the viewer has.
+
+**Bench** — `verify/trends-preview.html` renders the view against a
+synthetic season (five months of snatches, a few cleans, mixed grades, stale
+reps, a simulated refresh); `verify/shoot-trends.mjs` screenshots every state
+through Playwright. The first render caught what jsdom could not: the joining
+line zig-zagged through same-day reps (now through the day's mean, said so on
+the chart), a 0,025 axis step printed as 1,77 / 1,80 / 1,82 (steps are 1, 2,
+5, 10 only), y labels sat on the first marks (fixed left inset), and the
+single-rep state said the same thing twice.
+
+**Tests** — catalogue round trip and leniency (9), adapter projection and
+filters (10), Trends view words, modes and the refresh (11), recompute (8),
+KinEMOS fact stream and measures (8).
+
+### Not in P3b
+
+- **Recomputing a rep's grade headlessly.** The refresh rewrites metrics only;
+  a grade needs the frame server. A rep graded under an older rule keeps its
+  letter until it is reopened.
+- **Trend lines in the athlete app.** The adapter makes it a projection
+  question; the surface is a product decision.
+- **Load–velocity profile fitting.** The against-load view shows the points;
+  fitting a line and deriving a minimum-velocity threshold is P5's
+  VBT→planner work (design §12).
+
+---
+
+## 6. P3c — The reference lift (shipped with 0.84.0)
+
+Design §8's third comparison need, *versus a model lift*, deferred from P3a
+for want of a notion of a reference. This is that notion at its smallest, and
+deliberately per athlete rather than a library of ideal lifts: the coach marks
+one analysed rep as the athlete's reference for an exercise — their best
+snatch, the one that looked right — and the other surfaces read against it.
+
+### Decisions
+
+1. **One reference per (athlete, exercise), kept in the application.** An
+   analysis has no athlete or exercise of its own (it names its clip; both
+   live on the library row), so the database cannot state the constraint.
+   `referenceService.markAsReference` clears the previous holder, found
+   through the adapter's join, before setting the new one. Migration
+   `20260902200000_kinemos_reference_lift` adds `is_reference` and a partial
+   index; nothing else changes shape.
+2. **The reference is a standard, not a data point.** The trend view draws it
+   as a line whatever the range or scope — narrowing to three months must not
+   lose the thing the three months are read against — and only when it has a
+   value for the metric on screen.
+3. **A reference needs a calibrated, marked lift**, the same gate as
+   comparison. Written straight through on toggle, not via the debounced
+   save: it is one deliberate act and it has a side effect on another row.
+
+### What shipped
+
+`lib/referenceService.ts` (`referenceOf`, `markAsReference`); `is_reference`
+on the analysis row, the adapter record and the comparison candidate. Viewer:
+a SET REFERENCE / REFERENCE toggle in the header. Comparison: the reference
+lists first for its exercise, marked ★, and is preselected when the picker
+opens with nothing chosen. Trends: a dashed line at the reference's value,
+labelled with the value and its load, in both the time and the load views;
+the reference row marked in the table. Tests: service (5), trends (2),
+adapter and fixtures updated.
+
+### Not in P3c
+
+- A library of model lifts across athletes (design §12 P5), and any
+  "distance from the model" score. The reference is one athlete's own lift.
+
+---
+
+## 7. P3d — The OpenCV assists (shipped with 0.84.0)
+
+Asked for directly: "why don't we use some of the advanced methods in OpenCV
+to enhance the tracker". The answer was measured before anything was built.
+
+### What the bench said (`verify/tracker-bench.py`)
+
+A degraded synthetic snatch — 384×288 at 50 fps, a rotating branded plate,
+motion blur scaled to bar speed, a hand sweeping across the plate through the
+second pull, sensor noise, camera shake, a real VP8 encode — scored against
+the trajectory it was drawn from:
+
+| Tracker | RMS px | worst px | lost |
+| --- | --- | --- | --- |
+| KinEMOS NCC, fixed template, through the browser | 0,68 | 0,90 | 0 |
+| OpenCV `matchTemplate`, fixed template | 0,52 | 1,26 | 0 |
+| OpenCV `matchTemplate`, adaptive template | 2,23 | 3,79 | 0 |
+| OpenCV Lucas–Kanade optical flow | 2,11 | 4,84 | 0 |
+| OpenCV `HoughCircles` per frame | 0,96 | 4,16 | 0 |
+| OpenCV `TrackerMIL` | 3,31 | 4,44 | 0 |
+
+Our tracker already *is* the OpenCV method that works for this target — a
+fixed-template normalised cross-correlation is what `matchTemplate` computes.
+The general-purpose trackers update their model every frame, which is what
+makes them robust to appearance change and exactly what makes them drift on
+a plate whose appearance changes every frame. So the tracker was left alone.
+
+### What was built instead
+
+OpenCV earns its place around the tracker, not in it. `src/kinemos/cv/*` is
+a layer the engine never imports, loaded on first use as its own Vite chunk
+(`@techstark/opencv-js`, 13 MB; `opencv.ts` is the one loader, `require()`
+under Node for vitest):
+
+1. **Find the plate** (`plate.ts` `detectPlates` → `findPlate`). Hough
+   circles over the plausible radius range, ranked by *edge support* — the
+   fraction of the circumference with an edge under it — rather than by
+   votes, which favour busy backgrounds. One press in the calibration panel
+   outlines the plate, marks its centre as the bar end and tracks from it:
+   zero clicks from clip to bar path.
+2. **Snap to the edge** (`refinePlateEllipse`). Canny edges in a ring round
+   the outline; per angular bin the *outermost* edge pixel, so the rim's
+   outer edge — the plate's diameter — wins over its inner one; a contrast
+   test so wall grain does not qualify; a direct least-squares ellipse fit;
+   then the intensity gradient along each radial, interpolated, for the
+   sub-pixel edge. Reports the support, so a half-hidden plate is flagged
+   rather than passed off. A near-circular fit gets tilt 0 by definition —
+   its tilt is noise, and 88° of it once swapped the calibration's axes.
+3. **Stabilise the camera** (`stabilise.ts`). Corners on the background
+   (`cornerMinEigenVal` and a hand-rolled non-maximum pick, since this build
+   lacks `goodFeaturesToTrack`), excluded round the plate, carried by
+   pyramidal Lucas–Kanade one frame at a time, and a *similarity* — not a
+   full affine; a hand does not shear — fitted by RANSAC from each frame
+   straight to the anchor frame's corners, never chained, with a step guard a
+   hand cannot exceed. Only the tracked points are corrected; the video is
+   untouched. Offered in the grade panel when the clip is handheld or
+   unknown; sets the camera to "stabilised".
+
+### Measured, through the real path
+
+| | result |
+| --- | --- |
+| Zero-click detection on the degraded clip | centre within 0,4 px, tilt 0, radius ≈ 1 px outside the drawn rim (codec blur) |
+| Handheld random walk, up to 52 px, raw track vs the gym | 35 px RMS; loop width read as 49 cm for a 17 cm loop |
+| Same, stabilised | 1,05 px RMS, 0 frames off; loop 17,2 cm, height 111,3 cm (true 111) |
+| Static clip, stabilised anyway | track moved by under 2 px |
+
+Ten unit tests on drawn scenes; `verify/track-clip.html` gained `?auto=1`
+and `?stabilise=1`; the bench gained `--handheld` and `--world` scoring.
+
+### The first real footage (0.83.3 fixtures, `verify/fixtures/real/`)
+
+Two clips of the same snatch — "Træk side" (perpendicular) and "Træk skråt"
+(oblique), 384×288 at 50 fps, tripod — through `verify/track-clip.html` with
+`?auto=1`: zero clicks from clip to bar path, on both.
+
+| | side | oblique |
+| --- | --- | --- |
+| Plate found | (221,0, 245,1), 28,2×25,8 px, support 1,00 | (244,3, 217,5), 20,9×19,9 px, support 0,90 |
+| Tracked | 170/170, min confidence 0,68, never lost | 188/188, min 0,51, 9 doubtful frames at the very end |
+| Lift-off → peak | 0,60 s | 0,62 s |
+| Peak vertical velocity | 2,55 m/s | 2,16 m/s |
+| Height to overhead | 157 cm | 161 cm |
+| Recovery peak | ≈1,0 m/s | ≈1,0 m/s |
+
+Same shape (pull, turnover hook, drop, recovery), same timing, heights within
+2,5 % — and a 15 % gap on peak velocity that calibration alone cannot explain
+in the direction it points. What the real plates showed that the synthetic
+ones could not:
+
+- **The plate's shadow inflates the outline downward.** On the side view the
+  face is a 52 px circle by intensity profile (r = 26); the snap found a
+  56 px major axis at 14° — the outermost edge at the bottom is the shadow's,
+  not the plate's. Picking the strongest edge per bin instead gives 27,2:
+  better, still a pixel out. A calibration that is 4–8 % large under-reads
+  every velocity by the same.
+- **A thick bumper seen obliquely has two 45 cm circles**, its face and the
+  far edge of its side, offset along the bar. The oblique fit mixes them:
+  face-only reads 36 px tall, face-and-rim 44 px. That is a 20 % spread on
+  the oblique scale from the choice of outline alone.
+- **The oblique view also changes depth along the pull.** The bar travels
+  back toward the lifter, which for a camera off the front corner is away
+  from the lens: the scale shrinks along the path and the peak under-reads.
+  A perpendicular side camera has no such term.
+
+So for *velocities*, film from the side, perpendicular, and let the coach
+check the outline against the plate face (the snap reports support, not
+which edge it chose); the oblique view is for path shape. Both of these are
+now product facts rather than assumptions.
+
+**Superseded by the accuracy study.** The 15 % gap above was explained here
+by outline bias and depth; the overnight study that followed
+(`docs/KINEMOS_ACCURACY_STUDY.md`) measured each term and found the
+explanation wrong in its largest part. The calibration was *rotating*
+displacements onto the fitted outline's axes, and the orientation of a
+near-circular outline is noise (+11,9° and −16,9° for two level cameras) —
+that alone made the 46 cm "loops" and most of the velocity gap. With gravity
+as the reference, a timing repair before resampling, the track re-centred on
+the plate's outline frame by frame, and a peak-stability factor in the grade,
+the two views agree to about 3 % on peak velocity and 2 % on height — and,
+once the plate's FACE rather than its shadow and rim thickness sizes the
+outline and the scale is read at mid-pull, on a scale that is measured rather
+than merely shared. The study is the reference for what the pipeline does
+and why; the paragraphs above stand as the record of what the first pass
+concluded.
+
+One environment note: the bundled headless Chromium has no H.264 decoder, so
+the fixtures were transcoded to VP8 for this run; a coach's Chrome decodes the
+MP4 directly.
+
+### Not in P3d
+
+- **Ground truth on real footage.** The numbers above are consistent with
+  each other and with a snatch, and nothing here has been checked against a
+  hand-labelled track or a known bar path. The 15 % gap is explained, not
+  measured away.
+- **The device-profile calibration tier** (lens distortion by phone model).
+- **Re-rendering a stabilised clip.** The points are corrected, the picture
+  is not; a coach watching a handheld clip still sees it move.
+

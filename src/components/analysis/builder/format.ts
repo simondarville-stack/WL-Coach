@@ -25,6 +25,17 @@ export function formatValue(value: number | null | undefined, unit: string): str
       return de(value, 2);
     case 'AU':
       return de(Math.round(value), 0);
+    // KinEMOS units (src/kinemos/engine/metricCatalogue.ts). Velocities carry
+    // two decimals because a 0,03 m/s difference is the noise floor a coach
+    // reads against; power and centimetres do not need them.
+    case 'm/s':
+      return `${de(value, 2)} m/s`;
+    case 'cm':
+      return `${de(value, 1)} cm`;
+    case 'W':
+      return `${de(Math.round(value), 0)} W`;
+    case 's':
+      return `${de(value, 2)} s`;
     default:
       return de(value, Number.isInteger(value) ? 0 : 1);
   }
@@ -49,6 +60,11 @@ export function formatAxisTick(value: number | string | undefined, unit: string)
       return de(value, 1);
     case '%':
       return `${de(Math.round(value), 0)}%`;
+    case 'm/s':
+    case 's':
+      return de(value, 2);
+    case 'cm':
+      return de(value, 1);
     default:
       return de(Math.round(value), 0);
   }
