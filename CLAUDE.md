@@ -104,7 +104,13 @@ All modules are **active** — nothing is currently disabled or hidden:
   (V1/V2/Vmax/Vmin, t_turn, S_vmax/S_max/S_fly/S_remain/S_sit/S_fall, F1–Fbr
   as % of load, PSK) as `AnalyzerMetrics` in `engine/phases.ts` — from
   Simon's 2018 DTU report, P3 plan §9 — and `engine/reps.ts` cuts a set into
-  reps.
+  reps — and, from 0.86.0 (P3 plan §10): TRACK THE SET in the viewer (one
+  click on a double or triple gives a rep per lift, each calibrated at its
+  own rest; `src/kinemos/lib/setTracker.ts`, the same procedure the harness
+  runs), the plate found again by its colour after a loss
+  (`engine/plateColour.ts`, pure), charts against height with V1/V2/Vmax/Vmin
+  marked (`vs time | vs height` on the analysis panel), and a knee-height
+  mark (KNEE tool) that checks the phase edges against the coach's eye.
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports, and it never imports `cv/`. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
   in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
