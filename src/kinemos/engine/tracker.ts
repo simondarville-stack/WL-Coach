@@ -119,10 +119,14 @@ export interface TrackOptions {
    * clips as fast as small ones.
    */
   maxTemplateSamples?: number;
+  /** A template already cut, to track with instead of cutting one at the
+   *  anchor. A set tracked in pieces keeps ONE template across its joins, so
+   *  every piece centres the plate the same way and a join is not a step. */
+  template?: Template;
   onProgress?: (done: number, total: number) => void;
 }
 
-export const DEFAULT_TRACK_OPTIONS: Required<Omit<TrackOptions, 'onProgress'>> = {
+export const DEFAULT_TRACK_OPTIONS: Required<Omit<TrackOptions, 'onProgress' | 'template'>> = {
   templateRadiusPx: 26,
   // Zero: measured, not assumed. See decision 1 in the header.
   innerRadiusFraction: 0,
@@ -350,8 +354,8 @@ export async function trackDirection(
     opts.maxTemplateSamples,
   );
 
-  const anchorImage = await source.getGray(anchor.index);
-  const template = extractTemplate(anchorImage, anchor.x, anchor.y, offsets);
+  const template =
+    options.template ?? extractTemplate(await source.getGray(anchor.index), anchor.x, anchor.y, offsets);
   if (!template) {
     return { points: [], lowConfidenceIndices: [], gaveUp: true };
   }
@@ -478,7 +482,7 @@ export async function trackFromAnchor(
  * which together with the template's sample cap is what keeps a 1080 p clip as
  * fast as a 480 p one.
  */
-function searchAround(
+export function searchAround(
   image: GrayImage,
   template: Template,
   px: number,

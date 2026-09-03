@@ -21,9 +21,19 @@ function snatchHeight(t: number): number {
   return 0;
 }
 
+/** The same snatch, dropped from overhead onto the platform: the bar hits
+ *  the floor at 2,7 s and bounces 60 cm in 0,15 s — 4 m/s, faster than it
+ *  was ever lifted — before settling. */
+function droppedSnatchHeight(t: number): number {
+  if (t < 2.7) return snatchHeight(t);
+  if (t < 2.85) return 60 * Math.sin((Math.PI * (t - 2.7)) / 0.3);
+  if (t < 3.0) return 60 * Math.sin((Math.PI * (t - 2.7)) / 0.3);
+  return 0;
+}
+
 /** A track with `reps` snatches, each preceded by `restS` of rest, with a
  *  little pixel jitter. */
-function set(reps: number, restS = 1.5, jitter = 0.3): TrackPoint[] {
+function set(reps: number, restS = 1.5, jitter = 0.3, height: (t: number) => number = snatchHeight): TrackPoint[] {
   const out: TrackPoint[] = [];
   let seed = 3;
   const rand = () => {
@@ -36,7 +46,7 @@ function set(reps: number, restS = 1.5, jitter = 0.3): TrackPoint[] {
     const t = i / FPS;
     const k = Math.floor(t / period);
     const local = t - k * period - restS;
-    const h = k < reps ? snatchHeight(local) : 0;
+    const h = k < reps ? height(local) : 0;
     out.push({ t, x: 300 + 10 * Math.sin(h / 30) + rand() * jitter, y: 800 - h * PX_PER_CM + rand() * jitter });
   }
   return out;
@@ -79,6 +89,18 @@ describe('splitReps', () => {
   it('returns nothing for a clip that starts mid-pull', () => {
     const points = set(1).filter(p => p.t > 1.8);
     expect(splitReps(points, cal)).toHaveLength(0);
+  });
+
+  it('measures the lift, not the bounce of a bar dropped from overhead', () => {
+    // A tracker that follows the drop sees the bar leave the platform at
+    // 4 m/s on the bounce. The rep is still the first rise from the rest.
+    const reps = splitReps(set(2, 1.5, 0.3, droppedSnatchHeight), cal);
+    expect(reps).toHaveLength(2);
+    for (const rep of reps) {
+      expect(rep.apexT - rep.liftOffT).toBeCloseTo(1.0, 1);
+      expect(rep.catchT - rep.liftOffT).toBeCloseTo(1.3, 1);
+      expect(rep.riseCm).toBeCloseTo(140, 0);
+    }
   });
 
   it('survives a tracker that lost the drop', () => {

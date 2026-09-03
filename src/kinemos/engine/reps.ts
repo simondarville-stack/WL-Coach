@@ -143,10 +143,25 @@ export function splitReps(
     }
     if (limit <= liftOff + 2) continue;
     const base = h[liftOff];
-    // Peak vertical velocity between this rest and the next.
+    // The lift is the FIRST rise from the rest that gets high enough: the
+    // first sample at which the bar, at least `minRiseCm` up, stops rising is
+    // its apex. Not the fastest rise between this rest and the next — a bar
+    // dropped from overhead bounces off the platform faster than it was ever
+    // lifted, and a tracker that follows the drop (found again by colour)
+    // would hand that bounce to the rep.
+    let apexI = -1;
+    for (let i = liftOff + 1; i <= limit; i++) {
+      const stops = i === limit || h[i + 1] <= h[i];
+      if (stops && h[i] - base >= opt.minRiseCm) {
+        apexI = i;
+        break;
+      }
+    }
+    if (apexI < 0) continue;
+    // Peak vertical velocity on the way up to it.
     let peakI = -1;
     let peakV = 0;
-    for (let i = liftOff + 1; i <= limit; i++) {
+    for (let i = liftOff + 1; i <= apexI; i++) {
       const v = (h[i] - h[i - 1]) / 100 / Math.max(1e-6, sorted[i].t - sorted[i - 1].t);
       if (v > peakV) {
         peakV = v;
@@ -154,16 +169,7 @@ export function splitReps(
       }
     }
     if (peakI < 0) continue;
-    // The apex: the first sample after the peak where the bar stops rising.
-    let apexI = limit;
-    for (let i = peakI + 1; i <= limit; i++) {
-      if (h[i] <= h[i - 1]) {
-        apexI = i - 1;
-        break;
-      }
-    }
     const rise = h[apexI] - base;
-    if (rise < opt.minRiseCm) continue;
     // The catch: from the apex the bar comes down into the receiving
     // position and stops falling — the deepest point before the recovery
     // lifts it again. The search ends when the bar rises more than a couple

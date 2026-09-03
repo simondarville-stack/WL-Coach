@@ -45,9 +45,13 @@ import { splitReps, type RepSegment } from '../engine/reps';
 import { medianInterval } from '../engine/signal';
 import {
   DEFAULT_TRACK_OPTIONS,
+  annulusOffsets,
+  extractTemplate,
+  searchAround,
   trackDirection,
   trackFromAnchor,
   type FrameSource,
+  type Template,
   type TrackOptions,
   type TrackedPoint,
 } from '../engine/tracker';
@@ -144,7 +148,24 @@ export async function trackSet(
     // The physics the tracker's search radius follows: a bar end at 3 m/s on
     // a plate of radius R px (45 cm) moves about 15·R/fps px a frame.
     const speedPxPerFrame = (15 * R) / fps;
+    const searchRadiusPx =
+      trackOptions.searchRadiusPx ?? Math.max(DEFAULT_TRACK_OPTIONS.searchRadiusPx, Math.ceil(speedPxPerFrame));
     const report = (done: number) => options.onProgress?.(Math.min(done, total), total);
+
+    // ONE template for the whole set, cut where the coach clicked. Every
+    // piece tracked after a loss is matched with it, so each piece centres
+    // the plate the same way and a join is not a step in the track.
+    const anchorGray = await source.getGray(anchor.index);
+    const template: Template | null = extractTemplate(
+      anchorGray,
+      anchor.x,
+      anchor.y,
+      annulusOffsets(
+        trackOptions.templateRadiusPx ?? DEFAULT_TRACK_OPTIONS.templateRadiusPx,
+        trackOptions.innerRadiusFraction ?? DEFAULT_TRACK_OPTIONS.innerRadiusFraction,
+        trackOptions.maxTemplateSamples ?? DEFAULT_TRACK_OPTIONS.maxTemplateSamples,
+      ),
+    );
 
     // The plate's colour, from the face inside the coach's outline.
     let colour: PlateColourModel | null = null;
@@ -164,7 +185,6 @@ export async function trackSet(
     let lostAtEnd = first.gaveUp;
     let gaveUp = first.gaveUp;
 
-    const anchorGray = await source.getGray(anchor.index);
     const radiusOpts = {
       minRadiusPx: Math.max(6, Math.round(server.displayHeight * 0.03)),
       maxRadiusPx: Math.round(server.displayHeight * 0.22),
@@ -178,10 +198,25 @@ export async function trackSet(
     let attempts = 0;
     while (gaveUp && attempts < MAX_JOINS) {
       attempts++;
-      // A tracker that gave up spent its last frames unsure — on the fan, or
-      // on nothing. Those points are not the bar; the search for it starts
-      // from the last frame it was confident about.
-      while (all.length > 1 && all[all.length - 1].confidence < minConfidence) all.pop();
+      // A tracker that gave up spent its last frames unsure. Which of them
+      // are still the bar depends on WHY it gave up: after a run of poor
+      // matches that jumped — misses — the bar was lost at the first jump,
+      // and the plausible, merely blurred frames before it stay; after a
+      // long run of poor matches that never jumped, it was sitting on
+      // something that is not the bar (the fan) and the whole run goes.
+      let tail = all.length;
+      while (tail > 1 && all[tail - 1].confidence < minConfidence) tail--;
+      if (tail < all.length) {
+        let cut = tail;
+        for (let i = tail; i < all.length; i++) {
+          if (all[i].predictionErrorPx > 0.35 * searchRadiusPx) {
+            cut = i;
+            break;
+          }
+          if (i === all.length - 1) cut = tail;
+        }
+        all.length = cut;
+      }
       const lastGood = all[all.length - 1];
       const startAt = Math.max(lastGood.index + 1, searchFrom);
       let found: { at: number; x: number; y: number; how: SetJoin['how'] } | null = null;
@@ -257,21 +292,40 @@ export async function trackSet(
       }
       const from = found.at;
       searchFrom = from + 1;
+      // Where the set's template says the plate's centre is, near the hit:
+      // a colour patch's centroid is good to a grid step and a rest fit's
+      // centre to a pixel or two, and neither is the template's idea of the
+      // centre. Matching the template there makes the piece continuous with
+      // the rest of the track.
+      let seed = { x: found.x, y: found.y, score: 1 };
+      if (template) {
+        const match = searchAround(await source.getGray(from), template, found.x, found.y, R * 0.5);
+        if (match.score > -1) seed = match;
+      }
+      if (seed.score <= -1) {
+        // The plate is too close to the frame's edge for the template to sit
+        // on it. Not a join; look on from the next frame.
+        log(`frame ${from}: the tracker could not take hold at (${found.x.toFixed(0)}, ${found.y.toFixed(0)}) — looking on`);
+        continue;
+      }
       const sub: FrameSource = {
         frameCount: total - from,
         timestamps: source.timestamps.slice(from),
         getGray: i => source.getGray(i + from),
       };
-      const more = await trackDirection(sub, { index: 0, x: found.x, y: found.y }, 1, {
+      const more = await trackDirection(sub, { index: 0, x: seed.x, y: seed.y }, 1, {
         ...trackOptions,
+        template: template ?? undefined,
         onProgress: done => report(from + done),
       });
       if (more.points.length <= 1) {
-        // No template could be cut there (a plate half out of frame), or
-        // nothing followed. Not a join; look on from the next frame.
         log(`frame ${from}: the tracker could not take hold at (${found.x.toFixed(0)}, ${found.y.toFixed(0)}) — looking on`);
         continue;
       }
+      // The seeded point is a match, not a click: it carries the match's
+      // score, and is flagged like any other unsure frame.
+      more.points[0].confidence = seed.score;
+      if (seed.score < minConfidence) more.lowConfidenceIndices.unshift(0);
       for (const p of more.points) p.index += from;
       all.push(...more.points);
       low.push(...more.lowConfidenceIndices.map(i => i + from));
