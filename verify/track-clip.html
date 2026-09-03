@@ -432,6 +432,12 @@
               // The per-rep series starts its clock at the rep's first sample.
               reps.push({ rep: k + 1, liftOffT: seg.liftOffT, catchT: seg.catchT, vmax: sum.peakVerticalVelocityMs, vmaxT: sum.peakVerticalVelocityT, riseCm: seg.riseCm, loopCm: sum.loopWidthCm, spread: stab ? stab.spread : null, series: { t: s.t, xCm: s.xCm, yCm: s.yCm, vyMs: s.vyMs } });
               log(`rep ${k + 1}: Vmax ${sum.peakVerticalVelocityMs.toFixed(3)} m/s at ${sum.peakVerticalVelocityT.toFixed(2)} s after lift-off, catch at ${seg.riseCm.toFixed(1)} cm, loop ${sum.loopWidthCm.toFixed(1)} cm, stability ${stab ? (stab.spread * 100).toFixed(1) + ' %' : '—'}`);
+              // The German analyzer's measures for the rep, from its own phases.
+              const repPhases = proposePhases(s);
+              const an = computeLiftMetrics(s, spansFrom(repPhases.boundaries)).analyzer;
+              const f = (v, d = 2) => (v === null ? '—' : v.toFixed(d));
+              log(`rep ${k + 1} analyzer: V1 ${f(an.v1Ms)} V2 ${f(an.v2Ms)} Vmax ${f(an.vmaxMs)} Vmin ${f(an.vminMs)} m/s, t_turn ${f(an.tTurnS)} s | S_vmax ${f(an.sVmaxCm, 1)} S_max ${f(an.sMaxCm, 1)} S_fly ${f(an.sFlyCm, 1)} S_remain ${f(an.sRemainCm, 1)} cm (${f(an.sRemainPct, 1)} %) S_sit ${f(an.sSitCm, 1)} S_fall ${f(an.sFallCm, 1)} cm | F1 ${f(an.f1Pct, 0)} F2 ${f(an.f2Pct, 0)} F3 ${f(an.f3Pct, 0)} Fbr ${f(an.fbrPct, 0)} % of load${repPhases.fullyDetected ? '' : ' (phases partly guessed)'}`);
+              reps[reps.length - 1].analyzer = an;
             }
           }
 

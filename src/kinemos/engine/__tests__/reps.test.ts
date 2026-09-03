@@ -49,8 +49,10 @@ describe('splitReps', () => {
     for (const [k, rep] of reps.entries()) {
       const restEnd = 1.5 + k * 4.5;
       expect(rep.liftOffT).toBeCloseTo(restEnd, 0);
-      // The catch is the top of the pull, 1,0 s after lift-off, at 140 cm.
-      expect(rep.catchT - rep.liftOffT).toBeCloseTo(1.0, 1);
+      // The apex is the top of the pull, 1,0 s after lift-off, at 140 cm;
+      // the catch is the bottom of the dip that follows, 0,3 s later.
+      expect(rep.apexT - rep.liftOffT).toBeCloseTo(1.0, 1);
+      expect(rep.catchT - rep.liftOffT).toBeCloseTo(1.3, 1);
       expect(rep.riseCm).toBeCloseTo(140, 0);
     }
   });
@@ -63,8 +65,10 @@ describe('splitReps', () => {
   it('ignores the stand-up and the drop — they are not reps', () => {
     const reps = splitReps(set(1), cal);
     expect(reps).toHaveLength(1);
-    // The rep ends at the catch (140 cm), not at the top of the stand (150 cm).
+    // The rep's height is the apex (140 cm), not the top of the stand (150 cm),
+    // and the rep ends in the catch, before the stand-up.
     expect(reps[0].riseCm).toBeLessThan(145);
+    expect(reps[0].catchT - reps[0].liftOffT).toBeLessThan(1.5);
   });
 
   it('does not count a shuffle of the bar on the floor', () => {

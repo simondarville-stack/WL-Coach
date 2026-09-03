@@ -28,13 +28,18 @@ import { displacementToCm } from './calibration';
 
 export interface RepSegment {
   /** Positions in the SORTED input of the rest sample the rep starts from
-   *  and the catch sample it ends at, inclusive. */
+   *  and the sample it ends at — the deepest point of the catch — inclusive. */
   from: number;
   to: number;
-  /** Timestamps of the same, s. */
+  /** Lift-off: the last rest sample, s. */
   liftOffT: number;
+  /** The top of the bar's flight — the first stop after peak velocity, s. */
+  apexT: number;
+  /** The deepest point of the catch after the apex, s. The rep ends here, so
+   *  the drop under and the braking are in it (the analyzer's Vmin, S_sit,
+   *  S_fall and Fbr) and the recovery is not. */
   catchT: number;
-  /** Height at the catch above the rest, cm. */
+  /** Height at the apex above the rest, cm. */
   riseCm: number;
 }
 
@@ -80,6 +85,8 @@ export function splitReps(
   if (n < 4 || !(calibration.cmPerPxV > 0)) return [];
   const sorted = [...points].sort((a, b) => a.t - b.t);
   const origin = sorted[0];
+  const gaps = sorted.slice(1).map((p, i) => p.t - sorted[i].t).sort((a, b) => a - b);
+  const medianDt = gaps[gaps.length >> 1] || 1 / 30;
   // Height in cm, up positive, and a speed from a central difference — raw,
   // because a rest is a matter of centimetres over tenths of a second and
   // needs no filter.
@@ -147,21 +154,40 @@ export function splitReps(
       }
     }
     if (peakI < 0) continue;
-    // The catch: the first sample after the peak where the bar stops rising.
-    let catchI = limit;
+    // The apex: the first sample after the peak where the bar stops rising.
+    let apexI = limit;
     for (let i = peakI + 1; i <= limit; i++) {
       if (h[i] <= h[i - 1]) {
-        catchI = i - 1;
+        apexI = i - 1;
         break;
       }
     }
-    const rise = h[catchI] - base;
+    const rise = h[apexI] - base;
     if (rise < opt.minRiseCm) continue;
+    // The catch: from the apex the bar comes down into the receiving
+    // position and stops falling — the deepest point before the recovery
+    // lifts it again. The search ends when the bar rises more than a couple
+    // of centimetres off its low (the recovery), when it has come to rest
+    // after falling (a bar set down, or dropped to the floor: then the
+    // "catch" is the floor and S_fall is the whole height, which is what a
+    // missed lift measures), or at a gap in the samples — a tracker that lost
+    // the plate on the drop and found it again on the floor must not hand
+    // the floor to the catch.
+    let sitI = apexI;
+    let falling = false;
+    for (let i = apexI + 1; i <= limit; i++) {
+      if (sorted[i].t - sorted[i - 1].t > 3 * medianDt) break;
+      if (h[i] < h[sitI]) sitI = i;
+      else if (h[i] > h[sitI] + 2) break;
+      if (speed[i] > opt.restSpeedMs) falling = true;
+      else if (falling) break;
+    }
     reps.push({
       from: liftOff,
-      to: catchI,
+      to: sitI,
       liftOffT: sorted[liftOff].t,
-      catchT: sorted[catchI].t,
+      apexT: sorted[apexI].t,
+      catchT: sorted[sitI].t,
       riseCm: rise,
     });
   }

@@ -24,7 +24,7 @@
  * Engine purity: types and pure functions only.
  */
 import type { RepSummary } from './kinematics';
-import type { LiftMetrics } from './phases';
+import type { AnalyzerMetrics, LiftMetrics } from './phases';
 
 /** Which way is up, for a given metric. Null where it genuinely depends on the
  *  lifter and the interface must not pass judgement. */
@@ -157,6 +157,128 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     read: l => l.summary?.durationS ?? null,
     significant: 0.05,
   },
+
+  // ── The German Weightlifting Analyzer's measures (phases.ts AnalyzerMetrics) ──
+  {
+    id: 'v2',
+    label: 'Knee passing (V2)',
+    unit: 'm/s',
+    decimals: 2,
+    betterWhen: null,
+    why: 'The slowest the bar gets through the transition. With V1 it says how much the double knee bend costs; on its own it is a matter of style.',
+    read: l => l.metrics.analyzer?.v2Ms ?? null,
+    significant: 0.03,
+  },
+  {
+    id: 'vmin',
+    label: 'Drop under (Vmin)',
+    unit: 'm/s',
+    decimals: 2,
+    betterWhen: null,
+    why: 'The fastest the bar comes down into the catch. Negative by definition.',
+    read: l => l.metrics.analyzer?.vminMs ?? null,
+    significant: 0.05,
+  },
+  {
+    id: 'tTurn',
+    label: 'Turnover time (t_turn)',
+    unit: 's',
+    decimals: 2,
+    betterWhen: 'lower',
+    why: 'From Vmax to Vmin: how quickly the lifter gets under the bar. Käks ranked it third, after Vmax and the path.',
+    read: l => l.metrics.analyzer?.tTurnS ?? null,
+    significant: 0.02,
+  },
+  {
+    id: 'sVmax',
+    label: 'Height at Vmax (S_vmax)',
+    unit: 'cm',
+    decimals: 1,
+    betterWhen: null,
+    why: 'Where in the pull the bar was fastest, above its start.',
+    read: l => l.metrics.analyzer?.sVmaxCm ?? null,
+    significant: 1,
+  },
+  {
+    id: 'sFly',
+    label: 'Flight (S_fly)',
+    unit: 'cm',
+    decimals: 1,
+    betterWhen: null,
+    why: 'How far the bar keeps rising after peak velocity, to the top of its flight.',
+    read: l => l.metrics.analyzer?.sFlyCm ?? null,
+    significant: 1,
+  },
+  {
+    id: 'sRemain',
+    label: 'Beyond ballistic (S_remain)',
+    unit: '%',
+    decimals: 1,
+    betterWhen: null,
+    why: 'Share of the flight height the impulse alone (Vmax²/2g) does not explain — what the arms and the pull-under added.',
+    read: l => l.metrics.analyzer?.sRemainPct ?? null,
+    significant: 1,
+  },
+  {
+    id: 'sSit',
+    label: 'Catch height (S_sit)',
+    unit: 'cm',
+    decimals: 1,
+    betterWhen: null,
+    why: 'The bar at the deepest point of the catch, above its start. Anthropometry as much as technique.',
+    read: l => l.metrics.analyzer?.sSitCm ?? null,
+    significant: 1,
+  },
+  {
+    id: 'sFall',
+    label: 'Fall to catch (S_fall)',
+    unit: 'cm',
+    decimals: 1,
+    betterWhen: null,
+    why: 'From the top of the flight down to the catch.',
+    read: l => l.metrics.analyzer?.sFallCm ?? null,
+    significant: 1,
+  },
+  {
+    id: 'f1',
+    label: 'Force, first pull (F1)',
+    unit: '%',
+    decimals: 0,
+    betterWhen: null,
+    why: 'Peak vertical force on the bar in the first pull, as a share of the load. 100 % holds the bar still.',
+    read: l => l.metrics.analyzer?.f1Pct ?? null,
+    significant: 5,
+  },
+  {
+    id: 'f2',
+    label: 'Force, knee (F2)',
+    unit: '%',
+    decimals: 0,
+    betterWhen: null,
+    why: 'Lowest vertical force through the transition. Below 100 % the bar is slowing.',
+    read: l => l.metrics.analyzer?.f2Pct ?? null,
+    significant: 5,
+  },
+  {
+    id: 'f3',
+    label: 'Force, second pull (F3)',
+    unit: '%',
+    decimals: 0,
+    betterWhen: 'higher',
+    why: 'Peak vertical force on the bar in the second pull, as a share of the load.',
+    read: l => l.metrics.analyzer?.f3Pct ?? null,
+    significant: 5,
+  },
+  {
+    id: 'fbr',
+    label: 'Force, catch (Fbr)',
+    unit: '%',
+    decimals: 0,
+    betterWhen: null,
+    why: 'Peak vertical force braking the bar in the catch, as a share of the load.',
+    read: l => l.metrics.analyzer?.fbrPct ?? null,
+    significant: 10,
+  },
 ];
 
 export function metricById(id: string): MetricDefinition | null {
@@ -174,8 +296,9 @@ export function metricById(id: string): MetricDefinition | null {
  *   0 — implicit: rows written before this constant existed hold a bare
  *       `LiftMetrics` and no summary.
  *   1 — `LiftMetrics` plus the rep summary, under this key.
+ *   2 — plus the `analyzer` block (phases.ts `AnalyzerMetrics`).
  */
-export const STORED_METRICS_SCHEMA = 1;
+export const STORED_METRICS_SCHEMA = 2;
 
 export interface StoredMetrics extends LiftMetrics {
   schema: number;
@@ -230,6 +353,29 @@ export function fromStoredMetrics(raw: unknown): StoredMetrics | null {
         }
       : null;
 
+  // The analyzer block arrived with schema 2; an older row simply has none of
+  // its numbers, and says so with nulls rather than zeros.
+  const a = r.analyzer && typeof r.analyzer === 'object' ? (r.analyzer as Record<string, unknown>) : {};
+  const analyzer: AnalyzerMetrics = {
+    v1Ms: numberOrNull(a.v1Ms),
+    v2Ms: numberOrNull(a.v2Ms),
+    vmaxMs: numberOrNull(a.vmaxMs),
+    vminMs: numberOrNull(a.vminMs),
+    tTurnS: numberOrNull(a.tTurnS),
+    sVmaxCm: numberOrNull(a.sVmaxCm),
+    sMaxCm: numberOrNull(a.sMaxCm),
+    sFlyCm: numberOrNull(a.sFlyCm),
+    sRemainCm: numberOrNull(a.sRemainCm),
+    sRemainPct: numberOrNull(a.sRemainPct),
+    sSitCm: numberOrNull(a.sSitCm),
+    sFallCm: numberOrNull(a.sFallCm),
+    f1Pct: numberOrNull(a.f1Pct),
+    f2Pct: numberOrNull(a.f2Pct),
+    f3Pct: numberOrNull(a.f3Pct),
+    fbrPct: numberOrNull(a.fbrPct),
+    pskNs: numberOrNull(a.pskNs),
+  };
+
   return {
     schema: numberOr(r.schema, 0),
     phases,
@@ -237,6 +383,7 @@ export function fromStoredMetrics(raw: unknown): StoredMetrics | null {
     transitionVelocityLossMs: numberOrNull(r.transitionVelocityLossMs),
     turnoverVelocityMs: numberOrNull(r.turnoverVelocityMs),
     peakPowerW: numberOrNull(r.peakPowerW),
+    analyzer,
     summary,
   };
 }

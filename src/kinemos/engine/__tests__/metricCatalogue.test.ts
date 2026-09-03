@@ -13,7 +13,7 @@ import {
   metricById,
   toStoredMetrics,
 } from '../metricCatalogue';
-import type { LiftMetrics } from '../phases';
+import { EMPTY_ANALYZER_METRICS, type LiftMetrics } from '../phases';
 
 const metrics: LiftMetrics = {
   phases: [
@@ -40,6 +40,7 @@ const metrics: LiftMetrics = {
   ],
   peakVelocityMs: 1.85,
   transitionVelocityLossMs: 0.12,
+  analyzer: EMPTY_ANALYZER_METRICS,
   turnoverVelocityMs: 0.6,
   peakPowerW: 2300,
 };

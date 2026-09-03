@@ -7,7 +7,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { KinemosAnalysis } from '../../../lib/database.types';
 import { toStoredMetrics } from '../../engine/metricCatalogue';
-import type { LiftMetrics } from '../../engine/phases';
+import { EMPTY_ANALYZER_METRICS, type LiftMetrics } from '../../engine/phases';
+import { STORED_METRICS_SCHEMA } from '../../engine/metricCatalogue';
 import { factsFrom, filterLiftRecords, projectLiftRecords } from '../analysisAdapter';
 import type { LibraryVideo } from '../videoLibrary';
 
@@ -30,6 +31,7 @@ const metrics: LiftMetrics = {
   ],
   peakVelocityMs: 1.8,
   transitionVelocityLossMs: 0.1,
+  analyzer: EMPTY_ANALYZER_METRICS,
   turnoverVelocityMs: 0.5,
   peakPowerW: null,
 };
@@ -97,7 +99,7 @@ describe('projectLiftRecords', () => {
     expect(rec.loadKg).toBe(90);
     expect(rec.grade).toBe('B');
     expect(rec.gradeErrorMs).toBe(0.045);
-    expect(rec.schema).toBe(1);
+    expect(rec.schema).toBe(STORED_METRICS_SCHEMA);
     expect(rec.values.peakVelocity).toBe(1.8);
     expect(rec.values.secondPull).toBe(1.8);
     // No first pull in this phase set, no summary cached, no mass-dependent power.
