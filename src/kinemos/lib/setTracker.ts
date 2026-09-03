@@ -171,12 +171,19 @@ export async function trackSet(
       near: { x: anchor.x, y: anchor.y },
     };
 
-    while (gaveUp && joins.length < MAX_JOINS) {
+    // Where the next search may begin. Always moves forward, so a hit the
+    // tracker could do nothing with — a plate half out of frame, where no
+    // template can be cut — is not found again and again.
+    let searchFrom = 0;
+    let attempts = 0;
+    while (gaveUp && attempts < MAX_JOINS) {
+      attempts++;
       // A tracker that gave up spent its last frames unsure — on the fan, or
       // on nothing. Those points are not the bar; the search for it starts
       // from the last frame it was confident about.
       while (all.length > 1 && all[all.length - 1].confidence < minConfidence) all.pop();
       const lastGood = all[all.length - 1];
+      const startAt = Math.max(lastGood.index + 1, searchFrom);
       let found: { at: number; x: number; y: number; how: SetJoin['how'] } | null = null;
 
       // 1. In flight, by colour: the frames just after the loss, near where
@@ -184,7 +191,7 @@ export async function trackSet(
       //    since it was last seen.
       if (colour) {
         const until = Math.min(total - 1, lastGood.index + Math.round(FLIGHT_WINDOW_S * fps));
-        for (let at = lastGood.index + 1; at <= until; at += FLIGHT_STEP) {
+        for (let at = startAt; at <= until; at += FLIGHT_STEP) {
           report(at);
           const elapsed = at - lastGood.index;
           const reach = Math.min(4 * R, 1.2 * R + speedPxPerFrame * elapsed);
@@ -206,7 +213,7 @@ export async function trackSet(
       //    started, on later frames — that is the plate's colour, or that
       //    correlates with the set's own template.
       if (!found) {
-        const resumeFrom = lastGood.index + 10;
+        const resumeFrom = Math.max(startAt, lastGood.index + 10);
         for (let at = resumeFrom; at < total - 10; at += REACQUIRE_STEP) {
           report(at);
           const gray = await source.getGray(at);
@@ -249,6 +256,7 @@ export async function trackSet(
         break;
       }
       const from = found.at;
+      searchFrom = from + 1;
       const sub: FrameSource = {
         frameCount: total - from,
         timestamps: source.timestamps.slice(from),
@@ -258,6 +266,12 @@ export async function trackSet(
         ...trackOptions,
         onProgress: done => report(from + done),
       });
+      if (more.points.length <= 1) {
+        // No template could be cut there (a plate half out of frame), or
+        // nothing followed. Not a join; look on from the next frame.
+        log(`frame ${from}: the tracker could not take hold at (${found.x.toFixed(0)}, ${found.y.toFixed(0)}) — looking on`);
+        continue;
+      }
       for (const p of more.points) p.index += from;
       all.push(...more.points);
       low.push(...more.lowConfidenceIndices.map(i => i + from));
