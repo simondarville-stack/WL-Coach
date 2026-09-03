@@ -219,9 +219,23 @@
           if (params.has('search')) trackOptions.searchRadiusPx = Number(params.get('search'));
           if (params.has('minconf')) trackOptions.minConfidence = Number(params.get('minconf'));
           if (params.has('giveup')) trackOptions.giveUpAfter = Number(params.get('giveup'));
-          const result = await trackFromAnchor(ranged, { index: aIndex - from, x: ax, y: ay }, trackOptions);
-          for (const p of result.points) p.index += from;
-          result.lowConfidenceIndices = result.lowConfidenceIndices.map(i => i + from);
+          // `&track=<url>`: bring your own track — a JSON array of
+          // {index, x, y} in display pixels — and skip the tracker. For a
+          // clip the tracker cannot hold (a fan behind the plate, say) but a
+          // colour segmentation can; the rest of the pipeline is unchanged.
+          let result;
+          if (params.has('track')) {
+            const own = await (await fetch(params.get('track'))).json();
+            const points = own
+              .filter(p => p.index >= from && p.index <= to)
+              .map(p => ({ index: p.index, t: server.timestamps[p.index], x: p.x, y: p.y, confidence: 1, predictionErrorPx: 0 }));
+            result = { points, lowConfidenceIndices: [], gaveUp: false };
+            log(`own track: ${points.length} points from ${params.get('track')}`);
+          } else {
+            result = await trackFromAnchor(ranged, { index: aIndex - from, x: ax, y: ay }, trackOptions);
+            for (const p of result.points) p.index += from;
+            result.lowConfidenceIndices = result.lowConfidenceIndices.map(i => i + from);
+          }
           if (from > 0 || to < server.frameCount - 1) log(`tracking frames ${from}–${to} only`);
           const ms = performance.now() - t0;
           log(`tracked ${result.points.length}/${server.frameCount} frames in ${ms.toFixed(0)} ms (${(ms / Math.max(1, result.points.length)).toFixed(1)} ms/frame), gaveUp=${result.gaveUp}, low-confidence frames: ${result.lowConfidenceIndices.length} [${result.lowConfidenceIndices.slice(0, 20).join(',')}]`);
