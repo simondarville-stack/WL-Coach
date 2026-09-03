@@ -655,8 +655,19 @@ Decisions:
    found again, a rest fit not believed — each is a sentence under the
    button, not a silent partial result.
 
-Then, in this phase: the displacement-domain charts of the report's Figure 9
-(velocity, force and power against height, with V1, V2, Vmax and Vmin
-marked) as a toggle on the analysis panel; a knee-height mark for the V1/V2
-definition on every lift; and the colour-assisted re-acquisition that would
-have found the plate in the air in front of the fan.
+**Displacement-domain charts — done.** The analysis panel has a
+`vs time | vs height` toggle. Against height the plot is the report's
+Figure 9: vertical velocity, coloured by phase because the phase band above
+is a timeline and says nothing about where on a height axis a phase is, with
+force (% of load, new as a secondary curve in both domains) or power dashed
+alongside; the curve runs left to right up the pull and back leftwards
+through the drop under. V1, V2, Vmax and Vmin are dots with their names in
+both domains, placed by `engine/phases.ts::locateAnalyzerEvents` — the same
+search `computeAnalyzerMetrics` reads its numbers from, so a V2 on the curve
+is the V2 in the table. A press on either plot seeks: by x against time, to
+the nearest sample of the curve against height, so the drop-under leg is
+reachable where it lies over the pull.
+
+Still in this phase: a knee-height mark for the V1/V2 definition on every
+lift, and the colour-assisted re-acquisition that would have found the plate
+in the air in front of the fan.

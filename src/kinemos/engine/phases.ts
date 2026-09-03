@@ -555,7 +555,7 @@ export function computeLiftMetrics(
   const transitionVelocityLossMs =
     firstPull?.peakVelocityMs != null && transition
       ? firstPull.peakVelocityMs -
-        (minOver(series.t, series.vyMs, transition.durationS > 0 ? spans[1].fromT : 0, spans[1]?.toT ?? 0) ??
+        (minOver(series.t, series.vyMs, transition.durationS > 0 ? spans[1].fromT : 0, spans[1]?.toT ?? 0)?.value ??
           firstPull.peakVelocityMs)
       : null;
 
@@ -584,24 +584,60 @@ export const EMPTY_ANALYZER_METRICS: AnalyzerMetrics = {
 };
 
 /** See `AnalyzerMetrics`. */
-export function computeAnalyzerMetrics(
+/** Vertical force on the bar as a percentage of its weight, sample by sample:
+ *  F/(m·g) = 1 + a/g. Needs no mass, so it is comparable across bars. */
+export function forcePercentOf(series: KinematicSeries): number[] {
+  return series.ayMs2.map(a => (1 + a / G_MS2) * 100);
+}
+
+/** One of the analyzer's landmarks: when it happens, the bar's vertical
+ *  velocity there, and how high the bar is — so a chart in either domain can
+ *  put the same dot in the same place. */
+export interface AnalyzerEvent {
+  t: number;
+  valueMs: number;
+  heightCm: number;
+}
+
+export interface AnalyzerEvents {
+  /** Peak velocity of the first pull. */
+  v1: AnalyzerEvent | null;
+  /** Velocity where the second pull starts — the knee passing. */
+  v2: AnalyzerEvent | null;
+  vmax: AnalyzerEvent | null;
+  /** The lowest velocity after Vmax: the drop under. */
+  vmin: AnalyzerEvent | null;
+  /** The top of the flight (S_max). */
+  apex: AnalyzerEvent | null;
+  /** The deepest point of the catch (S_sit). */
+  sit: AnalyzerEvent | null;
+}
+
+/**
+ * Where the analyzer's landmarks are. `computeAnalyzerMetrics` reads its
+ * numbers off these; the charts draw them. One search, two consumers, so a
+ * V2 shown on a curve is the V2 in the table.
+ */
+export function locateAnalyzerEvents(
   series: KinematicSeries,
   spans: readonly PhaseSpan[],
-): AnalyzerMetrics {
-  const empty = EMPTY_ANALYZER_METRICS;
+): AnalyzerEvents {
+  const none: AnalyzerEvents = { v1: null, v2: null, vmax: null, vmin: null, apex: null, sit: null };
   const n = series.t.length;
-  if (n < 2) return empty;
+  if (n < 2) return none;
   // A phase whose edge the engine only guessed at yields no analyzer number:
   // a V2 read over a transition that was not actually found is a number
   // about the fallback rule, not about the lift (P3 plan §2 decision 3). A
   // coach's edge counts; a detected one counts; a fallback does not.
   const spanOf = (id: string) => spans.find(s => s.definition.id === id && s.source !== 'fallback') ?? null;
   const tEnd = series.t[n - 1];
-  const forcePct = series.ayMs2.map(a => (1 + a / G_MS2) * 100);
-
+  const at = (t: number, valueMs: number): AnalyzerEvent => ({
+    t,
+    valueMs,
+    heightCm: valueAt(series.t, series.yCm, t) ?? 0,
+  });
   const firstPull = spanOf('first_pull');
   const transition = spanOf('transition');
-  const secondPull = spanOf('second_pull');
   const catchSpan = spanOf('catch');
 
   // The pull, phase by phase. V2 is the velocity where the second pull
@@ -612,9 +648,6 @@ export function computeAnalyzerMetrics(
   const v1 = firstPull ? peakOver(series.t, series.vyMs, firstPull.fromT, firstPull.toT) : null;
   const v2 = transition ? valueAt(series.t, series.vyMs, transition.toT) : null;
   const vmax = peakOver(series.t, series.vyMs, series.t[0], tEnd);
-  const f1 = firstPull ? peakOver(series.t, forcePct, firstPull.fromT, firstPull.toT) : null;
-  const f2 = transition ? minOver(series.t, forcePct, transition.fromT, transition.toT) : null;
-  const f3 = secondPull ? peakOver(series.t, forcePct, secondPull.fromT, secondPull.toT) : null;
 
   // After Vmax: the flight to the apex, the drop under, the catch.
   let vmin: { value: number; t: number } | null = null;
@@ -628,19 +661,53 @@ export function computeAnalyzerMetrics(
       if (apexT === null && i > 0 && series.vyMs[i] <= 0 && series.t[i - 1] >= vmax.t) apexT = series.t[i];
     }
   }
-  const sVmax = vmax ? valueAt(series.t, series.yCm, vmax.t) : null;
-  const sMax = apexT !== null ? valueAt(series.t, series.yCm, apexT) : null;
-  const sFly = sMax !== null && sVmax !== null ? sMax - sVmax : null;
-  const ballisticCm = vmax ? ((vmax.value * vmax.value) / (2 * G_MS2)) * 100 : null;
-  const sRemain = sFly !== null && ballisticCm !== null ? sFly - ballisticCm : null;
-  const sSit = apexT !== null ? minOver(series.t, series.yCm, apexT, catchSpan ? catchSpan.toT : tEnd) : null;
-  const fbr = apexT !== null ? peakOver(series.t, forcePct, apexT, catchSpan ? catchSpan.toT : tEnd) : null;
+  const sit = apexT !== null ? minOver(series.t, series.yCm, apexT, catchSpan ? catchSpan.toT : tEnd) : null;
 
   return {
-    v1Ms: v1?.value ?? null,
-    v2Ms: v2,
-    vmaxMs: vmax?.value ?? null,
-    vminMs: vmin?.value ?? null,
+    v1: v1 ? at(v1.t, v1.value) : null,
+    v2: transition && v2 !== null ? at(transition.toT, v2) : null,
+    vmax: vmax ? at(vmax.t, vmax.value) : null,
+    vmin: vmin ? at(vmin.t, vmin.value) : null,
+    apex: apexT !== null ? at(apexT, valueAt(series.t, series.vyMs, apexT) ?? 0) : null,
+    sit: sit ? at(sit.t, valueAt(series.t, series.vyMs, sit.t) ?? 0) : null,
+  };
+}
+
+export function computeAnalyzerMetrics(
+  series: KinematicSeries,
+  spans: readonly PhaseSpan[],
+): AnalyzerMetrics {
+  const empty = EMPTY_ANALYZER_METRICS;
+  const n = series.t.length;
+  if (n < 2) return empty;
+  const spanOf = (id: string) => spans.find(s => s.definition.id === id && s.source !== 'fallback') ?? null;
+  const tEnd = series.t[n - 1];
+  const forcePct = forcePercentOf(series);
+  const events = locateAnalyzerEvents(series, spans);
+  const { v1, v2, vmax, vmin, apex, sit } = events;
+
+  const firstPull = spanOf('first_pull');
+  const transition = spanOf('transition');
+  const secondPull = spanOf('second_pull');
+  const catchSpan = spanOf('catch');
+
+  const f1 = firstPull ? peakOver(series.t, forcePct, firstPull.fromT, firstPull.toT) : null;
+  const f2 = transition ? minOver(series.t, forcePct, transition.fromT, transition.toT) : null;
+  const f3 = secondPull ? peakOver(series.t, forcePct, secondPull.fromT, secondPull.toT) : null;
+
+  const sVmax = vmax ? vmax.heightCm : null;
+  const sMax = apex ? apex.heightCm : null;
+  const sFly = sMax !== null && sVmax !== null ? sMax - sVmax : null;
+  const ballisticCm = vmax ? ((vmax.valueMs * vmax.valueMs) / (2 * G_MS2)) * 100 : null;
+  const sRemain = sFly !== null && ballisticCm !== null ? sFly - ballisticCm : null;
+  const sSit = sit ? sit.heightCm : null;
+  const fbr = apex ? peakOver(series.t, forcePct, apex.t, catchSpan ? catchSpan.toT : tEnd) : null;
+
+  return {
+    v1Ms: v1?.valueMs ?? null,
+    v2Ms: v2?.valueMs ?? null,
+    vmaxMs: vmax?.valueMs ?? null,
+    vminMs: vmin?.valueMs ?? null,
     tTurnS: vmax && vmin ? vmin.t - vmax.t : null,
     sVmaxCm: sVmax,
     sMaxCm: sMax,
@@ -650,24 +717,24 @@ export function computeAnalyzerMetrics(
     sSitCm: sSit,
     sFallCm: sMax !== null && sSit !== null ? sMax - sSit : null,
     f1Pct: f1?.value ?? null,
-    f2Pct: f2,
+    f2Pct: f2?.value ?? null,
     f3Pct: f3?.value ?? null,
     fbrPct: fbr?.value ?? null,
-    pskNs: series.massKg && vmax ? series.massKg * vmax.value : null,
+    pskNs: series.massKg && vmax ? series.massKg * vmax.valueMs : null,
   };
 }
 
-/** Minimum of a series over a closed window. */
+/** Minimum of a series over a closed window, and when it occurs. */
 function minOver(
   t: readonly number[],
   values: readonly number[],
   fromT: number,
   toT: number,
-): number | null {
-  let best: number | null = null;
+): { value: number; t: number } | null {
+  let best: { value: number; t: number } | null = null;
   for (let i = 0; i < t.length; i++) {
     if (t[i] < fromT || t[i] > toT) continue;
-    if (best === null || values[i] < best) best = values[i];
+    if (best === null || values[i] < best.value) best = { value: values[i], t: t[i] };
   }
   return best;
 }

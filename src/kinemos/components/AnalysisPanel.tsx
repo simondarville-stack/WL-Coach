@@ -21,27 +21,71 @@
  */
 import {
   useCallback,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { KinematicSeries } from '../engine/kinematics';
-import type { PhaseBoundary, PhaseSpan } from '../engine/phases';
+import {
+  forcePercentOf,
+  locateAnalyzerEvents,
+  type AnalyzerEvent,
+  type AnalyzerEvents,
+  type PhaseBoundary,
+  type PhaseSpan,
+} from '../engine/phases';
 import { num } from '../lib/viewerFormat';
 
 /** Which curve rides alongside vertical velocity. Velocity is always drawn —
  *  it is the one a coach reads — and the second slot is theirs to choose. */
-export type SecondarySeries = 'horizontal' | 'height' | 'power';
+export type SecondarySeries = 'horizontal' | 'height' | 'force' | 'power';
+
+/**
+ * What the x-axis is. Time is the timeline the phase band shares; height is
+ * the German analyzer's Figure 9 — velocity, force and power against how far
+ * the bar has risen, so "V2 at the knee" and "S_fly" are distances read off
+ * an axis rather than moments to be timed. The curve doubles back after the
+ * apex: the drop under runs from right to left.
+ */
+export type ChartDomain = 'time' | 'height';
 
 const SECONDARY_LABEL: Record<SecondarySeries, string> = {
   horizontal: 'Horizontal displacement (cm)',
   height: 'Height (cm)',
+  force: 'Force (% of load)',
   power: 'Power (W)',
+};
+
+const SECONDARY_SHORT: Record<SecondarySeries, string> = {
+  horizontal: 'Horizontal',
+  height: 'Height',
+  force: 'Force',
+  power: 'Power',
 };
 
 const VELOCITY_COLOR = '#185FA5';
 const SECONDARY_COLOR = '#D08B2C';
+
+/** The plot's unit box. Curves are drawn into it and stretched to the
+ *  container; the marks overlay uses the same numbers as percentages. */
+const W = 1000;
+const H = 200;
+/** Head room for the legend, which floats over the plot. Without it the
+ *  velocity curve runs straight through the words at its peak — which is
+ *  exactly where a coach is looking. */
+const TOP = 26;
+
+/** The analyzer's landmarks in the order they are drawn, with where the
+ *  label sits relative to the dot. */
+const EVENT_LABELS: Array<{ key: keyof AnalyzerEvents; label: string; below?: boolean }> = [
+  { key: 'v1', label: 'V1' },
+  { key: 'v2', label: 'V2', below: true },
+  { key: 'vmax', label: 'Vmax' },
+  // Vmin is the plot's floor by definition; a label under it would be clipped.
+  { key: 'vmin', label: 'Vmin' },
+];
 
 interface AnalysisPanelProps {
   series: KinematicSeries | null;
@@ -88,12 +132,16 @@ export function AnalysisPanel({
   const trackRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<number | null>(null);
   const [secondary, setSecondary] = useState<SecondarySeries>('horizontal');
+  const [domain, setDomain] = useState<ChartDomain>('time');
 
   const t0 = series?.t[0] ?? 0;
   const t1 = series?.t[series.t.length - 1] ?? 1;
   const span = t1 - t0 || 1;
 
   const fractionOf = useCallback((t: number) => (t - t0) / span, [t0, span]);
+
+  const forcePct = useMemo(() => (series ? forcePercentOf(series) : null), [series]);
+  const events = useMemo(() => (series ? locateAnalyzerEvents(series, spans) : null), [series, spans]);
 
   const timeFromClient = useCallback(
     (clientX: number) => {
@@ -143,8 +191,25 @@ export function AnalysisPanel({
     );
   }
 
+  // Against height, height itself and the horizontal path are not curves to
+  // ride alongside — the axis is the one and the other is the bar path, which
+  // the stage draws. Force stands in for them.
+  const shown: SecondarySeries =
+    domain === 'height' && (secondary === 'horizontal' || secondary === 'height') ? 'force' : secondary;
   const secondaryValues =
-    secondary === 'horizontal' ? series.xCm : secondary === 'height' ? series.yCm : series.powerW;
+    shown === 'horizontal'
+      ? series.xCm
+      : shown === 'height'
+        ? series.yCm
+        : shown === 'force'
+          ? forcePct
+          : series.powerW;
+  const secondaryDisabled = (option: SecondarySeries): string | null =>
+    option === 'power' && !series.powerW
+      ? 'Enter the bar mass to see power'
+      : domain === 'height' && (option === 'horizontal' || option === 'height')
+        ? 'Height is the axis here'
+        : null;
 
   return (
     <section style={shell}>
@@ -170,33 +235,37 @@ export function AnalysisPanel({
             </span>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 2 }}>
-          {(Object.keys(SECONDARY_LABEL) as SecondarySeries[]).map(option => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setSecondary(option)}
-              disabled={option === 'power' && !series.powerW}
-              title={option === 'power' && !series.powerW ? 'Enter the bar mass to see power' : undefined}
-              style={{
-                padding: '2px 7px',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                cursor: option === 'power' && !series.powerW ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-                fontSize: 'var(--text-micro)',
-                background: option === secondary ? 'var(--color-accent-muted)' : 'transparent',
-                color:
-                  option === 'power' && !series.powerW
-                    ? 'var(--color-text-tertiary)'
-                    : option === secondary
-                      ? 'var(--color-accent)'
-                      : 'var(--color-text-secondary)',
-              }}
-            >
-              {option === 'horizontal' ? 'Horizontal' : option === 'height' ? 'Height' : 'Power'}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 2 }} title="What the curves are drawn against">
+            {(['time', 'height'] as ChartDomain[]).map(option => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setDomain(option)}
+                style={pickerButton(option === domain, false)}
+              >
+                {option === 'time' ? 'vs time' : 'vs height'}
+              </button>
+            ))}
+          </div>
+          <span style={{ width: 1, height: 12, background: 'var(--color-border-secondary)' }} />
+          <div style={{ display: 'flex', gap: 2 }}>
+            {(Object.keys(SECONDARY_LABEL) as SecondarySeries[]).map(option => {
+              const why = secondaryDisabled(option);
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setSecondary(option)}
+                  disabled={why !== null}
+                  title={why ?? undefined}
+                  style={pickerButton(option === shown, why !== null)}
+                >
+                  {SECONDARY_SHORT[option]}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -319,23 +388,49 @@ export function AnalysisPanel({
           background: 'var(--color-bg-primary)',
         }}
       >
-        <Curves
-          series={series}
-          secondary={secondary}
-          secondaryValues={secondaryValues}
-          boundaries={boundaries}
-          fractionOf={fractionOf}
-          currentT={currentT}
-        />
+        {domain === 'time' ? (
+          <Curves
+            series={series}
+            secondary={shown}
+            secondaryValues={secondaryValues}
+            boundaries={boundaries}
+            fractionOf={fractionOf}
+            currentT={currentT}
+            onSeekT={onSeekT}
+          />
+        ) : (
+          <HeightCurves
+            series={series}
+            spans={spans}
+            secondary={shown}
+            secondaryValues={secondaryValues}
+            currentT={currentT}
+            onSeekT={onSeekT}
+          />
+        )}
+        {events && (
+          <EventMarks
+            events={events}
+            place={
+              domain === 'time'
+                ? e => ({ x: fractionOf(e.t), y: velocityFraction(series.vyMs, e.valueMs) })
+                : e => ({ x: heightFraction(series.yCm, e.heightCm), y: velocityFraction(series.vyMs, e.valueMs) })
+            }
+          />
+        )}
         <div style={{ position: 'absolute', left: 8, top: 5, display: 'flex', gap: 'var(--space-md)' }}>
-          <LegendKey color={VELOCITY_COLOR} label="Vertical velocity (m/s)" />
-          {secondaryValues && <LegendKey color={SECONDARY_COLOR} label={SECONDARY_LABEL[secondary]} dashed />}
+          <LegendKey
+            color={VELOCITY_COLOR}
+            label={domain === 'height' && spans.length > 0 ? 'Vertical velocity (m/s), coloured by phase' : 'Vertical velocity (m/s)'}
+          />
+          {secondaryValues && <LegendKey color={SECONDARY_COLOR} label={SECONDARY_LABEL[shown]} dashed />}
         </div>
         {/* The velocity axis, as two numbers rather than a ruler. A gridded
             axis would cost a third of this strip's height; the extremes are
             what make the curve's shape readable, and the playhead readout
             covers everything between them. */}
         <AxisExtremes values={series.vyMs} />
+        {domain === 'height' && <HeightAxis values={series.yCm} />}
         {currentT !== null && (
           <span
             style={{
@@ -365,6 +460,132 @@ export function AnalysisPanel({
         )}
       </div>
     </section>
+  );
+}
+
+/** The shared button look of the two pickers above the band. */
+function pickerButton(active: boolean, disabled: boolean): CSSProperties {
+  return {
+    padding: '2px 7px',
+    border: 'none',
+    borderRadius: 'var(--radius-sm)',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontFamily: 'inherit',
+    fontSize: 'var(--text-micro)',
+    background: active ? 'var(--color-accent-muted)' : 'transparent',
+    color: disabled ? 'var(--color-text-tertiary)' : active ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+  };
+}
+
+/** Where a velocity sits in the plot, as a fraction of its height from the
+ *  top — the same mapping `pathFor` draws with, so a mark lands on the line. */
+function velocityFraction(values: readonly number[], v: number): number {
+  const { min, span } = rangeOf(values);
+  return (H - ((v - min) / span) * (H - TOP)) / H;
+}
+
+/** The height axis is padded a little either side so the ends of the curve
+ *  are not on the frame. */
+function heightRange(values: readonly number[]): { lo: number; hi: number } {
+  const { min, max, span } = rangeOf(values);
+  return { lo: min - span * 0.03, hi: max + span * 0.03 };
+}
+
+function heightFraction(values: readonly number[], h: number): number {
+  const { lo, hi } = heightRange(values);
+  return (h - lo) / (hi - lo || 1);
+}
+
+/**
+ * The analyzer's landmarks as dots on the velocity curve with their names,
+ * placed by the caller's mapping so the same overlay serves both domains.
+ * Drawn in HTML rather than into the stretched SVG, where a circle would be
+ * an ellipse and a letter a smear.
+ */
+function EventMarks({
+  events,
+  place,
+}: {
+  events: AnalyzerEvents;
+  place: (e: AnalyzerEvent) => { x: number; y: number };
+}) {
+  return (
+    <>
+      {EVENT_LABELS.map(({ key, label, below }) => {
+        const e = events[key];
+        if (!e) return null;
+        const { x, y } = place(e);
+        const title = `${label} ${num(e.valueMs, 2)} m/s — ${num(e.heightCm, 1)} cm up, ${num(e.t, 2)} s`;
+        return (
+          <span
+            key={key}
+            title={title}
+            style={{
+              position: 'absolute',
+              left: `${x * 100}%`,
+              top: `${y * 100}%`,
+              width: 0,
+              height: 0,
+              pointerEvents: 'none',
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                left: -3.5,
+                top: -3.5,
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: 'var(--color-bg-primary)',
+                border: `2px solid ${VELOCITY_COLOR}`,
+                boxSizing: 'border-box',
+              }}
+            />
+            <span
+              style={{
+                position: 'absolute',
+                left: 5,
+                top: below ? 3 : -15,
+                fontSize: 'var(--text-micro)',
+                fontWeight: 600,
+                lineHeight: 1,
+                color: VELOCITY_COLOR,
+                whiteSpace: 'nowrap',
+                pointerEvents: 'auto',
+              }}
+            >
+              {label}
+            </span>
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+function HeightAxis({ values }: { values: readonly number[] }) {
+  const range = rangeOf(values);
+  // Rounded first, so a rest a few millimetres under the first mark does not
+  // print as "−0".
+  const min = Math.round(range.min) || 0;
+  const max = Math.round(range.max) || 0;
+  return (
+    <span
+      style={{
+        position: 'absolute',
+        left: '50%',
+        bottom: 4,
+        transform: 'translateX(-50%)',
+        fontSize: 'var(--text-micro)',
+        fontVariantNumeric: 'tabular-nums',
+        color: 'var(--color-text-tertiary)',
+        pointerEvents: 'none',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {`height ${num(min, 0)} … ${num(max, 0)} cm →`}
+    </span>
   );
 }
 
@@ -422,6 +643,7 @@ function Curves({
   boundaries,
   fractionOf,
   currentT,
+  onSeekT,
 }: {
   series: KinematicSeries;
   secondary: SecondarySeries;
@@ -429,14 +651,8 @@ function Curves({
   boundaries: PhaseBoundary[];
   fractionOf: (t: number) => number;
   currentT: number | null;
+  onSeekT: (t: number) => void;
 }) {
-  const W = 1000;
-  const H = 200;
-  /** Head room for the legend, which floats over the plot. Without it the
-   *  velocity curve runs straight through the words at its peak — which is
-   *  exactly where a coach is looking. */
-  const TOP = 26;
-
   const vPath = pathFor(series.t, series.vyMs, fractionOf, W, H, TOP);
   const sPath = secondaryValues ? pathFor(series.t, secondaryValues, fractionOf, W, H, TOP) : null;
 
@@ -445,11 +661,20 @@ function Curves({
   const vRange = rangeOf(series.vyMs);
   const zeroY = vRange.span > 0 ? H - ((0 - vRange.min) / vRange.span) * (H - TOP) : null;
 
+  const t0 = series.t[0];
+  const t1 = series.t[series.t.length - 1];
+
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'pointer' }}
+      onPointerDown={e => {
+        // A press on the plot scrubs, like one on the band.
+        const rect = e.currentTarget.getBoundingClientRect();
+        const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        onSeekT(t0 + fraction * (t1 - t0));
+      }}
     >
       {zeroY !== null && zeroY >= 0 && zeroY <= H && (
         <line
@@ -511,6 +736,129 @@ function Curves({
       <desc>{secondary}</desc>
     </svg>
   );
+}
+
+/**
+ * The same curves against bar height — the analyzer's Figure 9. The velocity
+ * curve is drawn a span at a time in the span's colour, because the phase
+ * band above is a timeline and says nothing about where on this axis a phase
+ * is. Time still runs along the curve: up the pull from left to right, then
+ * back leftwards through the drop under. A press seeks to the nearest sample
+ * of the curve.
+ */
+function HeightCurves({
+  series,
+  spans,
+  secondary,
+  secondaryValues,
+  currentT,
+  onSeekT,
+}: {
+  series: KinematicSeries;
+  spans: PhaseSpan[];
+  secondary: SecondarySeries;
+  secondaryValues: number[] | null;
+  currentT: number | null;
+  onSeekT: (t: number) => void;
+}) {
+  const xOf = (i: number) => heightFraction(series.yCm, series.yCm[i]) * W;
+  const vRange = rangeOf(series.vyMs);
+  const yOf = (values: readonly number[], range: { min: number; span: number }, i: number) =>
+    H - ((values[i] - range.min) / range.span) * (H - TOP);
+  const pathOver = (values: readonly number[], from: number, to: number): string => {
+    const range = rangeOf(values);
+    let d = '';
+    for (let i = from; i <= to; i++) d += `${i === from ? 'M' : 'L'}${xOf(i).toFixed(2)} ${yOf(values, range, i).toFixed(2)} `;
+    return d.trim();
+  };
+  const n = series.t.length;
+  const last = n - 1;
+  // Each span's run of samples, overlapping its neighbour by one so the
+  // coloured pieces join without a gap.
+  const pieces = spans
+    .map(s => {
+      let from = series.t.findIndex(t => t >= s.fromT);
+      if (from < 0) return null;
+      from = Math.max(0, from - 1);
+      let to = last;
+      for (let i = from; i <= last; i++) {
+        if (series.t[i] > s.toT) {
+          to = i;
+          break;
+        }
+      }
+      return to > from ? { color: s.definition.color, d: pathOver(series.vyMs, from, to) } : null;
+    })
+    .filter((p): p is { color: string; d: string } => p !== null);
+  const sPath = secondaryValues ? pathOver(secondaryValues, 0, last) : null;
+  const zeroY = vRange.span > 0 ? H - ((0 - vRange.min) / vRange.span) * (H - TOP) : null;
+  const here = currentT !== null ? nearestIndex(series.t, currentT) : null;
+
+  return (
+    <>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'pointer' }}
+        onPointerDown={e => {
+          // The nearest sample in the plot's own proportions, so a press on
+          // the drop-under leg finds the drop-under, not the pull beneath it.
+          const rect = e.currentTarget.getBoundingClientRect();
+          const px = (e.clientX - rect.left) / rect.width;
+          const py = (e.clientY - rect.top) / rect.height;
+          let best = 0;
+          let bestD = Infinity;
+          for (let i = 0; i < n; i++) {
+            const dx = px - xOf(i) / W;
+            const dy = py - yOf(series.vyMs, vRange, i) / H;
+            const d = dx * dx + dy * dy;
+            if (d < bestD) {
+              bestD = d;
+              best = i;
+            }
+          }
+          onSeekT(series.t[best]);
+        }}
+      >
+        {zeroY !== null && zeroY >= 0 && zeroY <= H && (
+          <line x1={0} y1={zeroY} x2={W} y2={zeroY} stroke="var(--color-border-secondary)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        )}
+        {sPath && (
+          <path d={sPath} fill="none" stroke={SECONDARY_COLOR} strokeWidth={1.5} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+        )}
+        {pieces.length === 0 ? (
+          <path d={pathOver(series.vyMs, 0, last)} fill="none" stroke={VELOCITY_COLOR} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+        ) : (
+          pieces.map((p, i) => (
+            <path key={i} d={p.d} fill="none" stroke={p.color} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+          ))
+        )}
+        <desc>{secondary}</desc>
+      </svg>
+      {here !== null && (
+        <span
+          style={{
+            position: 'absolute',
+            left: `${(xOf(here) / W) * 100}%`,
+            top: `${(yOf(series.vyMs, vRange, here) / H) * 100}%`,
+            width: 9,
+            height: 9,
+            marginLeft: -4.5,
+            marginTop: -4.5,
+            borderRadius: '50%',
+            background: 'var(--color-text-primary)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function nearestIndex(t: readonly number[], at: number): number {
+  let best = 0;
+  for (let i = 1; i < t.length; i++) if (Math.abs(t[i] - at) < Math.abs(t[best] - at)) best = i;
+  return best;
 }
 
 function rangeOf(values: readonly number[]): { min: number; max: number; span: number } {

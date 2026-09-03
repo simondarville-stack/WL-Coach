@@ -16,6 +16,8 @@ import {
   DEFAULT_PHASE_THRESHOLDS,
   computeLiftMetrics,
   enforceMonotonic,
+  forcePercentOf,
+  locateAnalyzerEvents,
   proposePhases,
   spansFrom,
   valueAt,
@@ -376,6 +378,51 @@ describe('computeAnalyzerMetrics — the German analyzer measures', () => {
     expect(m.analyzer.f3Pct).toBeNull();
     // Vmax needs no phase.
     expect(m.analyzer.vmaxMs).toBeCloseTo(1.85, 1);
+  });
+});
+
+describe('locateAnalyzerEvents — the landmarks the charts draw', () => {
+  const spans = spansFrom(proposePhases(series).boundaries);
+  const events = locateAnalyzerEvents(series, spans);
+  const a = computeLiftMetrics(series, spans).analyzer;
+
+  it('puts each landmark where the profile was built', () => {
+    expect(events.v1!.t).toBeCloseTo(0.8, 1);
+    expect(events.vmax!.t).toBeCloseTo(1.3, 1);
+    expect(events.vmin!.t).toBeCloseTo(1.7, 1);
+    expect(events.apex!.t).toBeGreaterThan(events.vmax!.t);
+    expect(events.apex!.t).toBeLessThan(events.vmin!.t);
+    expect(events.sit!.t).toBeGreaterThan(events.apex!.t);
+  });
+
+  it('is the same search the analyzer numbers come from', () => {
+    expect(events.v1!.valueMs).toBe(a.v1Ms);
+    expect(events.v2!.valueMs).toBe(a.v2Ms);
+    expect(events.vmax!.valueMs).toBe(a.vmaxMs);
+    expect(events.vmin!.valueMs).toBe(a.vminMs);
+    expect(events.vmax!.heightCm).toBe(a.sVmaxCm);
+    expect(events.apex!.heightCm).toBe(a.sMaxCm);
+    expect(events.sit!.heightCm).toBe(a.sSitCm);
+  });
+
+  it('climbs: each landmark of the pull is higher than the one before', () => {
+    expect(events.v2!.heightCm).toBeGreaterThan(events.v1!.heightCm);
+    expect(events.vmax!.heightCm).toBeGreaterThan(events.v2!.heightCm);
+    expect(events.apex!.heightCm).toBeGreaterThan(events.vmax!.heightCm);
+  });
+
+  it('has no V1 or V2 without the phases, and still has Vmax', () => {
+    const bare = locateAnalyzerEvents(series, []);
+    expect(bare.v1).toBeNull();
+    expect(bare.v2).toBeNull();
+    expect(bare.vmax!.valueMs).toBeCloseTo(1.85, 1);
+  });
+
+  it('gives force as a share of the load, sample by sample', () => {
+    const f = forcePercentOf(series);
+    expect(f.length).toBe(series.t.length);
+    // At rest the bar's weight is the whole force.
+    expect(f[0]).toBeCloseTo(100, 0);
   });
 });
 
