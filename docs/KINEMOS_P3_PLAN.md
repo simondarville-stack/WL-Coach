@@ -680,5 +680,53 @@ the knee" between V2 and Vmax — the check that the engine's transition is
 where the coach's eye puts the knee. Height is measured from the bar's first
 mark with the rep's calibration, so it is recomputed, never stored as truth.
 
-Still in this phase: the colour-assisted re-acquisition that would have
-found the plate in the air in front of the fan.
+**Colour-assisted re-acquisition — done.** `engine/plateColour.ts` (pure)
+samples the plate's hue from the face inside the coach's outline, scores how
+much of a disc is that colour, and finds the plate-sized patch of it nearest
+a guess on a coarse grid. The set tracker uses it three ways:
+
+- **The unsure tail is checked, not trusted or thrown away.** After a
+  give-up, the low-confidence frames at the end are kept up to the first one
+  that is not on the plate's colour. A blurred plate in the second pull is
+  unsure and still the bar; a fan the template settled on is unsure and not.
+  (The first attempt threw the whole tail away and lost every blurred pull;
+  the log says which frames went and why.)
+- **In flight, before the next rest.** The frames just after a loss are
+  searched for a plate-coloured patch near where the plate was heading —
+  its last motion carried forward a few frames — with a reach capped at two
+  radii, because the plate on the far end of the bar is the same blue and a
+  wider search found it first. A hit the set's template cannot recognise at
+  all (score < 0,25) is not taken.
+- **At rest, round is not enough.** A round thing near the set's start must
+  be the plate's colour; the fan on set 2 scored 3 % and was turned down.
+  Without a colour (a black plate) the template-correlation check stands.
+
+Two things the runs forced on the rest of the pipeline. **One template per
+set:** a join used to cut a fresh template where the plate was found, so
+each piece centred the plate its own way and the join was a step in the
+track; the set keeps the template cut where the coach clicked, matches it
+near every hit (`searchAround`, now exported; `TrackOptions.template`) and
+tracks on with it. **The lift is the first rise:** with the drop now
+followed, "the fastest rise between rests" was the bounce of a bar dropped
+from overhead — 3 m/s off the platform. `splitReps` takes the first rise
+from a rest that gets high enough and reads Vmax on the way up to it.
+
+`verify/track-clip.html?reps=1` now runs `trackSet` itself (one procedure,
+not a copy); `?nocolour=1` turns the colour off. Caroline's three doubles,
+one click each, against the per-rep runs of §9:
+
+| set | rep 1 Vmax | rep 2 Vmax | own calibration | joins | notes |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2,29 (2,29) | 2,30 (2,33) | both | 2 | drop after rep 1 cut at frame 154 as not on the plate |
+| 2 | 2,31 (2,31) | 2,32 (2,32) | both | 9 | the fan turned down by colour, 3 % |
+| 3 | 2,37 (2,37) | 2,28 (2,27) | both | 7 | the plate found again in flight at frames 52 and 85, through the fan |
+
+Peak stability under 1 % on five of six reps. Cost: 270–470 ms a frame
+headless at 1080p, most of it the colour reads on the tail check — a
+`getRgba` cache is the obvious saving when it matters.
+
+P3g is complete. What it leaves open: the far plate is the near plate's
+colour and only motion tells them apart, so a loss while the bar is
+overhead and still can find the wrong end; a size prior (the far plate is
+smaller in perspective) would settle it. And a black plate has none of
+this — the shape-only path is what it gets.
