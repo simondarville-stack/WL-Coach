@@ -287,3 +287,21 @@ describe('meanOver / peakOver', () => {
     expect(peakOver(t, v, 1, 2)).toBeNull();
   });
 });
+
+describe('computeKinematics — the clip clock', () => {
+  it('keeps the track\u2019s own timestamps rather than re-zeroing at the first mark', () => {
+    // A track cut to the lift starts seven seconds into the clip. Everything
+    // that reads the series against the playhead — the phase band, seek,
+    // comparison alignment — is on the clip clock, so the series must be too.
+    const points: TrackPoint[] = Array.from({ length: 30 }, (_, i) => ({
+      t: 7 + i / 60,
+      x: 100,
+      y: 500 - i * 2,
+    }));
+    const series = computeKinematics(points, cal)!;
+    expect(series.t[0]).toBeCloseTo(7, 6);
+    expect(series.t[series.t.length - 1]).toBeCloseTo(7 + 29 / 60, 6);
+    // Positions are still relative to the first mark.
+    expect(series.yCm[0]).toBeCloseTo(0, 3);
+  });
+});

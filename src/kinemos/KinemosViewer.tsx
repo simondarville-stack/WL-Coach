@@ -410,13 +410,16 @@ export function KinemosViewer() {
   const boundaries = useMemo(() => {
     if (!kinematics) return [];
     if (!coachBoundaries) return proposal?.boundaries ?? [];
+    const first = kinematics.t[0];
+    const last = kinematics.t[kinematics.t.length - 1];
+    // Boundaries stored before 0.90.0 were on a clock zeroed at the rep's
+    // first mark; the series is on the clip's clock now. A set that lies
+    // entirely before the series starts can only be the old clock — shift it.
+    const rezeroed = coachBoundaries.length > 0 && coachBoundaries.every(b => b.t < first - 1e-6);
+    const onClipClock = rezeroed ? coachBoundaries.map(b => ({ ...b, t: b.t + first })) : coachBoundaries;
     // A coach's set is clamped to the clip it is being shown against — a rep
     // re-marked shorter must not leave an edge hanging past the end.
-    return enforceMonotonic(
-      coachBoundaries,
-      kinematics.t[0],
-      kinematics.t[kinematics.t.length - 1],
-    );
+    return enforceMonotonic(onClipClock, first, last);
   }, [kinematics, coachBoundaries, proposal]);
 
   const spans = useMemo(() => spansFrom(boundaries, DEFAULT_PHASE_SET), [boundaries]);

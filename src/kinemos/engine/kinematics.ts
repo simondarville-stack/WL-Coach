@@ -63,7 +63,13 @@ export interface KinematicsOptions {
  * x-axis with the timeline and a phase edge lines up everywhere.
  */
 export interface KinematicSeries {
-  /** Seconds, uniform grid, starting at the first mark's real timestamp. */
+  /** Seconds on the CLIP'S clock, uniform grid, starting at the first mark's
+   *  real timestamp — not re-zeroed. Every consumer (the phase band, the
+   *  playhead, seek, comparison alignment) reads the clip clock, and a track
+   *  cut to the lift no longer starts at frame 0: with a zero origin the
+   *  band sat at t = 0 while the lift happened at t = 7 (testset,
+   *  04/09/2026). Differences are unaffected; positions are still relative to
+   *  the first mark. */
   t: number[];
   dt: number;
   sampleRateHz: number;
@@ -137,8 +143,9 @@ export function computeKinematics(
   if (sorted.length < MIN_POINTS_FOR_KINEMATICS) return null;
   const origin = sorted[0];
 
-  // Into the plate's frame: cm, y up, relative to the first mark.
-  const t = sorted.map(p => p.t - origin.t);
+  // Into the plate's frame: cm, y up, relative to the first mark. Time stays
+  // the clip's own (see `KinematicSeries.t`).
+  const t = sorted.map(p => p.t);
   const cm = sorted.map(p => displacementToCm(calibration, p.x - origin.x, p.y - origin.y));
 
   const gridX = resampleUniform({ t, v: cm.map(p => p.x) }, options.dt);
