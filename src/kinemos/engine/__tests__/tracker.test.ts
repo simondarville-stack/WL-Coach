@@ -332,7 +332,15 @@ describe('staying fast on large footage', () => {
 });
 
 describe('tracking through the awkward parts', () => {
-  it('survives a lighting change across the lift', async () => {
+  // Each of these tracks 36 full-resolution frames through the NCC search and
+  // lands at ~5 s under a full parallel suite run — exactly the note already
+  // on 'gives up rather than reporting a complete track it does not have'
+  // below, and the same explicit timeout. Without it they sit on vitest's
+  // 5 s default and fail as timeouts (never as assertions) whenever the
+  // machine is busy; adding one more test file to the suite was enough.
+  const SLOW = { timeout: 20_000 };
+
+  it('survives a lighting change across the lift', SLOW, async () => {
     const truth = pullTrajectory(36);
     const source = sourceFrom(
       truth.map((p, i) => ({ cx: p.x, cy: p.y, gain: 1 - 0.4 * (i / 35), offset: 20 * (i / 35) })),
@@ -342,7 +350,7 @@ describe('tracking through the awkward parts', () => {
     expect(rmsError(result.points, truth)).toBeLessThan(0.5);
   });
 
-  it('survives sensor noise', async () => {
+  it('survives sensor noise', SLOW, async () => {
     const truth = pullTrajectory(36);
     const source = sourceFrom(truth.map(p => ({ cx: p.x, cy: p.y, noise: 24 })));
     const result = await trackDirection(source, { index: 0, x: truth[0].x, y: truth[0].y }, 1);
@@ -350,7 +358,7 @@ describe('tracking through the awkward parts', () => {
     expect(rmsError(result.points, truth)).toBeLessThan(1);
   });
 
-  it('is not seduced by the rack upright the bar passes', async () => {
+  it('is not seduced by the rack upright the bar passes', SLOW, async () => {
     // The distractor is a bright vertical bar at x ≈ 250, brighter than the
     // plate's rim. A tracker matching on brightness rather than on shape jumps
     // to it.
