@@ -488,9 +488,11 @@ export function GeneralSettings() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Load Increment (kg)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">New column step (kg)</label>
                 <p className="text-sm text-gray-600 mb-3">
-                  Auto-increment for new column load when adding columns in grid mode
+                  How far above the previous column a newly <strong>added</strong> column starts, so a
+                  climbing prescription writes itself. Only applies when you add a column — changing a
+                  load that is already there is <em>Click increment</em> below.
                 </p>
                 <div className="flex items-center gap-3">
                   <input
@@ -507,12 +509,13 @@ export function GeneralSettings() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Click Increment (kg / %)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Click increment (kg / %)</label>
                 <p className="text-sm text-gray-600 mb-3">
-                  How much one click moves a <strong>load</strong> cell — left-click up, right-click down,
-                  Shift for a ×{SHIFT_STEP_MULTIPLIER} jump, hold the button to repeat. Reps, sets and combo
-                  entries always step by 1: they are counts, so a fractional step would not be a real
-                  prescription. Applies to the prescription grid and the macrocycle table alike.
+                  How much one click moves a <strong>load</strong> that is already there — left-click up,
+                  right-click down, Shift for a ×{SHIFT_STEP_MULTIPLIER} jump, hold the button to repeat.
+                  Reps, sets and combo entries always step by 1: they are counts, so a fractional step
+                  would not be a real prescription. Applies to the prescription grid and the macrocycle
+                  table alike.
                 </p>
                 <div className="flex items-center gap-3">
                   <input
@@ -528,9 +531,11 @@ export function GeneralSettings() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Default starting load</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">First column load</label>
                 <p className="text-sm text-gray-600 mb-3">
-                  Seed value for the first column when starting a fresh prescription. Applies to % and kg alike — pick whatever makes sense for your typical first set.
+                  What the <strong>first</strong> column of a fresh prescription starts at, with nothing
+                  before it to climb from. Applies to % and kg alike — pick whatever makes sense for your
+                  typical first set.
                 </p>
                 <div className="flex items-center gap-3">
                   <input
