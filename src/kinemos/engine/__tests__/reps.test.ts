@@ -31,6 +31,14 @@ function droppedSnatchHeight(t: number): number {
   return 0;
 }
 
+/** The snatch missed at the catch: the bar dips to 120 cm and is let go,
+ *  falling at g to the platform (−4,3 m/s on arrival), then lies there. */
+function missedSnatchHeight(t: number): number {
+  if (t < 1.3) return snatchHeight(t);
+  const fall = 120 - 0.5 * 981 * (t - 1.3) ** 2;
+  return fall > 0 ? fall : 0;
+}
+
 /** A track with `reps` snatches, each preceded by `restS` of rest, with a
  *  little pixel jitter. */
 function set(reps: number, restS = 1.5, jitter = 0.3, height: (t: number) => number = snatchHeight): TrackPoint[] {
@@ -101,6 +109,16 @@ describe('splitReps', () => {
       expect(rep.catchT - rep.liftOffT).toBeCloseTo(1.3, 1);
       expect(rep.riseCm).toBeCloseTo(140, 0);
     }
+  });
+
+  it('ends a missed lift where the bar was let go, not on the platform', () => {
+    const reps = splitReps(set(1, 1.5, 0.3, missedSnatchHeight), cal);
+    expect(reps).toHaveLength(1);
+    const rep = reps[0];
+    expect(rep.apexT).toBeCloseTo(1.5 + 1.0, 1);
+    // The catch dip ends at 1,3 s; the bar passes 2 m/s of drop 0,2 s later.
+    expect(rep.catchT).toBeGreaterThan(1.5 + 1.25);
+    expect(rep.catchT).toBeLessThan(1.5 + 1.55);
   });
 
   it('survives a tracker that lost the drop', () => {

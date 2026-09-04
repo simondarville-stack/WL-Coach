@@ -83,8 +83,6 @@ export interface GrayImage {
   originY?: number;
 }
 
-import { medianInterval } from './signal';
-
 /** A rectangle in frame pixels, inclusive of its origin, exclusive of its far
  *  edge. */
 export interface FrameRegion {
@@ -237,9 +235,11 @@ export const DEFAULT_TRACK_OPTIONS: Required<Omit<TrackOptions, 'onProgress' | '
  */
 const PLATE_DIAMETER_M = 0.45;
 /** Upper bound on the bar's acceleration, m/s². Second pulls peak near 20;
- *  the bar being dropped onto the platform, or the catch impact, exceed it
- *  briefly, which is what the extra covers. */
-const MAX_BAR_ACCELERATION_MS2 = 30;
+ *  the catch impact and a bar being dropped exceed it briefly. 45 covers the
+ *  largest prediction error seen on the testset (17 px at 30 fps on a 178 px
+ *  plate) with room; a wider window buys nothing but a slower, and more
+ *  distractible, search. */
+const MAX_BAR_ACCELERATION_MS2 = 45;
 /** Upper bound on the bar's speed, m/s — a fast snatch is ~2,2. Used only on
  *  the first step out of an anchor, where there is no velocity to predict
  *  from and the whole per-frame displacement has to fit in the window. */
@@ -603,15 +603,13 @@ export async function trackDirection(
   options: TrackOptions = {},
 ): Promise<TrackResult> {
   const opts = { ...DEFAULT_TRACK_OPTIONS, ...options };
-  // The search radius follows the physics unless the caller sets it. A bar
-  // end reaches about 3 m/s; on a plate of radius R px (45 cm) at f frames a
-  // second that is 300·2R/(45·f) ≈ 13·R/f px per frame, plus a margin for
-  // the acceleration into the second pull. 14 px covers a 50 fps, 26 px
-  // plate; a 30 fps phone clip with an 85 px plate needs 40.
-  if (options.searchRadiusPx === undefined) {
-    const fps = 1 / Math.max(1e-3, medianInterval(source.timestamps));
-    opts.searchRadiusPx = Math.max(DEFAULT_TRACK_OPTIONS.searchRadiusPx, Math.ceil((15 * opts.templateRadiusPx) / fps));
-  }
+  // The search radius follows the physics per step — see `searchRadiusFor`.
+  // An earlier rule floored it at the bar's whole per-frame travel
+  // (15·R/fps, 53 px on a 30 fps 1080p clip) because a fixed template
+  // under motion blur matched off the prediction; with the current template
+  // following the blur the prediction error stayed under 17 px on every
+  // testset clip, and that floor made each frame's correlation six times
+  // dearer (71 ms against 11 ms) for nothing.
   const offsets = annulusOffsets(
     opts.templateRadiusPx,
     opts.innerRadiusFraction,

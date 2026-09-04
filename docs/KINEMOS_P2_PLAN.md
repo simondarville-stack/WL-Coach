@@ -271,6 +271,39 @@ retry; twenty-four cached frames would also have been 3,2 GB. The server now
 retries a failed decode once and bounds the cache in bytes (384 MB: two frames
 at 8K, twenty-four at 1080p).
 
+### After the merge with the P3b–P5 line (0.90.0)
+
+The cloud line had reworked the same two modules from the same 0.83.3 base
+(P3 plan §8: a per-frame-travel search floor, a plausible-miss rule for
+blurred pulls, colour re-acquisition, set tracking; an acceleration-based
+transition and the analyzer measures in phases). Merged by measurement:
+
+- The per-frame-travel floor (15·R/fps, 53 px on a 30 fps 1080p clip) cost
+  71 ms of correlation per frame against 11 ms at 14 px, and with the current
+  template following the blur the prediction error never exceeded 17 px on
+  any testset clip. Dropped; `searchRadiusFor` keeps the acceleration term,
+  with the bound raised to 45 m/s² to cover that 17 px.
+- The plausible-miss patience stays for scores between 0,3 and the confidence
+  threshold; under 0,3 there is no point at all.
+- **Only the lift.** A plain TRACK now cuts the track to the rep the anchor
+  sits in (`engine/reps.ts`, the set tracker's cut), led by up to 0,4 s of the
+  rest before lift-off so the phase detector can see the bar start. The rep
+  splitter gained a drop rule: a catch lowers the bar at under ~1,5 m/s, a
+  bar let go passes 2 m/s within a fifth of a second, so the rep ends at the
+  last sample before that. The testset's snatch double had its first rep
+  "caught" 126 cm below the apex — on the floor — before this; after it the
+  catch is 0,17 s and 19 cm.
+- The acceleration-based transition fired at the lift-off transient on the
+  close-camera pull (first pull and transition of zero length); a transition
+  now needs the bar at least 15 cm above lift-off (`minTransitionRiseCm`).
+
+Retest on the merged engine: competition snatch 314/314 (rep 6,87–8,17 s,
+peak 1,92 m/s); snatch double 561/561 (two reps found, 1,22–2,36 s and
+6,91–8,09 s); close-camera pull 532/532, grade A; 1080 × 1440 snatch as
+before; training hall 533/545, no rep found (the bar is never lifted in the
+tracked span — the fallback to the whole track is what remains to be said
+honestly in the viewer).
+
 ## 5. The verification harnesses
 
 Three, each closing a gap the layer above it cannot:

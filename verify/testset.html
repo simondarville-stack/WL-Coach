@@ -41,6 +41,7 @@
       import { proposePhases, spansFrom, computeLiftMetrics } from '/src/kinemos/engine/phases.ts';
       import { gradeAnalysis } from '/src/kinemos/engine/grade.ts';
       import { DEFAULT_FILTER } from '/src/kinemos/engine/signal.ts';
+      import { splitReps } from '/src/kinemos/engine/reps.ts';
 
       // Vite full-reloads every page when a file outside its module graph
       // changes — another editor touching the planner would wipe a 60 s track.
@@ -418,7 +419,21 @@
         const r = B.radiusPx > 0 ? B.radiusPx : DEFAULT_TRACK_OPTIONS.templateRadiusPx;
         const cal = calibrateFromEllipse({ cx: B.anchor.x, cy: B.anchor.y, semiMajorPx: r, semiMinorPx: r, tiltDeg: 0 });
         const mass = Number($('mass').value) || null;
-        const pts = B.track.points.map(p => ({ t: p.t, x: p.x, y: p.y }));
+        const all = B.track.points.map(p => ({ t: p.t, x: p.x, y: p.y })).sort((a, b) => a.t - b.t);
+        // Only the lift: the rep containing the anchor (else the first), lift-off
+        // to the deepest point of the catch — the drop and the walk-away are out.
+        const segments = splitReps(all, cal);
+        const anchorT = server.timestamps[B.anchor.index];
+        const seg = segments.find(s => all[s.from].t <= anchorT && anchorT <= all[s.to].t) ?? segments[0] ?? null;
+        // Lead the rep with the rest before it (up to 0,4 s): lift-off is a
+        // rise out of stillness, and a series that starts at the first moving
+        // sample has no stillness for the phase detector to find it in.
+        let from = seg ? seg.from : 0;
+        if (seg) while (from > 0 && all[seg.from].t - all[from - 1].t <= 0.4) from--;
+        const pts = seg ? all.slice(from, seg.to + 1) : all;
+        B.reps = segments;
+        log('reps:', segments.length ? segments.map((s, i) => `#${i + 1} ${fmt(s.liftOffT, 2)}→${fmt(s.catchT, 2)}s rise ${fmt(s.riseCm, 0)}cm`).join(' | ') : 'none found — analysing the whole track');
+        if (seg) log(`  analysing rep ${segments.indexOf(seg) + 1}: ${pts.length} of ${all.length} points (${all.length - pts.length} dropped as not the lift)`);
         const series = computeKinematics(pts, cal, { massKg: mass });
         if (!series) {
           log('kinematics: null');

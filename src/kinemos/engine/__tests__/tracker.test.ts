@@ -577,10 +577,10 @@ describe('searchRadiusFor', () => {
   });
 
   it('grows with the plate and with the frame interval', () => {
-    // ½·30 m/s²·(1/30 s)² = 1,67 cm, at 356 px per 45 cm ≈ 13 px — under the floor.
-    expect(searchRadiusFor(178, 1 / 30, true, 14)).toBe(14);
-    // The same bar on 8K at 24 fps: ½·30·(1/24)² = 2,6 cm at 1600 px per 45 cm ≈ 93 px.
-    expect(searchRadiusFor(800, 1 / 24, true, 14)).toBe(93);
+    // ½·45 m/s²·(1/30 s)² = 2,5 cm, at 356 px per 45 cm ≈ 20 px.
+    expect(searchRadiusFor(178, 1 / 30, true, 14)).toBe(20);
+    // The same bar on 8K at 24 fps: ½·45·(1/24)² = 3,9 cm at 1600 px per 45 cm ≈ 139 px.
+    expect(searchRadiusFor(800, 1 / 24, true, 14)).toBe(139);
   });
 
   it('covers a whole frame of travel on the first step out of an anchor', () => {

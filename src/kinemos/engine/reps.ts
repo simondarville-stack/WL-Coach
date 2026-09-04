@@ -57,6 +57,16 @@ export interface SplitRepsOptions {
   /** Faster than this, vertically, between two samples is not a barbell:
    *  the tracker lost the plate, and the rep ends before it. */
   maxSpeedMs?: number;
+  /**
+   * Downward speed past which the bar is being DROPPED, m/s, not caught. A
+   * catch brings the bar down at up to ~1,5 m/s and stops; a bar let go from
+   * the catch, or from overhead, passes 2 m/s within a fifth of a second and
+   * keeps going to the floor. The rep ends at the last sample before that,
+   * so a missed lift is measured to where the lifter lost it, not to the
+   * platform — the testset's snatch double (04/09/2026) had rep 1 "caught"
+   * 126 cm below its apex, on the floor. COACH-CONFIG candidate.
+   */
+  dropSpeedMs?: number;
   /** How far either side of a rest, s, the local floor is looked for. */
   localFloorS?: number;
 }
@@ -67,6 +77,7 @@ const DEFAULTS: Required<SplitRepsOptions> = {
   minRestS: 0.15,
   restBandCm: 15,
   maxSpeedMs: 6,
+  dropSpeedMs: 2,
   localFloorS: 5,
 };
 
@@ -183,6 +194,10 @@ export function splitReps(
     let falling = false;
     for (let i = apexI + 1; i <= limit; i++) {
       if (sorted[i].t - sorted[i - 1].t > 3 * medianDt) break;
+      // Let go: the bar is falling faster than a catch ever lowers it. The
+      // rep ended where the lifter lost it, at the low point before this.
+      const vy = (h[i] - h[i - 1]) / 100 / Math.max(1e-6, sorted[i].t - sorted[i - 1].t);
+      if (vy < -opt.dropSpeedMs) break;
       if (h[i] < h[sitI]) sitI = i;
       else if (h[i] > h[sitI] + 2) break;
       if (speed[i] > opt.restSpeedMs) falling = true;

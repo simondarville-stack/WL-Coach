@@ -75,6 +75,15 @@ export interface PhaseThresholds {
    *  again in the second pull. How deep that acceleration trough must be,
    *  m/s², measured against the smaller of the two peaks around it. */
   minUnweightingMs2: number;
+  /**
+   * The bar must have risen at least this far above lift-off before a
+   * transition is believed, cm. The knee bend happens with the bar near the
+   * knee, 20–30 cm up; an acceleration trough in the first few frames off
+   * the floor is the lift-off transient, and on the testset's close-camera
+   * pull (04/09/2026) it was read as a transition at lift-off, leaving a
+   * first pull of no length at all.
+   */
+  minTransitionRiseCm: number;
 }
 
 export const DEFAULT_PHASE_THRESHOLDS: PhaseThresholds = {
@@ -85,6 +94,7 @@ export const DEFAULT_PHASE_THRESHOLDS: PhaseThresholds = {
   // 1 m/s² is about a tenth of gravity — a tenth of the load coming off the
   // bar through the knee. The first phone footage sat at 1,3–1,7.
   minUnweightingMs2: 1,
+  minTransitionRiseCm: 15,
 };
 
 /**
@@ -360,11 +370,15 @@ function findUnweighting(
   // where velocity crosses a threshold, and the first pull's drive — its
   // acceleration peak — is what gets it there, a few frames earlier.
   const lead = Math.ceil(0.2 / Math.max(series.dt, 1e-3));
+  const baseY = series.yCm[Math.max(0, fromIndex)];
   for (let i = Math.max(1, fromIndex - lead); i < toIndex - 1; i++) {
     if (!(a[i] > a[i - 1] && a[i] >= a[i + 1])) continue;
     let troughIndex = i;
     for (let j = i + 1; j < toIndex; j++) if (a[j] < a[troughIndex]) troughIndex = j;
     if (troughIndex === i) continue;
+    // Not a knee bend if the bar has barely left the floor: the lift-off
+    // transient has a peak and a trough too.
+    if (series.yCm[troughIndex] - baseY < th.minTransitionRiseCm) continue;
     let riseIndex = troughIndex;
     for (let j = troughIndex + 1; j <= toIndex; j++) if (a[j] > a[riseIndex]) riseIndex = j;
     const prominence = Math.min(a[i], a[riseIndex]) - a[troughIndex];

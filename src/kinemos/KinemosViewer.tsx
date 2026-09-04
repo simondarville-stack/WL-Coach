@@ -51,6 +51,7 @@ import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
 import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack, trackMarkerFrom } from './lib/assists';
 import { trackSet } from './lib/setTracker';
+import { splitReps } from './engine/reps';
 import { persistRep } from './lib/autoAnalyse';
 import { createClubShare, createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
 import { exportOverlayVideo } from './lib/overlayExport';
@@ -741,15 +742,64 @@ export function KinemosViewer() {
           return;
         }
         dirtyRef.current = true;
-        setPoints(result.points.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })));
-        setUncertainIndices(result.lowConfidenceIndices);
+        // Only the lift. The tracker follows the plate through the drop and
+        // the walk-away too, and those frames would set the peak velocity
+        // (a dropped bar falls faster than any pull) and the apex. With a
+        // calibration the track is cut to the rep the anchor sits in —
+        // lift-off to the deepest point of the catch, the same cut the set
+        // tracker makes — and the rest is left out, said so, and never
+        // stored. Without one there is no scale to find a rest by, so the
+        // whole track stands.
+        let kept = result.points;
+        let leftOut = 0;
+        let noLift = false;
+        if (calibration) {
+          const sorted = [...result.points].sort((a, b) => a.t - b.t);
+          const segments = splitReps(sorted, calibration);
+          const anchorT = server.timestamps[anchorIndex] ?? sorted[0].t;
+          const segment =
+            segments.find(s => sorted[s.from].t <= anchorT && anchorT <= sorted[s.to].t) ??
+            segments[0];
+          if (segment) {
+            // Led by the rest before lift-off (up to 0,4 s of it): lift-off
+            // is a rise out of stillness, and the phase detector needs the
+            // stillness to find it.
+            let from = segment.from;
+            while (from > 0 && sorted[segment.from].t - sorted[from - 1].t <= 0.4) from--;
+            kept = sorted.slice(from, segment.to + 1);
+            leftOut = sorted.length - kept.length;
+          } else {
+            noLift = true;
+          }
+        }
+        const keptIndex = new Set(kept.map(p => p.index));
+        setPoints(kept.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })));
+        setUncertainIndices(result.lowConfidenceIndices.filter(i => keptIndex.has(i)));
         setTrackerTier('assisted');
-        setSaveError(
-          result.gaveUp
-            ? 'The tracker lost the bar part way through, so the track stops there. Mark it again ' +
-                'further on and re-track.'
-            : null,
-        );
+        const notes: string[] = [];
+        if (noLift) {
+          // The testset's training-hall clip: the bar drifts, is never lifted,
+          // and the camera pans away — analysed whole, its "peak velocity" is
+          // the pan. Said, so the numbers are read for what they are.
+          notes.push(
+            'No lift found in this track — no rest followed by a rise of 40 cm or more — so the ' +
+              'whole track is kept and the phases are guesses. If there is a lift, check the calibration; ' +
+              'if the bar only moved, the numbers below are not a lift.',
+          );
+        }
+        if (leftOut > 0) {
+          notes.push(
+            `Kept the lift only: ${leftOut} tracked frame${leftOut === 1 ? '' : 's'} outside it ` +
+              '(before lift-off, or the drop after the catch) were left out.',
+          );
+        }
+        if (result.gaveUp && (leftOut === 0 || kept[kept.length - 1].index === result.points[result.points.length - 1].index)) {
+          notes.push(
+            'The tracker lost the bar part way through, so the track stops there. Mark it again ' +
+              'further on and re-track.',
+          );
+        }
+        setSaveError(notes.length ? notes.join(' ') : null);
       } catch {
         setSaveError('Tracking failed — the clip could not be read frame by frame.');
       } finally {
@@ -757,7 +807,7 @@ export function KinemosViewer() {
         setTrackProgress(null);
       }
     },
-    [server],
+    [server, calibration],
   );
 
   /**
