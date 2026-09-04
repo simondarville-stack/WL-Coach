@@ -21,7 +21,7 @@ import {
 import type { PlateEllipse, PxPoint } from '../engine/calibration';
 import type { KinemosTrackPoint } from '../../lib/database.types';
 
-export type ViewerTool = 'look' | 'calibrate' | 'mark' | 'distance' | 'angle';
+export type ViewerTool = 'look' | 'calibrate' | 'mark' | 'distance' | 'angle' | 'knee';
 
 interface ViewerStageProps {
   canvas: HTMLCanvasElement | OffscreenCanvas | null;
@@ -43,6 +43,11 @@ interface ViewerStageProps {
   onMeasurePoint: (point: PxPoint) => void;
 
   onMark: (point: PxPoint) => void;
+
+  /** The knee, as the coach clicked it on the start frame — drawn as a
+   *  height line across the frame, so the bar can be watched crossing it. */
+  knee?: PxPoint | null;
+  onKnee?: (point: PxPoint) => void;
 }
 
 /** Which ellipse handle a drag is moving, if any. */
@@ -112,6 +117,8 @@ export function ViewerStage({
   measurePoints,
   onMeasurePoint,
   onMark,
+  knee = null,
+  onKnee,
 }: ViewerStageProps) {
   const paintRef = useRef<HTMLCanvasElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -225,6 +232,10 @@ export function ViewerStage({
     }
     if (tool === 'mark') {
       onMark(p);
+      return;
+    }
+    if (tool === 'knee') {
+      onKnee?.(p);
       return;
     }
     onMeasurePoint(p);
@@ -394,6 +405,32 @@ export function ViewerStage({
                   />
                 </>
               )}
+            </g>
+          )}
+
+          {/* ── Knee height ───────────────────────────────────────────── */}
+          {knee && (
+            <g>
+              <line
+                x1={0}
+                y1={knee.y}
+                x2={width}
+                y2={knee.y}
+                stroke="#7FD1B9"
+                strokeWidth={1.5 / scale}
+                strokeDasharray={`${8 / scale} ${5 / scale}`}
+                opacity={0.9}
+              />
+              <circle cx={knee.x} cy={knee.y} r={4 / scale} fill="#7FD1B9" stroke="#0F0F0E" strokeWidth={1 / scale} />
+              <text
+                x={8 / scale}
+                y={knee.y - 6 / scale}
+                fontSize={12 / scale}
+                fill="#7FD1B9"
+                style={{ fontFamily: 'inherit', fontWeight: 600, userSelect: 'none' }}
+              >
+                knee
+              </text>
             </g>
           )}
 

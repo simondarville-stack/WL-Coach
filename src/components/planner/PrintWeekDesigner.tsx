@@ -710,7 +710,9 @@ function formatLoggedSets(sets: TrainingLogSet[]): string {
     .map(s => {
       if (s.status === 'skipped') return '—';
       const load = s.performed_load ?? '?';
-      const reps = s.performed_reps ?? '?';
+      // performed_text holds the raw combo tuple ("1+1+1"); performed_reps is
+      // only its sum, and printing "80×3" for a clean + 2 jerks is wrong.
+      const reps = s.performed_text ?? s.performed_reps ?? '?';
       return `${load}×${reps}`;
     })
     .join(', ');

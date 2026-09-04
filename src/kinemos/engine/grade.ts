@@ -40,6 +40,7 @@
  * Engine purity: numbers in, numbers out.
  */
 import type { Calibration } from './calibration';
+import type { DistortionSource } from './distortion';
 import type { FilterSettings } from './signal';
 
 /**
@@ -57,7 +58,10 @@ function fmt(value: number, decimals: number): string {
 
 export type TrackerTier = 'manual' | 'assisted' | 'marker' | 'ml';
 export type CameraStability = 'tripod' | 'stabilised' | 'handheld' | 'unknown';
-export type DistortionSource = 'none' | 'model' | 'profile';
+/** Which tier of design §6.1's lens ladder this analysis reached. Defined
+ *  with the lens arithmetic in `distortion.ts` and re-exported here, where
+ *  it has always been read from. */
+export type { DistortionSource };
 export type Verdict = 'good' | 'fair' | 'weak';
 
 /**
@@ -127,7 +131,21 @@ export interface GradeInputs {
   trackedFrames: number;
   camera: CameraStability;
   distortionSource: DistortionSource;
+  /** Frames the engine had to re-time or drop before differentiating
+   *  (`KinematicSeries.timingRepairs`). Informational: a repaired frame no
+   *  longer distorts the velocity, but a clip that needed several is a clip
+   *  whose timestamps are not to be trusted elsewhere either. */
+  timingRepairs?: number;
+  /** How much the peak velocity moves between a cutoff two-thirds and
+   *  four-thirds of the chosen one, as a fraction of the peak
+   *  (`peakStability`). Informational: past 4 % the peak is partly a property
+   *  of the filter, and the coach should read the curve, not the digit. */
+  peakSpread?: number | null;
 }
+
+/** Peak-velocity spread across cutoffs beyond which the peak is flagged. */
+export const PEAK_SPREAD_FAIR = 0.04;
+export const PEAK_SPREAD_WEAK = 0.08;
 
 export interface GradeFactor {
   id: string;
@@ -328,6 +346,29 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
       why: 'Lens distortion bends straight lines near the frame edge. Filming from a distance keeps it small; a measured profile removes it.',
     },
   ];
+
+  const repairs = inputs.timingRepairs ?? 0;
+  if (repairs > 0) {
+    factors.push({
+      id: 'timing',
+      label: 'Frame timing',
+      value: `${repairs} frame${repairs === 1 ? '' : 's'} repaired`,
+      verdict: repairs <= 2 ? 'fair' : 'weak',
+      why: 'A frame that reads as an impossible acceleration — stamped with the wrong time, or placed wrong by the tracker on a blurred plate. The engine re-timed or dropped these before differentiating; the clip is not otherwise to be trusted frame by frame.',
+    });
+  }
+
+  const spread = inputs.peakSpread;
+  if (spread !== null && spread !== undefined && Number.isFinite(spread)) {
+    const pct = Math.abs(spread) * 100;
+    factors.push({
+      id: 'peak',
+      label: 'Peak stability',
+      value: `±${fmt(pct / 2, 1)} % across cutoffs`,
+      verdict: pct <= PEAK_SPREAD_FAIR * 100 ? 'good' : pct <= PEAK_SPREAD_WEAK * 100 ? 'fair' : 'weak',
+      why: 'How much the peak moves when the filter cutoff is changed by a third either way. A real second-pull peak is a plateau and holds still; a peak that moves has a one-frame lurch under it — a blurred plate, the bar whipping — and is partly the filter’s number.',
+    });
+  }
 
   if (error !== null) {
     factors.push({

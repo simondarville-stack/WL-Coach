@@ -13,10 +13,14 @@
  * panels rather than one because they answer three different questions and a
  * coach reads them at different moments.
  */
-import { Camera, Plus, Trash2 } from 'lucide-react';
-import { useState, type CSSProperties } from 'react';
+import { Camera, Mic, Play, Plus, Square, Trash2 } from 'lucide-react';
+import { VideoLightbox } from '../../components/planner/VideoLightbox';
+import { kinemosObjectUrl } from '../lib/kinemosStorage';
+import { formatTalkoverLength } from '../lib/talkover';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Button } from '../../components/ui';
-import type { KinemosAnnotation } from '../../lib/database.types';
+import type { KinemosAnnotation, KinemosShare } from '../../lib/database.types';
+import { formatDateTimeShort } from '../../lib/dateUtils';
 import type { PathMetrics } from '../engine/calibration';
 import { distance, drift, num } from '../lib/viewerFormat';
 import type { ViewerTool } from './ViewerStage';
@@ -38,7 +42,18 @@ interface ReadoutRailProps {
   onSaveMeasurement: () => void;
   onClearMeasurement: () => void;
 
+  /** The marked knee's height above the bar's start, cm; null when there is
+   *  no mark, or no calibration or track to measure it against. */
+  kneeCm?: number | null;
+  kneeMarked?: boolean;
+
   annotations: KinemosAnnotation[];
+  /** Handing this rep to its athlete. Null before there is an analysis to
+   *  share. */
+  share?: ShareState | null;
+  /** Recording the coach over the scrubbed lift. Absent where the browser
+   *  cannot record. */
+  talkover?: TalkoverState | null;
   onAddNote: (body: string) => void;
   onSnapshot: () => void;
   onDeleteAnnotation: (id: string) => void;
@@ -59,6 +74,47 @@ export interface TrackingState {
   correctionCount: number;
   onTrack: () => void;
   onNextUncertain: () => void;
+  /** Track the whole clip as a set and make a rep of each lift. Absent
+   *  until there is an anchor and a calibration to size the plate by. */
+  onTrackSet?: () => void;
+  /** What the last set track said, in the coach's terms. */
+  setNote?: string | null;
+  /** Follow a high-contrast marker on the bar end instead of the plate —
+   *  design §6.2's tighter tier. Absent until there is an anchor. */
+  onTrackMarker?: () => void;
+}
+
+export interface ShareState {
+  /** Who the rep goes to — the clip's athlete. Null when the clip has none. */
+  athleteName: string | null;
+  /** Earlier shares of this rep, newest first. */
+  shares: KinemosShare[];
+  busy: boolean;
+  /** What the last share said, in the coach's terms. */
+  note: string | null;
+  /** Whether there is anything to send yet — a track and a calibration. */
+  ready: boolean;
+  onShare: (message: string) => void;
+  onDelete: (shareId: string) => void;
+  /** The clip with the bar path burned in, as a file — for outside EMOS. */
+  onExport: () => void;
+  exporting: { done: number; total: number } | null;
+  exportNote: string | null;
+  /** Whether the rep has a talkover that the next share will carry. */
+  talkoverIncluded: boolean;
+  /** The other coaches in this environment — the club channel's recipients. */
+  colleagues: Array<{ id: string; name: string }>;
+  onShareWithCoach: (coachId: string, message: string) => void;
+}
+
+export interface TalkoverState {
+  recording: boolean;
+  /** performance.now() the recording started, for the running clock. */
+  startedAt: number | null;
+  /** Stopping: the file is being stored. */
+  busy: boolean;
+  note: string | null;
+  onToggle: () => void;
 }
 
 export function ReadoutRail({
@@ -75,7 +131,11 @@ export function ReadoutRail({
   measureComplete,
   onSaveMeasurement,
   onClearMeasurement,
+  kneeCm = null,
+  kneeMarked = false,
   annotations,
+  share = null,
+  talkover = null,
   onAddNote,
   onSnapshot,
   onDeleteAnnotation,
@@ -83,6 +143,18 @@ export function ReadoutRail({
   tracking,
 }: ReadoutRailProps) {
   const [noteDraft, setNoteDraft] = useState('');
+  const [shareDraft, setShareDraft] = useState('');
+  const [colleagueId, setColleagueId] = useState('');
+  const [playingKey, setPlayingKey] = useState<string | null>(null);
+  // A clock for the recording in progress: re-render once a second while it
+  // runs, nothing otherwise.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!talkover?.recording) return;
+    const id = window.setInterval(() => setTick(n => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [talkover?.recording]);
+  const recordedS = talkover?.recording && talkover.startedAt !== null ? (performance.now() - talkover.startedAt) / 1000 : 0;
   const calibrated = metrics.calibrated;
 
   return (
@@ -227,6 +299,30 @@ export function ReadoutRail({
                     ? 'Correct a frame by marking it, then re-track: everything either side is redone from your point.'
                     : 'One mark is the anchor. The tracker fills in the rest of the clip, forwards and backwards.'}
               </p>
+              {tracking.onTrackSet && (
+                <div style={{ marginTop: 'var(--space-sm)' }}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={tracking.onTrackSet}
+                    title="Track the whole clip as a set: follow the plate through every rep, find it again after each drop, cut the track into reps at their rests, and make a rep of each with its own calibration. Loads OpenCV the first time, about 13 MB."
+                  >
+                    Track the set
+                  </Button>
+                  {tracking.onTrackMarker && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={tracking.onTrackMarker}
+                      title="Follow a high-contrast marker on the bar end instead of the plate. A sticker nothing else in the gym shares gives a centroid about twice as tight as the plate template — the tier the grade calls 0,4 px. Click the marker first, then this."
+                      style={{ marginLeft: 'var(--space-xs)' }}
+                    >
+                      Track a marker
+                    </Button>
+                  )}
+                  {tracking.setNote && <p style={hint}>{tracking.setNote}</p>}
+                </div>
+              )}
             </>
           )}
 
@@ -250,6 +346,29 @@ export function ReadoutRail({
           )}
         </div>
       </section>
+
+      {/* ── Knee height ─────────────────────────────────────────────────── */}
+      {tool === 'knee' && (
+        <section style={section}>
+          <header style={header}>
+            <span style={label}>KNEE</span>
+          </header>
+          <p style={hint}>
+            {kneeMarked
+              ? 'Click again to move it. The line on the frame is the knee height; the charts mark where the bar crosses it.'
+              : 'Click the athlete’s knee on the start frame, with the bar on the floor. V1 and V2 are defined around the knee — this is how to check the phase edges against it.'}
+          </p>
+          <div
+            style={{
+              fontSize: 'var(--text-section)',
+              fontVariantNumeric: 'tabular-nums',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {kneeCm === null ? (kneeMarked ? 'marked — calibrate and mark the bar to measure it' : '—') : `${num(kneeCm, 1)} cm above the bar`}
+          </div>
+        </section>
+      )}
 
       {/* ── Measurement ─────────────────────────────────────────────────── */}
       {(tool === 'distance' || tool === 'angle') && (
@@ -290,20 +409,172 @@ export function ReadoutRail({
         </section>
       )}
 
+      {/* ── Share ───────────────────────────────────────────────────────── */}
+      {share && (
+        <section style={section}>
+          <header style={header}>
+            <span style={label}>SHARE</span>
+          </header>
+          {share.athleteName === null ? (
+            <p style={hint}>This clip has no athlete. Attach one in the library and the rep can be sent to them; the export below works either way.</p>
+          ) : !share.ready ? (
+            <p style={hint}>Track and calibrate the rep first — the athlete gets this frame with the bar path, and the numbers.</p>
+          ) : (
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                share.onShare(shareDraft.trim());
+                setShareDraft('');
+              }}
+              style={{ display: 'grid', gap: 'var(--space-xs)' }}
+            >
+              <textarea
+                value={shareDraft}
+                onChange={e => setShareDraft(e.target.value)}
+                placeholder={`A word to ${share.athleteName}… (optional)`}
+                className="emos-input"
+                rows={2}
+                style={{ resize: 'vertical', fontSize: 'var(--text-caption)' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                <Button size="sm" type="submit" disabled={share.busy}>
+                  {share.busy ? 'Sending…' : `Send to ${share.athleteName}`}
+                </Button>
+                <span style={{ ...hint, margin: 0 }}>
+                  {share.talkoverIncluded
+                    ? 'This frame, the bar path, the numbers and the latest talkover, into their coach thread.'
+                    : 'This frame, the bar path and the numbers, into their coach thread.'}
+                </span>
+              </div>
+            </form>
+          )}
+          {share.ready && share.colleagues.length > 0 && (
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                if (!colleagueId) return;
+                share.onShareWithCoach(colleagueId, shareDraft.trim());
+                setShareDraft('');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', marginTop: 'var(--space-xs)' }}
+            >
+              <select
+                value={colleagueId}
+                onChange={e => setColleagueId(e.target.value)}
+                className="emos-input"
+                style={{ height: 28, fontSize: 'var(--text-caption)', flexGrow: 1, minWidth: 0 }}
+                title="A colleague coach in this environment. The words above go with it; they find it on the video library under “Shared with you”."
+              >
+                <option value="">or a colleague…</option>
+                {share.colleagues.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <Button size="sm" variant="secondary" type="submit" disabled={share.busy || !colleagueId}>
+                Send
+              </Button>
+            </form>
+          )}
+          {share.note && <p style={hint}>{share.note}</p>}
+          <div style={{ marginTop: 'var(--space-sm)' }}>
+            {share.exporting ? (
+              <>
+                <div style={{ height: 4, borderRadius: 2, background: 'var(--color-bg-secondary)', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${Math.round((share.exporting.done / Math.max(1, share.exporting.total)) * 100)}%`,
+                      background: 'var(--color-accent)',
+                    }}
+                  />
+                </div>
+                <p style={hint}>{`Writing the video — frame ${share.exporting.done} of ${share.exporting.total}.`}</p>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!share.ready}
+                onClick={share.onExport}
+                title="Download this clip with the bar path burned in — for a seminar, a post, anywhere outside EMOS. H.264 in MP4 where the browser can encode it, otherwise WebM."
+              >
+                Export video
+              </Button>
+            )}
+            {share.exportNote && <p style={hint}>{share.exportNote}</p>}
+          </div>
+          {share.shares.length > 0 && (
+            <ul style={{ listStyle: 'none', margin: 'var(--space-xs) 0 0', padding: 0, display: 'grid', gap: 4 }}>
+              {share.shares.map(s => (
+                <li
+                  key={s.id}
+                  style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}
+                >
+                  <span style={{ flexGrow: 1 }}>
+                    {`Sent ${formatDateTimeShort(new Date(s.created_at))}`}
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>
+                      {s.athlete_read_at ? ` · opened ${formatDateTimeShort(new Date(s.athlete_read_at))}` : ' · not opened yet'}
+                    </span>
+                  </span>
+                  <button type="button" onClick={() => share.onDelete(s.id)} title="Take it back — removes the card from the athlete's thread" style={iconButton}>
+                    <Trash2 size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {/* ── Annotations ─────────────────────────────────────────────────── */}
       <section style={section}>
         <header style={header}>
           <span style={label}>NOTES & SNAPSHOTS</span>
-          <button
-            type="button"
-            onClick={onSnapshot}
-            disabled={snapshotBusy}
-            title="Save this frame with its overlays"
-            style={{ ...iconButton, opacity: snapshotBusy ? 0.5 : 1 }}
-          >
-            <Camera size={13} />
-          </button>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {talkover && (
+              <button
+                type="button"
+                onClick={talkover.onToggle}
+                disabled={talkover.busy}
+                title={
+                  talkover.recording
+                    ? 'Stop the talkover and save it'
+                    : 'Record a talkover: your voice and the lift as you scrub it, saved with this rep'
+                }
+                style={{
+                  ...iconButton,
+                  opacity: talkover.busy ? 0.5 : 1,
+                  color: talkover.recording ? 'var(--color-danger-text)' : undefined,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                {talkover.recording ? <Square size={12} /> : <Mic size={13} />}
+                {talkover.recording && (
+                  <span style={{ fontSize: 'var(--text-micro)', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatTalkoverLength(recordedS)}
+                  </span>
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onSnapshot}
+              disabled={snapshotBusy}
+              title="Save this frame with its overlays"
+              style={{ ...iconButton, opacity: snapshotBusy ? 0.5 : 1 }}
+            >
+              <Camera size={13} />
+            </button>
+          </span>
         </header>
+        {talkover?.recording && (
+          <p style={{ ...hint, color: 'var(--color-danger-text)' }}>Recording — scrub, step and talk. Press the square to stop.</p>
+        )}
+        {talkover?.note && !talkover.recording && <p style={hint}>{talkover.note}</p>}
 
         {annotations.length === 0 && <p style={hint}>Nothing saved for this rep yet.</p>}
         <ul
@@ -342,6 +613,11 @@ export function ReadoutRail({
               <span style={{ flexGrow: 1, lineHeight: 1.35 }}>
                 {a.body || (a.frame_index !== null ? `frame ${a.frame_index + 1}` : '—')}
               </span>
+              {a.kind === 'talkover' && a.asset_key && (
+                <button type="button" onClick={() => setPlayingKey(a.asset_key)} title="Play the talkover" style={iconButton}>
+                  <Play size={12} />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onDeleteAnnotation(a.id)}
@@ -385,6 +661,9 @@ export function ReadoutRail({
           </Button>
         </form>
       </section>
+      {playingKey && (
+        <VideoLightbox src={kinemosObjectUrl(playingKey)} caption="Talkover" onClose={() => setPlayingKey(null)} />
+      )}
     </div>
   );
 }

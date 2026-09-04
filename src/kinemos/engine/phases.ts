@@ -33,6 +33,11 @@ export type BoundaryRuleId =
   | 'liftoff'
   | 'first-velocity-peak'
   | 'velocity-trough'
+  /** The transition found from acceleration rather than velocity: the bar
+   *  did not slow through the knee, it only stopped speeding up. See
+   *  `findUnweighting`. */
+  | 'acceleration-peak'
+  | 'acceleration-trough'
   | 'peak-velocity'
   | 'apex'
   | 'settle'
@@ -65,6 +70,11 @@ export interface PhaseThresholds {
   minProminenceMs: number;
   /** Velocity below which the bar counts as settled after the catch, m/s. */
   settleMs: number;
+  /** When velocity shows no dip, the transition is looked for in
+   *  acceleration: the bar stops speeding up through the knee and speeds up
+   *  again in the second pull. How deep that acceleration trough must be,
+   *  m/s², measured against the smaller of the two peaks around it. */
+  minUnweightingMs2: number;
 }
 
 export const DEFAULT_PHASE_THRESHOLDS: PhaseThresholds = {
@@ -72,6 +82,9 @@ export const DEFAULT_PHASE_THRESHOLDS: PhaseThresholds = {
   liftoffHoldS: 0.05,
   minProminenceMs: 0.05,
   settleMs: 0.15,
+  // 1 m/s² is about a tenth of gravity — a tenth of the load coming off the
+  // bar through the knee. The first phone footage sat at 1,3–1,7.
+  minUnweightingMs2: 1,
 };
 
 /**
@@ -124,6 +137,59 @@ export interface PhaseMetrics {
   peakPowerW: number | null;
 }
 
+/**
+ * The German Weightlifting Analyzer's measures for the snatch and clean
+ * (BVDG teaching material; Jentsch & Lippmann 2009; Darville 2018 §3.1), in
+ * EMOS units — m/s, cm, s, and force as a percentage of the load, the way
+ * that material states it. Heights are above the bar's first mark, which for
+ * a lift from the floor is the plate's radius above the platform; the
+ * material's "from ground" figures are these plus 22,5 cm on a 45 cm plate.
+ *
+ * Forces need no mass: F/(m·g) = 1 + a/g, so they come from acceleration
+ * alone and are comparable across bars. PSK, the one mass-dependent figure,
+ * is load × Vmax — the material calls it power and gives it in N·s.
+ *
+ * Every field is null when the phase it is read from is not in the phase
+ * set: the model needs first_pull, transition, second_pull and catch.
+ */
+export interface AnalyzerMetrics {
+  /** Peak vertical velocity at the end of the first pull. */
+  v1Ms: number | null;
+  /** Minimum vertical velocity through the transition — the knee passing. */
+  v2Ms: number | null;
+  vmaxMs: number | null;
+  /** The lowest (negative) vertical velocity after Vmax: the drop under. */
+  vminMs: number | null;
+  /** Time from Vmax to Vmin. Peter Käks' third measure: "the speed of the
+   *  lifter and their technique". */
+  tTurnS: number | null;
+  /** Height of the bar at Vmax. */
+  sVmaxCm: number | null;
+  /** Top of the bar's flight — the apex before the catch. */
+  sMaxCm: number | null;
+  /** S_max − S_vmax: how far the bar rises after peak velocity. */
+  sFlyCm: number | null;
+  /** S_fly minus the ballistic rise Vmax²/2g: the height the arms and the
+   *  pull-under added beyond what the impulse alone would give. */
+  sRemainCm: number | null;
+  /** The same as a share of S_max. */
+  sRemainPct: number | null;
+  /** Height of the bar at the deepest point of the catch. */
+  sSitCm: number | null;
+  /** S_max − S_sit: how far the bar fell into the catch. */
+  sFallCm: number | null;
+  /** Peak vertical force in the first pull, % of load. */
+  f1Pct: number | null;
+  /** Minimum vertical force through the transition, % of load. */
+  f2Pct: number | null;
+  /** Peak vertical force in the second pull, % of load. */
+  f3Pct: number | null;
+  /** Peak vertical force braking the bar in the catch, % of load. */
+  fbrPct: number | null;
+  /** Load × Vmax, N·s. Null without a mass. */
+  pskNs: number | null;
+}
+
 export interface LiftMetrics {
   phases: PhaseMetrics[];
   /** Peak upward velocity anywhere in the lift. */
@@ -139,6 +205,7 @@ export interface LiftMetrics {
    *  pulled under. */
   turnoverVelocityMs: number | null;
   peakPowerW: number | null;
+  analyzer: AnalyzerMetrics;
 }
 
 /** Result of proposing boundaries: the times, plus whether the signatures were
@@ -270,6 +337,53 @@ function findFirstVelocityPeak(
 }
 
 /**
+ * The transition when velocity has no dip: the double knee bend as an
+ * UNWEIGHTING. Many lifters — and most phone clips of them — show a shoulder
+ * in the velocity curve rather than a trough: the bar keeps rising through
+ * the knee, only slower. In acceleration that is unmistakable: a peak as the
+ * first pull drives, a trough as the knees come under, a second, higher peak
+ * as the hips open. The first pull ends at the first peak, the second pull
+ * starts at the trough. Both peaks must stand `minUnweightingMs2` above the
+ * trough, or it is a wiggle in the filter rather than a knee bend.
+ */
+function findUnweighting(
+  series: KinematicSeries,
+  fromIndex: number,
+  toIndex: number,
+  th: PhaseThresholds,
+): { peakIndex: number; troughIndex: number } | null {
+  const a = series.ayMs2;
+  if (toIndex - fromIndex < 6) return null;
+  // Walk the interval: candidate first peak, then the deepest trough after
+  // it, then the highest rise after that trough. Earliest qualifying
+  // arrangement wins. The walk starts a little BEFORE lift-off: lift-off is
+  // where velocity crosses a threshold, and the first pull's drive — its
+  // acceleration peak — is what gets it there, a few frames earlier.
+  const lead = Math.ceil(0.2 / Math.max(series.dt, 1e-3));
+  for (let i = Math.max(1, fromIndex - lead); i < toIndex - 1; i++) {
+    if (!(a[i] > a[i - 1] && a[i] >= a[i + 1])) continue;
+    let troughIndex = i;
+    for (let j = i + 1; j < toIndex; j++) if (a[j] < a[troughIndex]) troughIndex = j;
+    if (troughIndex === i) continue;
+    let riseIndex = troughIndex;
+    for (let j = troughIndex + 1; j <= toIndex; j++) if (a[j] > a[riseIndex]) riseIndex = j;
+    const prominence = Math.min(a[i], a[riseIndex]) - a[troughIndex];
+    if (prominence < th.minUnweightingMs2) continue;
+    // The first pull does not end at its hardest drive — on a phone clip that
+    // is the lift-off transient — but on the way into the trough, where the
+    // drive has mostly let go: the last moment before the trough at which
+    // the acceleration still stood a third of the way up its depth. That is
+    // where V1, the velocity the first pull got the bar to, is read; for a
+    // pull with no dip it sits a little under V2, as the BVDG material has it.
+    const shoulder = a[troughIndex] + prominence * 0.3;
+    let endIndex = troughIndex;
+    while (endIndex > i && a[endIndex] < shoulder) endIndex--;
+    return { peakIndex: endIndex, troughIndex };
+  }
+  return null;
+}
+
+/**
  * First time after the catch that the bar has actually stopped.
  *
  * The obvious rule — "first frame after the apex where |v| is small" — fires on
@@ -332,7 +446,13 @@ export function proposePhases(
   const apexT = series.t[Math.max(apexIdx, peakIdx)];
 
   const liftoffIdx = liftoffT === null ? 0 : series.t.findIndex(t => t >= liftoffT);
-  const dip = findFirstVelocityPeak(series, Math.max(0, liftoffIdx), peakIdx, thresholds);
+  const velocityDip = findFirstVelocityPeak(series, Math.max(0, liftoffIdx), peakIdx, thresholds);
+  const unweighting = velocityDip ? null : findUnweighting(series, Math.max(0, liftoffIdx), peakIdx, thresholds);
+  const dip = velocityDip ?? unweighting;
+  // When the transition came from acceleration, the boundaries say so.
+  const via: Partial<Record<BoundaryRuleId, BoundaryRuleId>> = unweighting
+    ? { 'first-velocity-peak': 'acceleration-peak', 'velocity-trough': 'acceleration-trough' }
+    : {};
   const settleT = findSettle(series, Math.max(apexIdx, peakIdx), thresholds);
 
   const detected: Partial<Record<BoundaryRuleId, number>> = {
@@ -366,7 +486,7 @@ export function proposePhases(
   for (const phase of phaseSet) {
     const value = detected[phase.startRule];
     if (value !== undefined) {
-      boundaries.push({ phaseId: phase.id, t: value, rule: phase.startRule, source: 'detected' });
+      boundaries.push({ phaseId: phase.id, t: value, rule: via[phase.startRule] ?? phase.startRule, source: 'detected' });
     } else {
       fullyDetected = false;
       boundaries.push({
@@ -474,7 +594,7 @@ export function computeLiftMetrics(
   const transitionVelocityLossMs =
     firstPull?.peakVelocityMs != null && transition
       ? firstPull.peakVelocityMs -
-        (minOver(series.t, series.vyMs, transition.durationS > 0 ? spans[1].fromT : 0, spans[1]?.toT ?? 0) ??
+        (minOver(series.t, series.vyMs, transition.durationS > 0 ? spans[1].fromT : 0, spans[1]?.toT ?? 0)?.value ??
           firstPull.peakVelocityMs)
       : null;
 
@@ -486,20 +606,202 @@ export function computeLiftMetrics(
     transitionVelocityLossMs,
     turnoverVelocityMs: turnover?.meanVelocityMs ?? null,
     peakPowerW: overallPower?.value ?? null,
+    analyzer: computeAnalyzerMetrics(series, spans),
   };
 }
 
-/** Minimum of a series over a closed window. */
+/** Standard gravity, for the ballistic rise in S_remain and for force as a
+ *  share of load. Duplicated from kinematics.ts rather than imported, to keep
+ *  this module free of a dependency it needs one number from. */
+const G_MS2 = 9.80665;
+
+/** The analyzer block with nothing in it — a lift the model could not read. */
+export const EMPTY_ANALYZER_METRICS: AnalyzerMetrics = {
+  v1Ms: null, v2Ms: null, vmaxMs: null, vminMs: null, tTurnS: null,
+  sVmaxCm: null, sMaxCm: null, sFlyCm: null, sRemainCm: null, sRemainPct: null,
+  sSitCm: null, sFallCm: null, f1Pct: null, f2Pct: null, f3Pct: null, fbrPct: null, pskNs: null,
+};
+
+/** See `AnalyzerMetrics`. */
+/** Vertical force on the bar as a percentage of its weight, sample by sample:
+ *  F/(m·g) = 1 + a/g. Needs no mass, so it is comparable across bars. */
+export function forcePercentOf(series: KinematicSeries): number[] {
+  return series.ayMs2.map(a => (1 + a / G_MS2) * 100);
+}
+
+/** One of the analyzer's landmarks: when it happens, the bar's vertical
+ *  velocity there, and how high the bar is — so a chart in either domain can
+ *  put the same dot in the same place. */
+export interface AnalyzerEvent {
+  t: number;
+  valueMs: number;
+  heightCm: number;
+}
+
+export interface AnalyzerEvents {
+  /** Peak velocity of the first pull. */
+  v1: AnalyzerEvent | null;
+  /** Velocity where the second pull starts — the knee passing. */
+  v2: AnalyzerEvent | null;
+  vmax: AnalyzerEvent | null;
+  /** The lowest velocity after Vmax: the drop under. */
+  vmin: AnalyzerEvent | null;
+  /** The top of the flight (S_max). */
+  apex: AnalyzerEvent | null;
+  /** The deepest point of the catch (S_sit). */
+  sit: AnalyzerEvent | null;
+}
+
+/**
+ * Where the analyzer's landmarks are. `computeAnalyzerMetrics` reads its
+ * numbers off these; the charts draw them. One search, two consumers, so a
+ * V2 shown on a curve is the V2 in the table.
+ */
+export function locateAnalyzerEvents(
+  series: KinematicSeries,
+  spans: readonly PhaseSpan[],
+): AnalyzerEvents {
+  const none: AnalyzerEvents = { v1: null, v2: null, vmax: null, vmin: null, apex: null, sit: null };
+  const n = series.t.length;
+  if (n < 2) return none;
+  // A phase whose edge the engine only guessed at yields no analyzer number:
+  // a V2 read over a transition that was not actually found is a number
+  // about the fallback rule, not about the lift (P3 plan §2 decision 3). A
+  // coach's edge counts; a detected one counts; a fallback does not.
+  const spanOf = (id: string) => spans.find(s => s.definition.id === id && s.source !== 'fallback') ?? null;
+  const tEnd = series.t[n - 1];
+  const at = (t: number, valueMs: number): AnalyzerEvent => ({
+    t,
+    valueMs,
+    heightCm: valueAt(series.t, series.yCm, t) ?? 0,
+  });
+  const firstPull = spanOf('first_pull');
+  const transition = spanOf('transition');
+  const catchSpan = spanOf('catch');
+
+  // The pull, phase by phase. V2 is the velocity where the second pull
+  // starts — the velocity trough when there is one, the knee passing when
+  // the transition was read from acceleration and the velocity only
+  // shouldered. The minimum over the span would be the same number in the
+  // first case and the span's START in the second, which is V1 again.
+  const v1 = firstPull ? peakOver(series.t, series.vyMs, firstPull.fromT, firstPull.toT) : null;
+  const v2 = transition ? valueAt(series.t, series.vyMs, transition.toT) : null;
+  const vmax = peakOver(series.t, series.vyMs, series.t[0], tEnd);
+
+  // After Vmax: the flight to the apex, the drop under, the catch.
+  let vmin: { value: number; t: number } | null = null;
+  let apexT: number | null = catchSpan ? catchSpan.fromT : null;
+  if (vmax) {
+    for (let i = 0; i < n; i++) {
+      if (series.t[i] < vmax.t) continue;
+      if (!vmin || series.vyMs[i] < vmin.value) vmin = { value: series.vyMs[i], t: series.t[i] };
+      // The apex, when no catch phase says where it is: the first moment
+      // after Vmax that the bar stops rising.
+      if (apexT === null && i > 0 && series.vyMs[i] <= 0 && series.t[i - 1] >= vmax.t) apexT = series.t[i];
+    }
+  }
+  const sit = apexT !== null ? minOver(series.t, series.yCm, apexT, catchSpan ? catchSpan.toT : tEnd) : null;
+
+  return {
+    v1: v1 ? at(v1.t, v1.value) : null,
+    v2: transition && v2 !== null ? at(transition.toT, v2) : null,
+    vmax: vmax ? at(vmax.t, vmax.value) : null,
+    vmin: vmin ? at(vmin.t, vmin.value) : null,
+    apex: apexT !== null ? at(apexT, valueAt(series.t, series.vyMs, apexT) ?? 0) : null,
+    sit: sit ? at(sit.t, valueAt(series.t, series.vyMs, sit.t) ?? 0) : null,
+  };
+}
+
+/**
+ * The bar passing a marked knee height on its way up: the first sample at or
+ * above `kneeCm` before Vmax, and the velocity there. The analyzer's V1 and
+ * V2 are defined around the knee; this is the check that the phase edges
+ * the engine found are where the coach's eye says the knee is. Null when the
+ * bar never gets that high before its peak — a hang lift above the knee, or
+ * a mark on the wrong frame.
+ */
+export function kneeCrossing(
+  series: KinematicSeries,
+  kneeCm: number,
+): { t: number; valueMs: number; heightCm: number } | null {
+  const n = series.t.length;
+  if (n < 2) return null;
+  const vmax = peakOver(series.t, series.vyMs, series.t[0], series.t[n - 1]);
+  if (!vmax) return null;
+  for (let i = 1; i < n; i++) {
+    if (series.t[i] > vmax.t) break;
+    if (series.yCm[i] >= kneeCm && series.yCm[i - 1] < kneeCm) {
+      // Interpolate the crossing between the two samples.
+      const frac = (kneeCm - series.yCm[i - 1]) / (series.yCm[i] - series.yCm[i - 1] || 1);
+      const t = series.t[i - 1] + (series.t[i] - series.t[i - 1]) * frac;
+      return { t, valueMs: valueAt(series.t, series.vyMs, t) ?? series.vyMs[i], heightCm: kneeCm };
+    }
+  }
+  return null;
+}
+
+export function computeAnalyzerMetrics(
+  series: KinematicSeries,
+  spans: readonly PhaseSpan[],
+): AnalyzerMetrics {
+  const empty = EMPTY_ANALYZER_METRICS;
+  const n = series.t.length;
+  if (n < 2) return empty;
+  const spanOf = (id: string) => spans.find(s => s.definition.id === id && s.source !== 'fallback') ?? null;
+  const tEnd = series.t[n - 1];
+  const forcePct = forcePercentOf(series);
+  const events = locateAnalyzerEvents(series, spans);
+  const { v1, v2, vmax, vmin, apex, sit } = events;
+
+  const firstPull = spanOf('first_pull');
+  const transition = spanOf('transition');
+  const secondPull = spanOf('second_pull');
+  const catchSpan = spanOf('catch');
+
+  const f1 = firstPull ? peakOver(series.t, forcePct, firstPull.fromT, firstPull.toT) : null;
+  const f2 = transition ? minOver(series.t, forcePct, transition.fromT, transition.toT) : null;
+  const f3 = secondPull ? peakOver(series.t, forcePct, secondPull.fromT, secondPull.toT) : null;
+
+  const sVmax = vmax ? vmax.heightCm : null;
+  const sMax = apex ? apex.heightCm : null;
+  const sFly = sMax !== null && sVmax !== null ? sMax - sVmax : null;
+  const ballisticCm = vmax ? ((vmax.valueMs * vmax.valueMs) / (2 * G_MS2)) * 100 : null;
+  const sRemain = sFly !== null && ballisticCm !== null ? sFly - ballisticCm : null;
+  const sSit = sit ? sit.heightCm : null;
+  const fbr = apex ? peakOver(series.t, forcePct, apex.t, catchSpan ? catchSpan.toT : tEnd) : null;
+
+  return {
+    v1Ms: v1?.valueMs ?? null,
+    v2Ms: v2?.valueMs ?? null,
+    vmaxMs: vmax?.valueMs ?? null,
+    vminMs: vmin?.valueMs ?? null,
+    tTurnS: vmax && vmin ? vmin.t - vmax.t : null,
+    sVmaxCm: sVmax,
+    sMaxCm: sMax,
+    sFlyCm: sFly,
+    sRemainCm: sRemain,
+    sRemainPct: sRemain !== null && sMax !== null && sMax > 0 ? (sRemain / sMax) * 100 : null,
+    sSitCm: sSit,
+    sFallCm: sMax !== null && sSit !== null ? sMax - sSit : null,
+    f1Pct: f1?.value ?? null,
+    f2Pct: f2?.value ?? null,
+    f3Pct: f3?.value ?? null,
+    fbrPct: fbr?.value ?? null,
+    pskNs: series.massKg && vmax ? series.massKg * vmax.valueMs : null,
+  };
+}
+
+/** Minimum of a series over a closed window, and when it occurs. */
 function minOver(
   t: readonly number[],
   values: readonly number[],
   fromT: number,
   toT: number,
-): number | null {
-  let best: number | null = null;
+): { value: number; t: number } | null {
+  let best: { value: number; t: number } | null = null;
   for (let i = 0; i < t.length; i++) {
     if (t[i] < fromT || t[i] > toT) continue;
-    if (best === null || values[i] < best) best = values[i];
+    if (best === null || values[i] < best.value) best = { value: values[i], t: t[i] };
   }
   return best;
 }

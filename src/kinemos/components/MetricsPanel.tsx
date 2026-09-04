@@ -26,6 +26,9 @@ interface MetricsPanelProps {
   onMass: (kg: number | null) => void;
   /** Why there are no numbers, when there are none. */
   emptyReason: string | null;
+  /** The marked knee height, and the bar's velocity as it passed it on the
+   *  way up — null velocity when it never got that high before Vmax. */
+  knee?: { heightCm: number; t: number | null; velocityMs: number | null } | null;
 }
 
 export function MetricsPanel({
@@ -35,6 +38,7 @@ export function MetricsPanel({
   massSource,
   onMass,
   emptyReason,
+  knee = null,
 }: MetricsPanelProps) {
   const firstPull = metrics?.phases.find(p => p.phaseId === 'first_pull') ?? metrics?.phases[0];
   const secondPull = metrics?.phases.find(p => p.phaseId === 'second_pull') ?? metrics?.phases[2];
@@ -129,6 +133,50 @@ export function MetricsPanel({
         </div>
       </section>
 
+      {metrics && metrics.analyzer.vmaxMs !== null && (
+        <section style={section}>
+          <header style={header}>
+            <span style={label}>ANALYZER</span>
+            <span style={{ ...label, letterSpacing: 0 }} title="The measures of the German Weightlifting Analyzer (BVDG teaching material), in EMOS units. Heights are above the bar's start; add the plate's radius for height above the platform.">
+              BVDG model
+            </span>
+          </header>
+          <dl style={list}>
+            <Row term="V1 · end of first pull" value={unit(metrics.analyzer.v1Ms, 'm/s')} hint="Peak vertical velocity at the end of the first pull." />
+            <Row term="V2 · knee passing" value={unit(metrics.analyzer.v2Ms, 'm/s')} hint="Minimum vertical velocity through the transition." />
+            {knee && (
+              <Row
+                term={`V at the knee · ${num(knee.heightCm, 0)} cm`}
+                value={knee.velocityMs === null ? 'not reached' : unit(knee.velocityMs, 'm/s')}
+                hint={
+                  knee.velocityMs === null
+                    ? 'The bar never rose to the marked knee height before Vmax — a lift from above the knee, or a mark on the wrong frame.'
+                    : `The bar's velocity as it passed the knee you marked${knee.t !== null ? `, at ${num(knee.t, 2)} s` : ''}. V1 and V2 are defined around the knee: if this sits far from both, the phase edges want a look.`
+                }
+              />
+            )}
+            <Row term="Vmax" value={unit(metrics.analyzer.vmaxMs, 'm/s')} strong />
+            <Row term="Vmin · drop under" value={unit(metrics.analyzer.vminMs, 'm/s')} hint="The lowest (negative) vertical velocity after Vmax." />
+            <Row term="t_turn · Vmax → Vmin" value={unit(metrics.analyzer.tTurnS, 's')} hint="Time from Vmax to Vmin — the speed of the lifter under the bar. Käks' third measure." />
+            <Row term="S_vmax · height at Vmax" value={cm(metrics.analyzer.sVmaxCm)} />
+            <Row term="S_max · top of flight" value={cm(metrics.analyzer.sMaxCm)} hint="The apex before the catch, above the start." />
+            <Row term="S_fly · flight" value={cm(metrics.analyzer.sFlyCm)} hint="S_max − S_vmax: how far the bar rises after peak velocity." />
+            <Row
+              term="S_remain · beyond ballistic"
+              value={metrics.analyzer.sRemainPct === null ? '—' : `${num(metrics.analyzer.sRemainPct, 1)} % (${num(metrics.analyzer.sRemainCm ?? 0, 1)} cm)`}
+              hint="The flight the impulse alone (Vmax²/2g) does not explain — what the arms and the pull-under added, as a share of S_max."
+            />
+            <Row term="S_sit · catch height" value={cm(metrics.analyzer.sSitCm)} hint="The bar at the deepest point of the catch, above the start." />
+            <Row term="S_fall · into the catch" value={cm(metrics.analyzer.sFallCm)} hint="S_max − S_sit." />
+            <Row term="F1 · first pull" value={pct(metrics.analyzer.f1Pct)} hint="Peak vertical force on the bar, as a share of the load. From acceleration alone — no mass needed. 100 % holds the bar still." />
+            <Row term="F2 · knee passing" value={pct(metrics.analyzer.f2Pct)} hint="Minimum vertical force through the transition." />
+            <Row term="F3 · second pull" value={pct(metrics.analyzer.f3Pct)} hint="Peak vertical force in the second pull." />
+            <Row term="Fbr · catch" value={pct(metrics.analyzer.fbrPct)} hint="Peak vertical force braking the bar in the catch." />
+            <Row term="PSK · load × Vmax" value={metrics.analyzer.pskNs === null ? '—' : `${num(metrics.analyzer.pskNs, 0)} N·s`} hint="The analyzer's 'power': the bar's momentum at Vmax. Needs the bar mass." />
+          </dl>
+        </section>
+      )}
+
       {metrics && metrics.phases.length > 0 && (
         <section style={section}>
           <header style={header}>
@@ -210,6 +258,14 @@ function transitionLoss(value: number | null): string {
 
 function unit(value: number | null | undefined, suffix: string): string {
   return value === null || value === undefined ? '—' : `${num(value, 2)} ${suffix}`;
+}
+
+function cm(value: number | null | undefined): string {
+  return value === null || value === undefined ? '—' : `${num(value, 1)} cm`;
+}
+
+function pct(value: number | null | undefined): string {
+  return value === null || value === undefined ? '—' : `${num(value, 0)} %`;
 }
 
 function Row({

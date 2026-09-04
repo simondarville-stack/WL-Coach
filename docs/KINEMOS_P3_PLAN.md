@@ -6,8 +6,15 @@
 0.81.x).
 
 > **Status: P3a SHIPPED** — the charts in 0.82.0, synced side-by-side playback
-> in 0.83.0. The rest of P3 — trends, talkover, sharing, overlay export, the
-> calibration tiers — is not started.
+> in 0.83.0. **P3b SHIPPED** — metric trends in 0.84.0 (§5 below). **P3c
+> SHIPPED** — the reference lift, same ship (§6). **P3d SHIPPED** — the
+> OpenCV assists: find the plate, snap the outline, stabilise the camera,
+> same ship (§7). **P3e–P3g SHIPPED** — sets and phone footage (§8, 0.85.0),
+> the German analyzer's measures (§9, 0.85.0), sets in the viewer with
+> colour re-acquisition, height charts and the knee mark (§10, 0.86.0).
+> **P3h SHIPPED** — sharing to the athlete and to a colleague, overlay
+> export and talkover (§11). **P3i SHIPPED** — the lens tier, measured from
+> the gym's own straight edges (§12). P3 is complete.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made
@@ -199,11 +206,740 @@ Deliberately deferred, in the order they are likely to be picked up:
 - **Synced side-by-side playback.** Design §8 pairs it with the path overlay.
   Deferred because it needs two frame servers and two decoders live at once,
   and the overlay carries most of the value on its own.
-- **Metric trends over time.** Gated on design §13 open question 3.
-- **Model-lift comparison.** Third in the design's own ordering; wants a notion
-  of a reference lift that does not exist yet.
+- **Metric trends over time.** Was gated on design §13 open question 3;
+  decided 02/09/2026 and shipped as P3b (§5).
+- **Model-lift comparison.** Third in the design's own ordering; wanted a
+  notion of a reference lift, which P3c supplied (§6).
 - **Talkover recording, sharing, overlay export.** The rest of P3.
 - **Device-profile and phone-model calibration tiers.** Listed under P3 in the
-  design plan; unrelated to comparison and independently schedulable.
+  design plan; unrelated to comparison and independently schedulable. The
+  stabiliser tier landed in P3d (§7); the device-profile tier has not.
 - **Comparing more than two lifts.** Three curves on one chart is a different
   design problem, and no coach has asked yet.
+
+---
+
+## 5. P3b — Metric trends (shipped 0.84.0)
+
+Design §8's second comparison need: *"is the second pull getting faster over
+the block"*. Unblocked by the §13 Q3 decision — KinEMOS metrics stay adjacent
+to the Analysis registry, and Analysis reads them through an adapter.
+
+### Architecture decisions
+
+1. **One metric catalogue.** `engine/metricCatalogue.ts` is the single list of
+   what KinEMOS measures — id, label, unit, decimals, which way is up, why it
+   matters, and a reader that pulls the value off a computed lift. The delta
+   table (`compareMetrics`) now maps over it instead of carrying its own copy,
+   and the trend view and the Analysis measures list exactly the same set
+   (CLAUDE.md core principle 3).
+2. **The cache column has a schema.** `kinemos_analyses.metrics` was a bare
+   `LiftMetrics`; it is now `LiftMetrics` plus the rep summary under
+   `schema: 1` (`toStoredMetrics` / `fromStoredMetrics`). A row from before the
+   number reads as schema 0 with no summary, so peak height, loop width and
+   duration are null on it rather than zero, and a future change to what is
+   stored can be told apart from a season of older rows instead of drawn
+   through as one line. No migration: the column was already JSONB and every
+   reader is lenient about shape and strict about numbers.
+3. **Trends read the cache; comparison recomputes.** Unchanged from P2's
+   intent: a trend over a season must not run the pipeline per rep, and a
+   comparison the coach is looking at must agree with the viewer beside it.
+   A rep with no stored number is *counted* in the trend view's caption, not
+   hidden — the missing ones are usually the oldest, and a rising line that
+   starts where the data starts is a different claim from one that starts
+   where the athlete started.
+4. **Velocity is never shown without load.** The time view stacks a load panel
+   under the metric on the same time axis — two panels, one scale each, never
+   two y-axes on one plot — and the load view puts the metric against the
+   kilograms directly. Quality rides on the mark's shape (A filled, B ring,
+   C diamond, ungraded cross), never on colour alone.
+5. **A KinEMOS rep counts nothing towards training totals in Analysis.** It is
+   the set the log already counted, seen on video. Its fact row carries zero
+   sets, zero reps, no kilogram load and `countsTowardsTotals: false`; only
+   its `custom['kinemos:*']` values are readable, through measures registered
+   at runtime beside the coach's own — nothing KinEMOS is in the registry's
+   seed, as Q3 was decided.
+
+### What shipped
+
+**Engine (pure)** — `engine/metricCatalogue.ts`: `METRIC_CATALOGUE`,
+`metricById`, `toStoredMetrics`, `fromStoredMetrics`, `STORED_METRICS_SCHEMA`.
+`compare.ts` refactored onto it; its 28 tests unchanged and green.
+
+**Adapter (`src/kinemos/lib/analysisAdapter.ts`)** — `projectLiftRecords`
+(analyses ⋈ library → one flat record per rep with a value per catalogue
+metric, grade, error, load, mass, schema), `factsFrom` (long form),
+`filterLiftRecords`, `loadKinemosLiftRecords`. `analysisMetrics.ts` —
+`kinemosAnalysisMetrics()`: one Analysis `BaseMetricDef` per catalogue metric
+(default aggregation by the metric's own sense of "up": max, min or mean) plus
+an analysed-rep count and the estimated velocity error behind the grade.
+
+**Viewer (`components/TrendsView.tsx`)** — a TRENDS toggle beside COMPARE.
+Metric picker, this-exercise / all-exercises, over-time / against-load, 3–12
+months or all. Hover reads the rep out in the header; click opens it. A
+dense table of every rep in view underneath.
+
+**Analysis module** — `buildFacts` gained a KinEMOS stream (fed by `fetchFacts`
+through the adapter; a KinEMOS read failure leaves the training facts intact),
+`AnalysisModule` registers the measures at runtime, `format.ts` knows m/s, cm,
+W and s. A coach can now put "Second pull (KinEMOS)" in a pivot next to max
+load and tonnage, per week or per date.
+
+**Cache refresh (`lib/recompute.ts`)** — `computeFromBundle` is the one
+pipeline over a stored rep, shared by the comparison loader and by
+`refreshStoredMetrics`, which rewrites the metrics cache of reps whose stored
+schema is behind the current one. The Trends view offers it as a
+RECOMPUTE N REPS action beside the caption that counts them, reports what it
+could not do (not calibrated, no track, gone) and reads the history again.
+The grade is deliberately left alone: it needs the frame server's sample rate
+and its variable-frame-rate verdict, which only the viewer has.
+
+**Bench** — `verify/trends-preview.html` renders the view against a
+synthetic season (five months of snatches, a few cleans, mixed grades, stale
+reps, a simulated refresh); `verify/shoot-trends.mjs` screenshots every state
+through Playwright. The first render caught what jsdom could not: the joining
+line zig-zagged through same-day reps (now through the day's mean, said so on
+the chart), a 0,025 axis step printed as 1,77 / 1,80 / 1,82 (steps are 1, 2,
+5, 10 only), y labels sat on the first marks (fixed left inset), and the
+single-rep state said the same thing twice.
+
+**Tests** — catalogue round trip and leniency (9), adapter projection and
+filters (10), Trends view words, modes and the refresh (11), recompute (8),
+KinEMOS fact stream and measures (8).
+
+### Not in P3b
+
+- **Recomputing a rep's grade headlessly.** The refresh rewrites metrics only;
+  a grade needs the frame server. A rep graded under an older rule keeps its
+  letter until it is reopened.
+- **Trend lines in the athlete app.** The adapter makes it a projection
+  question; the surface is a product decision.
+- **Load–velocity profile fitting.** The against-load view shows the points;
+  fitting a line and deriving a minimum-velocity threshold is P5's
+  VBT→planner work (design §12).
+
+---
+
+## 6. P3c — The reference lift (shipped with 0.84.0)
+
+Design §8's third comparison need, *versus a model lift*, deferred from P3a
+for want of a notion of a reference. This is that notion at its smallest, and
+deliberately per athlete rather than a library of ideal lifts: the coach marks
+one analysed rep as the athlete's reference for an exercise — their best
+snatch, the one that looked right — and the other surfaces read against it.
+
+### Decisions
+
+1. **One reference per (athlete, exercise), kept in the application.** An
+   analysis has no athlete or exercise of its own (it names its clip; both
+   live on the library row), so the database cannot state the constraint.
+   `referenceService.markAsReference` clears the previous holder, found
+   through the adapter's join, before setting the new one. Migration
+   `20260902200000_kinemos_reference_lift` adds `is_reference` and a partial
+   index; nothing else changes shape.
+2. **The reference is a standard, not a data point.** The trend view draws it
+   as a line whatever the range or scope — narrowing to three months must not
+   lose the thing the three months are read against — and only when it has a
+   value for the metric on screen.
+3. **A reference needs a calibrated, marked lift**, the same gate as
+   comparison. Written straight through on toggle, not via the debounced
+   save: it is one deliberate act and it has a side effect on another row.
+
+### What shipped
+
+`lib/referenceService.ts` (`referenceOf`, `markAsReference`); `is_reference`
+on the analysis row, the adapter record and the comparison candidate. Viewer:
+a SET REFERENCE / REFERENCE toggle in the header. Comparison: the reference
+lists first for its exercise, marked ★, and is preselected when the picker
+opens with nothing chosen. Trends: a dashed line at the reference's value,
+labelled with the value and its load, in both the time and the load views;
+the reference row marked in the table. Tests: service (5), trends (2),
+adapter and fixtures updated.
+
+### Not in P3c
+
+- A library of model lifts across athletes (design §12 P5), and any
+  "distance from the model" score. The reference is one athlete's own lift.
+
+---
+
+## 7. P3d — The OpenCV assists (shipped with 0.84.0)
+
+Asked for directly: "why don't we use some of the advanced methods in OpenCV
+to enhance the tracker". The answer was measured before anything was built.
+
+### What the bench said (`verify/tracker-bench.py`)
+
+A degraded synthetic snatch — 384×288 at 50 fps, a rotating branded plate,
+motion blur scaled to bar speed, a hand sweeping across the plate through the
+second pull, sensor noise, camera shake, a real VP8 encode — scored against
+the trajectory it was drawn from:
+
+| Tracker | RMS px | worst px | lost |
+| --- | --- | --- | --- |
+| KinEMOS NCC, fixed template, through the browser | 0,68 | 0,90 | 0 |
+| OpenCV `matchTemplate`, fixed template | 0,52 | 1,26 | 0 |
+| OpenCV `matchTemplate`, adaptive template | 2,23 | 3,79 | 0 |
+| OpenCV Lucas–Kanade optical flow | 2,11 | 4,84 | 0 |
+| OpenCV `HoughCircles` per frame | 0,96 | 4,16 | 0 |
+| OpenCV `TrackerMIL` | 3,31 | 4,44 | 0 |
+
+Our tracker already *is* the OpenCV method that works for this target — a
+fixed-template normalised cross-correlation is what `matchTemplate` computes.
+The general-purpose trackers update their model every frame, which is what
+makes them robust to appearance change and exactly what makes them drift on
+a plate whose appearance changes every frame. So the tracker was left alone.
+
+### What was built instead
+
+OpenCV earns its place around the tracker, not in it. `src/kinemos/cv/*` is
+a layer the engine never imports, loaded on first use as its own Vite chunk
+(`@techstark/opencv-js`, 13 MB; `opencv.ts` is the one loader, `require()`
+under Node for vitest):
+
+1. **Find the plate** (`plate.ts` `detectPlates` → `findPlate`). Hough
+   circles over the plausible radius range, ranked by *edge support* — the
+   fraction of the circumference with an edge under it — rather than by
+   votes, which favour busy backgrounds. One press in the calibration panel
+   outlines the plate, marks its centre as the bar end and tracks from it:
+   zero clicks from clip to bar path.
+2. **Snap to the edge** (`refinePlateEllipse`). Canny edges in a ring round
+   the outline; per angular bin the *outermost* edge pixel, so the rim's
+   outer edge — the plate's diameter — wins over its inner one; a contrast
+   test so wall grain does not qualify; a direct least-squares ellipse fit;
+   then the intensity gradient along each radial, interpolated, for the
+   sub-pixel edge. Reports the support, so a half-hidden plate is flagged
+   rather than passed off. A near-circular fit gets tilt 0 by definition —
+   its tilt is noise, and 88° of it once swapped the calibration's axes.
+3. **Stabilise the camera** (`stabilise.ts`). Corners on the background
+   (`cornerMinEigenVal` and a hand-rolled non-maximum pick, since this build
+   lacks `goodFeaturesToTrack`), excluded round the plate, carried by
+   pyramidal Lucas–Kanade one frame at a time, and a *similarity* — not a
+   full affine; a hand does not shear — fitted by RANSAC from each frame
+   straight to the anchor frame's corners, never chained, with a step guard a
+   hand cannot exceed. Only the tracked points are corrected; the video is
+   untouched. Offered in the grade panel when the clip is handheld or
+   unknown; sets the camera to "stabilised".
+
+### Measured, through the real path
+
+| | result |
+| --- | --- |
+| Zero-click detection on the degraded clip | centre within 0,4 px, tilt 0, radius ≈ 1 px outside the drawn rim (codec blur) |
+| Handheld random walk, up to 52 px, raw track vs the gym | 35 px RMS; loop width read as 49 cm for a 17 cm loop |
+| Same, stabilised | 1,05 px RMS, 0 frames off; loop 17,2 cm, height 111,3 cm (true 111) |
+| Static clip, stabilised anyway | track moved by under 2 px |
+
+Ten unit tests on drawn scenes; `verify/track-clip.html` gained `?auto=1`
+and `?stabilise=1`; the bench gained `--handheld` and `--world` scoring.
+
+### The first real footage (0.83.3 fixtures, `verify/fixtures/real/`)
+
+Two clips of the same snatch — "Træk side" (perpendicular) and "Træk skråt"
+(oblique), 384×288 at 50 fps, tripod — through `verify/track-clip.html` with
+`?auto=1`: zero clicks from clip to bar path, on both.
+
+| | side | oblique |
+| --- | --- | --- |
+| Plate found | (221,0, 245,1), 28,2×25,8 px, support 1,00 | (244,3, 217,5), 20,9×19,9 px, support 0,90 |
+| Tracked | 170/170, min confidence 0,68, never lost | 188/188, min 0,51, 9 doubtful frames at the very end |
+| Lift-off → peak | 0,60 s | 0,62 s |
+| Peak vertical velocity | 2,55 m/s | 2,16 m/s |
+| Height to overhead | 157 cm | 161 cm |
+| Recovery peak | ≈1,0 m/s | ≈1,0 m/s |
+
+Same shape (pull, turnover hook, drop, recovery), same timing, heights within
+2,5 % — and a 15 % gap on peak velocity that calibration alone cannot explain
+in the direction it points. What the real plates showed that the synthetic
+ones could not:
+
+- **The plate's shadow inflates the outline downward.** On the side view the
+  face is a 52 px circle by intensity profile (r = 26); the snap found a
+  56 px major axis at 14° — the outermost edge at the bottom is the shadow's,
+  not the plate's. Picking the strongest edge per bin instead gives 27,2:
+  better, still a pixel out. A calibration that is 4–8 % large under-reads
+  every velocity by the same.
+- **A thick bumper seen obliquely has two 45 cm circles**, its face and the
+  far edge of its side, offset along the bar. The oblique fit mixes them:
+  face-only reads 36 px tall, face-and-rim 44 px. That is a 20 % spread on
+  the oblique scale from the choice of outline alone.
+- **The oblique view also changes depth along the pull.** The bar travels
+  back toward the lifter, which for a camera off the front corner is away
+  from the lens: the scale shrinks along the path and the peak under-reads.
+  A perpendicular side camera has no such term.
+
+So for *velocities*, film from the side, perpendicular, and let the coach
+check the outline against the plate face (the snap reports support, not
+which edge it chose); the oblique view is for path shape. Both of these are
+now product facts rather than assumptions.
+
+**Superseded by the accuracy study.** The 15 % gap above was explained here
+by outline bias and depth; the overnight study that followed
+(`docs/KINEMOS_ACCURACY_STUDY.md`) measured each term and found the
+explanation wrong in its largest part. The calibration was *rotating*
+displacements onto the fitted outline's axes, and the orientation of a
+near-circular outline is noise (+11,9° and −16,9° for two level cameras) —
+that alone made the 46 cm "loops" and most of the velocity gap. With gravity
+as the reference, a timing repair before resampling, the track re-centred on
+the plate's outline frame by frame, and a peak-stability factor in the grade,
+the two views agree to about 3 % on peak velocity and 2 % on height — and,
+once the plate's FACE rather than its shadow and rim thickness sizes the
+outline and the scale is read at mid-pull, on a scale that is measured rather
+than merely shared. The study is the reference for what the pipeline does
+and why; the paragraphs above stand as the record of what the first pass
+concluded.
+
+One environment note: the bundled headless Chromium has no H.264 decoder, so
+the fixtures were transcoded to VP8 for this run; a coach's Chrome decodes the
+MP4 directly.
+
+### Not in P3d
+
+- **Ground truth on real footage.** The numbers above are consistent with
+  each other and with a snatch, and nothing here has been checked against a
+  hand-labelled track or a known bar path. The 15 % gap is explained, not
+  measured away.
+- **The device-profile calibration tier** (lens distortion by phone model).
+- **Re-rendering a stabilised clip.** The points are corrected, the picture
+  is not; a coach watching a handheld clip still sees it move.
+
+
+## 8. P3e — Sets, and the first phone footage
+
+Three Messenger clips of Caroline's snatch doubles — 576×1024, 30 fps,
+phone behind the lifter — were the first whole sets through the pipeline,
+and the first footage that was not a tripod at 50 fps. They broke three
+things and paid for the fixes (`docs/KINEMOS_ACCURACY_STUDY.md` §3.7–3.8).
+
+### What broke
+
+- **The tracker's search radius** was a fixed 14 px; the bar moves 40 px a
+  frame on this footage. It is now derived from the plate's size on screen
+  and the clip's frame rate (`engine/tracker.ts`).
+- **Giving up** counted a blurred plate as a lost one and ended every rep
+  before the catch. A miss now needs an implausible jump as well as a poor
+  match; a long run of poor matches still ends the track.
+- **A double is two reps and a drop.** The tracker loses the plate on the
+  drop, and one track from one click gave the first rep and garbage. Two
+  pieces: `engine/reps.ts` cuts a track into reps from rests and rises alone
+  (a rest is slow AND on its local floor, so a phone that moved between reps
+  and a pause at the knee are both handled; a step faster than any barbell
+  ends a rep where the tracker lost it), and the harness's `?reps=1` mode
+  finds the plate again after a loss — round is not enough, the candidate
+  must correlate with the set's own template, because the fan behind this
+  platform is round — tracks on, and calibrates each rep on the outline at
+  its own rest.
+
+### What it gives, from one click on the first frame
+
+| | rep 1 | rep 2 | own-rest scale vs the set's |
+| --- | --- | --- | --- |
+| Set 1 | 2,29 m/s · 136 cm | 2,33 m/s · 129 cm | −4 % / rejected (−14 %) |
+| Set 2 | 2,31 m/s · 134 cm | 2,32 m/s · 136 cm | −1 % / −1 % |
+| Set 3 | 2,37 m/s · 138 cm | 2,27 m/s · 129 cm | −1 % / +2 % |
+
+Every peak stable across cutoffs to within 1 %, every rep found without a
+frame window set by hand. Against the same reps measured earlier with
+hand-set windows and per-rep plate finds (2,39/2,39, 2,33/2,25, 2,40/2,20)
+the differences are 1–4 %, and all of them are the scale: an 80 px plate
+seen obliquely with its thickness and the discs behind it in view is
+outlined to ±4 % depending on the frame, which is the accuracy floor for
+this kind of footage. Filming from the side, closer, and at the phone's
+native quality rather than a Messenger copy would each buy some of it back.
+
+### Not in P3e
+
+- **The viewer does not yet split sets.** The engine and the harness do;
+  the viewer still tracks one rep from one anchor. Wiring `splitReps` and
+  the re-acquisition into KinemosViewer, with a rep picker, is the next
+  slice.
+- **Re-acquisition mid-flight.** A plate lost during a pull (the fan case)
+  is found again only at the next rest. A colour segmentation of
+  competition bumpers would find it in the air.
+- **A dense-flow tracker** was tried and is not better on this footage
+  (study §3.7).
+
+## 9. P3f — The German analyzer's measures
+
+Simon's 2018 DTU report (*Measurement Systems for Performance Training in
+Olympic Weightlifting*, §3.1) tabulates what the German Weightlifting
+Analyzer 3.0 reads off a snatch or clean, from the BVDG teaching material,
+and what a 40-year coach (Peter Käks) ranked as mattering: Vmax, the x–y
+path, t_turn, S_max, S_sit. KinEMOS had the first two and half of the rest
+under other names. `AnalyzerMetrics` in `engine/phases.ts` now carries the
+full set in EMOS units, computed from the phase spans the coach can already
+correct:
+
+| measure | read as |
+| --- | --- |
+| V1, V2, Vmax, Vmin | peak in the first pull; minimum through the transition; the overall peak; the lowest velocity after it |
+| t_turn | Vmax → Vmin |
+| S_vmax, S_max, S_fly | height at Vmax; the apex (the catch phase's start, or the first stop after Vmax); their difference |
+| S_remain | S_fly minus the ballistic rise Vmax²/2g, in cm and as a share of S_max |
+| S_sit, S_fall | the lowest height in the catch; S_max minus it |
+| F1, F2, F3, Fbr | vertical force as % of load — (1 + a/g)·100, so no mass is needed — peak in the first pull, minimum through the transition, peak in the second pull, peak in the catch |
+| PSK | load × Vmax, N·s, the material's "power"; null without a mass |
+
+Heights are above the bar's first mark; the material's "from ground" values
+are these plus the plate's radius. The jerk table (report Figure 10) needs a
+dip–drive–split phase model and is not done. The measures are in the metric
+catalogue, so the comparison table, the trends view and the Analysis builder
+list them; the viewer shows them in an ANALYZER section of the metrics rail;
+the stored-metrics schema is 2 and older rows recompute on demand.
+
+### Three rules the phone footage forced
+
+- **A guessed edge yields no analyzer number.** V1, V2, F1–F3 read off a
+  transition the engine placed by proportion would be numbers about the
+  fallback rule. They are null unless the edge was detected or set by the
+  coach (P3 plan §2 decision 3, applied to the analyzer).
+- **The transition from acceleration when velocity has no dip.** Five of
+  Caroline's six reps show a shoulder, not a trough: the bar keeps rising
+  through the knee, only slower. In acceleration the double knee bend is
+  unmistakable — a peak as the first pull drives, a trough of 1,3–1,7 m/s²
+  as the knees come under, a higher peak as the hips open. `findUnweighting`
+  reads the transition from that when `findFirstVelocityPeak` finds nothing,
+  the boundaries carry the rules `acceleration-peak` / `acceleration-trough`
+  so the coach knows which signature placed them, the threshold is the
+  coach's (`minUnweightingMs2`, default 1 m/s²), and V2 is the velocity where
+  the second pull starts rather than the span's minimum, which for a
+  monotone velocity would be V1 again.
+- **A rep ends in the catch, not at the apex.** `splitReps` now runs each
+  rep on to the deepest point of the catch — stopping at a recovery, at the
+  bar coming to rest, or at a gap in the samples — so Vmin, t_turn, S_sit,
+  S_fall and Fbr have the frames they need. `RepSegment` carries `apexT`
+  and `catchT` separately.
+
+### What Caroline's doubles read (30 fps phone clips, camera behind)
+
+| | V1 | V2 | Vmax | Vmin | t_turn | S_vmax | S_max | S_fly | S_remain | S_sit | S_fall | F1 | F2 | F3 | Fbr |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Set 1 rep 1 | 1,05 | 1,10 | 2,29 | −0,82 | 0,49 s | 92 | 130 | 38 | 9 % | 96 | 34 | 131 | 114 | 149 | 122 |
+| Set 1 rep 2 | 1,02 | 1,10 | 2,33 | −0,79 | 0,59 s | 89 | 129 | 40 | 9 % | 106 | 23 | 132 | 110 | 153 | 139 |
+| Set 2 rep 1 | 0,96 | 1,07 | 2,31 | −0,73 | 0,40 s | 91 | 133 | 43 | 12 % | 103 | 31 | 128 | 114 | 149 | 120 |
+| Set 2 rep 2 | 0,82 | 0,97 | 2,32 | −0,80 | 0,43 s | 90 | 136 | 46 | 13 % | 105 | 31 | 130 | 113 | 154 | 124 |
+| Set 3 rep 1 | — | — | 2,37 | −0,82 | 0,40 s | 96 | 136 | 40 | 9 % | 109 | 26 | — | — | — | 133 |
+| Set 3 rep 2 | 0,89 | 0,97 | 2,27 | −0,79 | 0,40 s | 95 | 134 | 39 | 9 % | 121 | 13 | 127 | 110 | 158 | 123 |
+
+Velocities in m/s, heights in cm above the start, forces in % of load. The
+consistency across reps is the point: F3 within 149–158 %, S_remain 9–13 %,
+Vmin within 0,1 m/s. The forces are second derivatives of a 30 fps track
+through a 6 Hz filter and should be read to about ±10 % of load; on 60 fps
+or better they tighten. Set 3 rep 1's transition was not found on this
+footage.
+
+## 10. P3g — Sets in the viewer
+
+> **Status: SHIPPED in 0.86.0.**
+
+Everything §8 proved in the harness, in the product: a coach drops a clip of
+a double or a triple into KinEMOS, clicks the bar end once, and gets a rep
+per lift. `src/kinemos/lib/setTracker.ts` is the harness's set mode as a lib
+function — track from the anchor, find the plate again after each drop (a
+candidate must correlate with the set's own template; round is not enough),
+track on, cut into reps with `engine/reps.ts`, calibrate each rep on the
+outline at its own rest with the set's calibration as the fallback. The
+viewer's TRACK THE SET button runs it and persists each rep as what the rep
+model already is — a `kinemos_analyses` row per `rep_index` with its own
+track, calibration and cached metrics — so the rep picker, the comparison,
+the trends and the Analysis builder need no change to see them.
+
+Decisions:
+
+1. **A set is reps, not a track with markers.** The rep model existed; a
+   set becomes N rows of it. Nothing downstream learns a new shape.
+2. **Rep 1 replaces the current rep.** The coach clicked on rep 1's floor
+   frame; the analysis they are in becomes rep 1. Later reps take the next
+   indices, replacing any existing rows at those indices — a set tracked
+   twice is the same set.
+3. **Each rep carries its own calibration and its own tracker tier.** Grade
+   and analyzer measures are per rep; the phone moving between reps is a
+   per-rep fact.
+4. **What could not be split is said.** No reps found, a plate lost and not
+   found again, a rest fit not believed — each is a sentence under the
+   button, not a silent partial result.
+
+**Displacement-domain charts — done.** The analysis panel has a
+`vs time | vs height` toggle. Against height the plot is the report's
+Figure 9: vertical velocity, coloured by phase because the phase band above
+is a timeline and says nothing about where on a height axis a phase is, with
+force (% of load, new as a secondary curve in both domains) or power dashed
+alongside; the curve runs left to right up the pull and back leftwards
+through the drop under. V1, V2, Vmax and Vmin are dots with their names in
+both domains, placed by `engine/phases.ts::locateAnalyzerEvents` — the same
+search `computeAnalyzerMetrics` reads its numbers from, so a V2 on the curve
+is the V2 in the table. A press on either plot seeks: by x against time, to
+the nearest sample of the curve against height, so the drop-under leg is
+reachable where it lies over the pull.
+
+**Knee-height mark — done.** A KNEE tool (`K`): one click on the athlete's
+knee on the start frame. The mark is an annotation (a `measurement` whose
+payload says `type: 'knee'`), so it travels with the rep, lists in the rail
+and deletes like any other; a second click replaces it. The stage draws the
+height as a dashed line across the frame, so the bar can be watched crossing
+it; the charts draw it as a line at that height against height and at the
+crossing moment against time (`engine/phases.ts::kneeCrossing`, the first
+sample at or above the knee before Vmax); the ANALYZER section adds "V at
+the knee" between V2 and Vmax — the check that the engine's transition is
+where the coach's eye puts the knee. Height is measured from the bar's first
+mark with the rep's calibration, so it is recomputed, never stored as truth.
+
+**Colour-assisted re-acquisition — done.** `engine/plateColour.ts` (pure)
+samples the plate's hue from the face inside the coach's outline, scores how
+much of a disc is that colour, and finds the plate-sized patch of it nearest
+a guess on a coarse grid. The set tracker uses it three ways:
+
+- **The unsure tail is checked, not trusted or thrown away.** After a
+  give-up, the low-confidence frames at the end are kept up to the first one
+  that is not on the plate's colour. A blurred plate in the second pull is
+  unsure and still the bar; a fan the template settled on is unsure and not.
+  (The first attempt threw the whole tail away and lost every blurred pull;
+  the log says which frames went and why.)
+- **In flight, before the next rest.** The frames just after a loss are
+  searched for a plate-coloured patch near where the plate was heading —
+  its last motion carried forward a few frames — with a reach capped at two
+  radii, because the plate on the far end of the bar is the same blue and a
+  wider search found it first. A hit the set's template cannot recognise at
+  all (score < 0,25) is not taken.
+- **At rest, round is not enough.** A round thing near the set's start must
+  be the plate's colour; the fan on set 2 scored 3 % and was turned down.
+  Without a colour (a black plate) the template-correlation check stands.
+
+Two things the runs forced on the rest of the pipeline. **One template per
+set:** a join used to cut a fresh template where the plate was found, so
+each piece centred the plate its own way and the join was a step in the
+track; the set keeps the template cut where the coach clicked, matches it
+near every hit (`searchAround`, now exported; `TrackOptions.template`) and
+tracks on with it. **The lift is the first rise:** with the drop now
+followed, "the fastest rise between rests" was the bounce of a bar dropped
+from overhead — 3 m/s off the platform. `splitReps` takes the first rise
+from a rest that gets high enough and reads Vmax on the way up to it.
+
+`verify/track-clip.html?reps=1` now runs `trackSet` itself (one procedure,
+not a copy); `?nocolour=1` turns the colour off. Caroline's three doubles,
+one click each, against the per-rep runs of §9:
+
+| set | rep 1 Vmax | rep 2 Vmax | own calibration | joins | notes |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2,29 (2,29) | 2,30 (2,33) | both | 2 | drop after rep 1 cut at frame 154 as not on the plate |
+| 2 | 2,31 (2,31) | 2,32 (2,32) | both | 9 | the fan turned down by colour, 3 % |
+| 3 | 2,37 (2,37) | 2,28 (2,27) | both | 7 | the plate found again in flight at frames 52 and 85, through the fan |
+
+Peak stability under 1 % on five of six reps. Cost: 270–470 ms a frame
+headless at 1080p, most of it the colour reads on the tail check — a
+`getRgba` cache is the obvious saving when it matters.
+
+P3g is complete. What it leaves open: the far plate is the near plate's
+colour and only motion tells them apart, so a loss while the bar is
+overhead and still can find the wrong end; a size prior (the far plate is
+smaller in perspective) would settle it. And a black plate has none of
+this — the shape-only path is what it gets.
+
+---
+
+## 11. P3h — Sharing to the athlete
+
+> **Status: in progress.** The next working phase after 0.86.0.
+
+The design's consumer (§2) is the athlete, who "receives annotated
+snapshots, talkover clips, numbers via the athlete app/Inbox", and its rule
+for the channel is one line (§9): *sharing rides existing EMOS channels; no
+new messaging infrastructure.* So a share is a coach handing an athlete one
+analysed rep, through the coach↔athlete thread every surface already has.
+
+**What a share is.** Three writes that belong together
+(`src/kinemos/lib/shareService.ts`):
+
+1. **The picture** — this frame with the bar path and the outline drawn, the
+   same JPEG a saved snapshot is (`composeSnapshot`), into R2.
+2. **The coach's words** — an ordinary message in the athlete's *general*
+   coach thread (`training_log_messages`, no session), stamped with the
+   athlete's own environment as the inbox does when it creates a session.
+   That is what makes it reach every surface, count as unread and light the
+   badges, with nothing new. When the coach writes nothing the message says
+   what was shared: "Shared a lift analysis: Snatch 62,5 kg — Vmax 2,31 m/s,
+   height 134 cm".
+3. **The card** — a `kinemos_shares` row (design §11) pointing at both, with
+   the numbers **frozen** in `summary`: athlete, exercise, date, load, rep,
+   Vmax, peak height, grade, and where the clip plays from. A coach who
+   re-tracks the rep tomorrow changes the analysis; the athlete still sees
+   what they were sent.
+
+Migration `20260903120000_kinemos_shares.sql`. It has to be applied by hand
+(the Supabase connector was not authorised in the session that wrote it);
+until it is, the viewer's SHARE says so and every thread loads without the
+cards.
+
+**Where it shows.** `ShareMessageBubble` (`src/components/chat/`) is the
+card: the picture, "Snatch · 62,5 kg · 03/09/2026 · rep 2", the numbers as
+chips, "Watch the clip" when the clip is reachable, no judgement. The three
+thread surfaces interleave it by time the way session clips already are —
+the athlete app's coach thread (dark), the desktop coach inbox (light; a
+card opened by the athlete is labelled so), the coach field app. The athlete
+opening the picture or the clip stamps `athlete_read_at`, one-way like
+message read state: the coach sees it under SHARE, the athlete never sees
+the coach's.
+
+**Where it starts.** A SHARE section in the viewer rail: a line to the
+athlete (optional) and "Send to Caroline". Absent an athlete on the clip it
+says to attach one in the library; absent a track or calibration it says
+what the athlete would get. Earlier shares of the rep list underneath with
+when they were sent and opened, and can be taken back (the card goes; the
+message stays, as anything said stays).
+
+Decisions:
+
+1. **The general thread, not a session thread.** A lift analysed in KinEMOS
+   may come from a log clip, a competition attempt or a direct import; only
+   the first has a session. The general thread is the one every athlete
+   has.
+2. **A message plus a card, not a message with a payload.** The message
+   table stays what it is — text — and the card is a KinEMOS object with a
+   KinEMOS schema, read by the surfaces as an extra: a failed read leaves
+   the thread whole.
+3. **The athlete may watch the clip.** R2 reads are open (the write token
+   is the only gate) and log clips play from Stream already; the card
+   carries the playback URL the library already resolves. A future auth
+   phase gates it with everything else.
+4. **Nothing is judged on the card.** The numbers are what the coach chose
+   to send; what they mean is the message beside them.
+
+**Overlay export — done.** Design §9's third target: "mp4 with burned-in
+overlay for external use — seminars, socials". EXPORT under SHARE writes
+the tracked range of the clip (half a second either side) with the path as
+far as the bar has got, a ring on the bar end, a caption naming the lift
+and the bar's vertical velocity as a live readout, through mediabunny's
+`CanvasSource` (`src/kinemos/lib/overlayExport.ts`). Each frame keeps its
+own timestamp and duration, so a variable-frame-rate phone clip comes out
+at its real timing. H.264 in MP4 where the browser can encode it; VP9 in
+WebM otherwise — headless Chromium, and the note under the button says so.
+The plate outline is not drawn: it is how the numbers were made, not part
+of the lift. `verify/track-clip.html?export=1` writes the file headlessly
+and reads it back with mediabunny to say what it holds.
+
+**Talkover — done.** Design §9: "record microphone + screen (viewer canvas)
+while scrubbing — MediaRecorder-based". The microphone button in NOTES &
+SNAPSHOTS starts a recording; the coach scrubs, steps and talks; the
+square stops it. What is recorded is not the screen but a canvas of its
+own that mirrors the stage — the frame under the playhead and the path as
+far as the bar has got, redrawn every animation frame
+(`src/kinemos/lib/talkover.ts`, the same drawing as the export) — so the
+file is the size of the clip and free of chrome. The microphone rides
+along when granted; refused, the talkover is picture only and says so.
+What MediaRecorder writes is what is stored, in R2 under the rep as a
+`talkover` annotation (the kind the P1 schema already allowed): WebM from
+Chrome and Firefox, MP4 from Safari; no transcoding. It plays from the
+rail, and the next share of the rep carries the latest one — "Hear the
+coach" on the card. Not verified headlessly: MediaRecorder over a canvas
+stream needs a real browser session; the pure parts are tested.
+
+**Sharing with a colleague — done.** Design §9's second target. The
+club layer's recipients turned out to exist already: the coach profiles of
+the environment, which the shared inbox uses to label who wrote a message.
+So under SHARE, next to "Send to Caroline", a picker of the other coaches
+and a Send. Coaches have no thread of their own, so a club share has no
+message row: the share carries the words (`note`, `recipient_coach_id`,
+`coach_read_at` on the same table) and the colleague finds it where a
+coach goes to look at lifts — a "Shared with you" strip above the video
+library, newest first, the picture, the lift, the numbers, who sent it and
+what they said, and Open, which lands the viewer on that rep (`?rep=N`,
+new) and stamps it seen. Nothing shows when nothing was shared.
+
+P3h is complete: all four of design §9's sharing targets — athlete,
+colleague, export, talkover — are built.
+
+---
+
+## 12. P3i — The lens tier
+
+> **Status: SHIPPED.** The last item on design §6.1's calibration ladder.
+
+The ladder's three distortion tiers — assume it away, look the phone up,
+measure it — are one mechanism here, and two things had to change before it
+could be built.
+
+**The checkerboard route is closed, twice over.** The OpenCV build KinEMOS
+ships has no `findChessboardCorners`, no `calibrateCamera` and no
+`undistortPoints`; they are absent from the WASM whatever the TypeScript
+stubs declare (probed 03/09/2026 — `undistort`, `remap`, `solvePnP` and
+`projectPoints` are there, the calibration entry points are not). And no
+coach is going to print a checkerboard, which the design half admits by
+making the tier optional. So the lens is measured from what is already in
+every clip: **the gym is full of things that are straight**. A rack upright,
+a door frame, the line where the wall meets the floor. Whatever correction
+makes the most of them straightest is the lens — the plumb-line method, and
+the oldest trick in camera calibration.
+
+**KinEMOS tracks points, never images**, so the missing `undistortPoints`
+costs nothing. A bar end is a point and a plate outline is four; correcting
+them is arithmetic, and the whole ladder fits in a pure engine module
+(`engine/distortion.ts`) with no OpenCV at all. The model is Fitzgibbon's
+division model with one coefficient, `r_u = r_d / (1 + k₁·r_d²)`, radii
+normalised by half the image diagonal so k₁ describes the **lens** and
+transfers from a 1080p clip to a 4K one from the same phone. It inverts in
+closed form, and one parameter is all a gym clip can support.
+
+The correction is applied at READ time, like the filter: the stored track is
+what was measured on the frame, and the stage keeps drawing raw points over
+the raw picture — where they belong, the picture being distorted too — while
+everything computed from them goes through the corrected pair.
+
+**Where the tiers come from.** `kinemos_device_profiles` is keyed by the
+phone's make and model, not by the athlete. What is measured is a lens;
+several athletes in a club film on the same model; a coach who measures
+"Apple iPhone 14 Pro" once has measured it for everyone. That is what makes
+the design's "model-lookup tier" real without shipping a table of phones
+nobody measured — **the lookup table is what the coaches themselves
+measured**. A profile fitted on this athlete's own footage grades as
+`profile`; one inherited from another athlete's identical phone grades as
+`model`; the correction is the same and the confidence is not. The grade's
+`lens` factor had been designed in since P2 and never fed; it is fed now.
+
+### What the measurement actually said
+
+Run on real footage, the tier's most valuable output was a refusal — and
+then a correction to the refusal.
+
+Both study clips and Caroline's phone clips find plenty of straight edges
+(47–53) and no correction that straightens them. The first version reported
+that as *"this lens has nothing worth removing"*. **That claim was not
+supported by the data.** On the 576×1024 phone clip the edges have a median
+span of 120 px and carry 0,75 px of their own pixel noise; bending them by a
+typical phone lens (k₁ = −0,12) moves their pooled residual from 0,746 px to
+0,744. The bow a real lens puts on a short edge near the frame centre is a
+fiftieth of the noise on the edge itself. The honest reading is not "the lens
+is clean" but **"these edges cannot tell"**.
+
+So `probeSensitivity` asks, before believing any refusal, what a typical lens
+*would* have done to these chains, as a share of their own noise. Below 15 %
+the fit refuses with `insensitive` and says so in those terms — "they are too
+short to tell: bending them by a typical phone lens would move them 3 % of
+their own pixel noise". Three refusals, three different sentences, because
+`no-edges`, `insensitive` and `no-improvement` are three different facts and
+only the last says anything about the lens.
+
+The check that caught it is worth keeping: `verify/track-clip.html?lens=1`
+measures a clip's lens, and `&lensinject=<k1>` bends the clip's **real**
+detected edges by a known coefficient and reports whether the fit gets it
+back. Everything but the bend is real, so it separates "the lens is clean"
+from "the fit is blind". On caro3 it recovers nothing from an injected
+−0,12 — which is the same finding, confirmed from the other side.
+
+Two consequences for the product, both honest:
+
+- The convention tier's assumption (design §6.1: "distance framing + no
+  ultrawide ≈ negligible distortion on modern phones") is **not contradicted**
+  by anything measured here, and is not confirmed either. The clips available
+  cannot resolve the question.
+- The tier will earn its place on a full-resolution clip with a long upright
+  in shot, and the sensitivity number tells a coach when a refusal means
+  something. Until then the honest state is the one the panel shows: not
+  corrected, and why.
+
+### Known gap
+
+The comparison view loads its subjects through `comparisonService` and does
+not apply a lens. A lift measured through a profile in the viewer and the
+same lift on the comparison screen can therefore differ by the correction.
+Worth closing when a profile ever measures non-zero on real footage; until
+then it is a difference of zero.

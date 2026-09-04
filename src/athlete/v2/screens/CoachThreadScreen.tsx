@@ -34,7 +34,8 @@ import { MobileThreadPane } from '../../../components/chat/MobileThreadPane';
 import { formatWeekdayDateShort } from '../../../lib/dateUtils';
 import { describeError } from '../../../lib/errorMessage';
 import { UnitPickerSheet, type PickedUnit } from '../components/UnitPickerSheet';
-import type { TrainingLogMessage } from '../../../lib/database.types';
+import type { KinemosShare, TrainingLogMessage } from '../../../lib/database.types';
+import { fetchSharesForAthlete, markShareOpened } from '../../../kinemos/lib/shareService';
 
 /** A unit-thread target from the attach flow. sessionId stays null
  *  until the first message creates the log session row. */
@@ -341,6 +342,28 @@ function ChatView({
 }) {
   const navigate = useNavigate();
 
+  // Lift analyses the coach shared land in the general thread as cards
+  // beside the message that carried them. Read separately from the
+  // messages — the shares table is KinEMOS's, the messages are the log's —
+  // and an extra: a failed read leaves the thread whole.
+  const [shares, setShares] = useState<KinemosShare[]>([]);
+  useEffect(() => {
+    let alive = true;
+    if (thread.kind !== 'general') {
+      setShares([]);
+      return;
+    }
+    fetchSharesForAthlete(athleteId)
+      .then(s => { if (alive) setShares(s); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [thread.kind, athleteId]);
+  const onOpenShare = (share: KinemosShare) => {
+    if (share.athlete_read_at != null) return;
+    setShares(prev => prev.map(s => (s.id === share.id ? { ...s, athlete_read_at: new Date().toISOString() } : s)));
+    markShareOpened(share.id).catch(() => undefined);
+  };
+
   const jumpTarget = unit
     ? { week: unit.weekStart, slot: unit.dayIndex }
     : thread.kind === 'session' && thread.performedOn
@@ -428,6 +451,8 @@ function ChatView({
         placeholder={thread.kind === 'session' ? 'Ask about this unit…' : 'Write a message…'}
         onAttach={onAttach}
         attachLabel="Ask about a training day"
+        shares={shares}
+        onOpenShare={onOpenShare}
       />
     </div>
   );

@@ -22,12 +22,20 @@
  * long as the decode.
  */
 import type { FrameServer } from '../engine/frameServer';
+import type { RgbaImage } from '../engine/plateColour';
 import {
   grayFromRgba,
   type FrameRegion,
   type FrameSource,
   type GrayImage,
 } from '../engine/tracker';
+
+export interface TrackerSource extends FrameSource {
+  /** The frame in colour, for the colour assists. Not cached: a caller that
+   *  wants colour reads it once per frame and moves on. */
+  getRgba(index: number): Promise<RgbaImage>;
+  dispose(): void;
+}
 
 /**
  * Greyscale frames kept in memory. Twelve is ~100 MB at 1080p if every entry
@@ -68,16 +76,36 @@ function covers(image: GrayImage, region: FrameRegion): boolean {
  */
 const BACKWARD_RUN = 16;
 
-export function trackerSourceFrom(server: FrameServer): FrameSource & { dispose(): void } {
+export function trackerSourceFrom(server: FrameServer): TrackerSource {
   // Insertion-ordered, so the oldest key is the first one out.
   const cache = new Map<number, GrayImage>();
   let canvas: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
   let lastIndex = -1;
 
+  /** The whole frame's pixels, through the same grow-only canvas. */
+  const readRgba = async (index: number): Promise<RgbaImage> => {
+    const frame = await server.frameAt(index);
+    const width = server.displayWidth;
+    const height = server.displayHeight;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      ctx = canvas.getContext('2d', { willReadFrequently: true });
+    }
+    if (!ctx) throw new Error('Tracking needs a 2D canvas, which this browser did not provide.');
+    if (canvas.width < width || canvas.height < height) {
+      canvas.width = Math.max(canvas.width, width);
+      canvas.height = Math.max(canvas.height, height);
+    }
+    ctx.drawImage(frame.canvas as CanvasImageSource, 0, 0, width, height);
+    return { data: ctx.getImageData(0, 0, width, height).data, width, height };
+  };
+
   return {
     frameCount: server.frameCount,
     timestamps: server.timestamps,
+
+    getRgba: readRgba,
 
     async getGray(index: number, region?: FrameRegion): Promise<GrayImage> {
       const width = server.displayWidth;

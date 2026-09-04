@@ -42,6 +42,16 @@ export interface SetRowInput {
    *  can be typed. (Combo tuple notation already round-trips via
    *  performed_text in commit().) */
   comboReps?: boolean;
+  /** The planned rep TUPLE for a combo row ("1+1+1", or "2(1+1)" when the
+   *  coach grouped rounds). Set only when the prescription is a combo.
+   *
+   *  Load-bearing for the one-tap ✓: without it, confirming a combo set as
+   *  prescribed stored only plannedRepsValue — the numeric SUM (3) — and
+   *  every surface then showed "3" where the coach wrote "1+1+1". The
+   *  tuple goes to performed_text, the sum stays in performed_reps for
+   *  volume math, and the analysis combo split (factFetch) gets the
+   *  per-member reps it needs. */
+  plannedRepsTuple?: string | null;
 }
 
 interface SetEntryRowProps {
@@ -158,12 +168,19 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
           ? input.plannedRepsValue
           : null;
       // Preserve combo / tuple notation ("2+2+2") in performed_text so the raw
-      // string round-trips on display. Numeric-only entries leave it null.
-      // Empty input clears it explicitly so cleared rows don't show a stale
-      // string after re-render.
+      // string round-trips on display; performed_reps keeps the numeric sum
+      // for volume math. Three cases, and all three must WRITE the column —
+      // leaving it alone let a stale tuple outlive the value it described:
+      //   typed a tuple          → store what was typed
+      //   value-less ✓ on a combo→ store the prescribed tuple ("1+1+1"),
+      //                            not just its sum (the bug: reps showed "3")
+      //   anything else          → clear it
       const trimmedReps = nextReps.trim();
-      const performedText =
-        trimmedReps.includes('+') ? trimmedReps : trimmedReps === '' ? null : undefined;
+      const performedText = trimmedReps.includes('+')
+        ? trimmedReps
+        : trimmedReps === '' && completing && input.plannedRepsTuple
+        ? input.plannedRepsTuple
+        : null;
       arg = {
         setNumber: input.setNumber,
         performedLoad,
@@ -171,7 +188,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
         status: nextStat,
         plannedLoad: input.plannedLoadValue,
         plannedReps: input.plannedRepsValue,
-        ...(performedText !== undefined ? { performedText } : {}),
+        performedText,
       };
     }
 
@@ -377,6 +394,10 @@ export function expandSetLines(setLines: PlannedSetLine[], unit?: string | null)
       ? `RPE ${baseLoad}`
       : `${cmpPrefix}${baseLoad}`;
     for (let i = 0; i < count; i += 1) {
+      // reps_text carries the bare tuple ("1+1+1") or the grouped form
+      // ("2(1+1)") for combos, and is null for ordinary prescriptions —
+      // the "+" is what marks it as a tuple worth preserving.
+      const repsTuple = repsText.includes('+') ? repsText : null;
       out.push({
         setNumber,
         plannedRepsText: repsText || '—',
@@ -384,6 +405,8 @@ export function expandSetLines(setLines: PlannedSetLine[], unit?: string | null)
         plannedRepsValue: line.reps ?? null,
         plannedLoadValue: line.load_value ?? null,
         loadIsKg,
+        plannedRepsTuple: repsTuple,
+        comboReps: repsTuple != null,
       });
       setNumber += 1;
     }

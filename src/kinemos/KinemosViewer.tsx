@@ -13,26 +13,31 @@
  * everywhere (CLAUDE.md core principle 4) and this is no different.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Ruler, Triangle } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ChevronLeft, Circle, Columns2, Crosshair, GraduationCap, Hand, Minus, Ruler, Star, TrendingUp, Triangle } from 'lucide-react';
 import { ErrorState, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
 import { getOwnerId } from '../lib/ownerContext';
-import type { KinemosAnnotation, KinemosTrackPoint } from '../lib/database.types';
+import type { KinemosAnnotation, KinemosShare, KinemosTrackPoint } from '../lib/database.types';
 import {
   DEFAULT_PLATE_DIAMETER_CM,
   angleDeg,
   calibrateFromEllipse,
+  displacementToCm,
   distanceCm,
   pathMetrics,
   type PlateEllipse,
   type PxPoint,
 } from './engine/calibration';
-import { computeKinematics, summariseRep } from './engine/kinematics';
+import { computeKinematics, peakStability, summariseRep } from './engine/kinematics';
+import { noDistortion, undistortEllipse, undistortPoints, type DistortionSource } from './engine/distortion';
+import { deviceKeyFor, profileForClip, saveDeviceProfile } from './lib/deviceProfileService';
+import { describeFit, describeRefusal, fitClipDistortion } from './lib/distortionFit';
 import {
   DEFAULT_PHASE_SET,
   computeLiftMetrics,
   enforceMonotonic,
+  kneeCrossing,
   proposePhases,
   spansFrom,
   type PhaseBoundary,
@@ -40,7 +45,19 @@ import {
 import { gradeAnalysis, type CameraStability, type TrackerTier } from './engine/grade';
 import { trackFromAnchor } from './engine/tracker';
 import type { AlignmentAnchor } from './engine/compare';
+import { toStoredMetrics } from './engine/metricCatalogue';
 import { ComparisonView } from './components/ComparisonView';
+import { TrendsView } from './components/TrendsView';
+import { markAsReference } from './lib/referenceService';
+import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack, trackMarkerFrom } from './lib/assists';
+import { trackSet } from './lib/setTracker';
+import { persistRep } from './lib/autoAnalyse';
+import { createClubShare, createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
+import { exportOverlayVideo } from './lib/overlayExport';
+import { formatTalkoverLength, startTalkover, talkoverMimeType, type TalkoverController } from './lib/talkover';
+import { kinemosObjectUrl, uploadTalkover } from './lib/kinemosStorage';
+import { valueAt } from './engine/phases';
+import { useCoachStore } from '../store/coachStore';
 import {
   findComparable,
   loadComparisonSubject,
@@ -99,6 +116,7 @@ const TOOLS: Array<{
   { id: 'mark', label: 'Mark the bar end', icon: Crosshair, key: 'M' },
   { id: 'distance', label: 'Measure a distance', icon: Ruler, key: 'D' },
   { id: 'angle', label: 'Measure an angle', icon: Triangle, key: 'A' },
+  { id: 'knee', label: 'Mark the knee height — click the knee on the start frame', icon: Minus, key: 'K' },
 ];
 
 export function KinemosViewer() {
@@ -110,7 +128,13 @@ export function KinemosViewer() {
   const [loadingClip, setLoadingClip] = useState(true);
 
   const [tool, setTool] = useState<ViewerTool>('look');
-  const [repIndex, setRepIndex] = useState(1);
+  // `?rep=N` opens a particular rep — how a lift shared with a colleague
+  // lands on the rep that was shared rather than rep 1.
+  const [searchParams] = useSearchParams();
+  const [repIndex, setRepIndex] = useState(() => {
+    const rep = Number(searchParams.get('rep'));
+    return Number.isInteger(rep) && rep >= 1 ? rep : 1;
+  });
   const [repIndices, setRepIndices] = useState<number[]>([1]);
 
   const [points, setPoints] = useState<KinemosTrackPoint[]>([]);
@@ -119,6 +143,20 @@ export function KinemosViewer() {
   const [annotations, setAnnotations] = useState<KinemosAnnotation[]>([]);
   const [measurePoints, setMeasurePoints] = useState<PxPoint[]>([]);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [shares, setShares] = useState<KinemosShare[]>([]);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<{ done: number; total: number } | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  const [talkover, setTalkover] = useState<TalkoverController | null>(null);
+  const [talkoverBusy, setTalkoverBusy] = useState(false);
+  const [talkoverNote, setTalkoverNote] = useState<string | null>(null);
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
+  const coaches = useCoachStore(s => s.coaches);
+  const colleagues = useMemo(
+    () => coaches.filter(c => c.id !== activeCoachId).map(c => ({ id: c.id, name: c.name })),
+    [coaches, activeCoachId],
+  );
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [massKg, setMassKg] = useState<number | null>(null);
@@ -138,6 +176,31 @@ export function KinemosViewer() {
   const [trackProgress, setTrackProgress] = useState<{ done: number; total: number } | null>(null);
 
   const [comparing, setComparing] = useState(false);
+  // Trends and comparison are two readings of the same athlete's history and
+  // take the same space, so opening one closes the other.
+  const [trending, setTrending] = useState(false);
+  // Whether this rep is the athlete's reference lift for the exercise. Written
+  // straight through on toggle rather than via the debounced save: it is one
+  // deliberate act, not a drag, and it has to clear the previous holder.
+  const [isReference, setIsReference] = useState(false);
+  const [isModel, setIsModel] = useState(false);
+  const [modelLabel, setModelLabel] = useState<string | null>(null);
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  // The OpenCV assists: which is running, and what the last one said.
+  const [assist, setAssist] = useState<{ busy: 'find' | 'snap' | null; note: string | null }>({
+    busy: null,
+    note: null,
+  });
+  const [stabiliseProgress, setStabiliseProgress] = useState<{ done: number; total: number } | null>(null);
+  const [stabiliseNote, setStabiliseNote] = useState<string | null>(null);
+  /** How the plate outline is fitted: a free ellipse, or a circle for a round
+   *  plate filmed square-on (see `OutlineFitOptions`). Not persisted — it
+   *  describes how the next find or snap runs, and the outline it produces is
+   *  what gets stored. */
+  const [plateShape, setPlateShape] = useState<'ellipse' | 'circle'>('ellipse');
+  const [setNote, setSetNote] = useState<string | null>(null);
+  const [recentreProgress, setRecentreProgress] = useState<{ done: number; total: number } | null>(null);
+  const [recentreNote, setRecentreNote] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
   const [comparisonId, setComparisonId] = useState<string | null>(null);
   const [comparisonSubject, setComparisonSubject] = useState<ComparisonSubject | null>(null);
@@ -227,9 +290,16 @@ export function KinemosViewer() {
     setPoints([]);
     setEllipse(null);
     setAnnotations([]);
+    setShares([]);
+    setShareNote(null);
     setMeasurePoints([]);
     setCoachBoundaries(null);
     setCamera('unknown');
+    setIsReference(false);
+    setIsModel(false);
+    setModelLabel(null);
+    setAssist({ busy: null, note: null });
+    setStabiliseNote(null);
     // The logged load is the best first guess at bar mass, and it is already on
     // the library row. A coach who filmed a different set overwrites it.
     setMassKg(clip?.loadKg ?? null);
@@ -241,6 +311,13 @@ export function KinemosViewer() {
         analysisIdRef.current = bundle.analysis.id;
         setPoints(bundle.track?.points ?? []);
         setAnnotations(bundle.annotations);
+        // Shares are an extra: a missing table (the migration not yet
+        // applied) must not stop the rep from loading.
+        listSharesForAnalysis(bundle.analysis.id)
+          .then(s => {
+            if (!cancelled) setShares(s);
+          })
+          .catch(() => undefined);
         if (bundle.track) {
           setTrackerTier(bundle.track.tracker_tier);
           setCorrectionCount(bundle.track.correction_count);
@@ -250,6 +327,9 @@ export function KinemosViewer() {
           setMassSource(bundle.analysis.mass_source ?? 'manual');
         }
         if (bundle.analysis.camera) setCamera(bundle.analysis.camera);
+        setIsReference(bundle.analysis.is_reference === true);
+        setIsModel(bundle.analysis.is_model === true);
+        setModelLabel(bundle.analysis.model_label ?? null);
         // Only a set the coach has actually touched is restored. Stored
         // proposals would go stale the moment the track changed, and silently
         // re-showing an old engine guess as if it were current is worse than
@@ -278,12 +358,36 @@ export function KinemosViewer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, id, repIndex]);
 
-  const calibration = useMemo(
-    () => (ellipse ? calibrateFromEllipse(ellipse, plateDiameterCm) : null),
-    [ellipse, plateDiameterCm],
+  // ── The lens ──────────────────────────────────────────────────────────────
+  //
+  // Design §6.1's distortion tiers, applied at READ time like the filter: the
+  // stored track is what was measured on the frame, and the correction is a
+  // lens the frame was seen through, re-applied on every load. So the stage
+  // keeps drawing the raw points over the raw picture — where they belong,
+  // since the picture is distorted too — while everything computed from them
+  // is computed from the corrected pair.
+  const [lensK1, setLensK1] = useState(0);
+  const [lensSource, setLensSource] = useState<DistortionSource>('none');
+  const [lensBusy, setLensBusy] = useState(false);
+  const [lensNote, setLensNote] = useState<string | null>(null);
+
+  const lensModel = useMemo(() => {
+    const base = noDistortion(server?.displayWidth ?? 0, server?.displayHeight ?? 0);
+    return lensK1 ? { ...base, k1: lensK1 } : base;
+  }, [server?.displayWidth, server?.displayHeight, lensK1]);
+
+  const measuredPoints = useMemo(() => undistortPoints(lensModel, points), [lensModel, points]);
+  const measuredEllipse = useMemo(
+    () => (ellipse ? undistortEllipse(lensModel, ellipse) : null),
+    [lensModel, ellipse],
   );
 
-  const metrics = useMemo(() => pathMetrics(points, calibration), [points, calibration]);
+  const calibration = useMemo(
+    () => (measuredEllipse ? calibrateFromEllipse(measuredEllipse, plateDiameterCm) : null),
+    [measuredEllipse, plateDiameterCm],
+  );
+
+  const metrics = useMemo(() => pathMetrics(measuredPoints, calibration), [measuredPoints, calibration]);
 
   // ── The measurement pipeline ──────────────────────────────────────────────
   //
@@ -293,11 +397,11 @@ export function KinemosViewer() {
   // panel always shows what the current marks actually imply.
   const kinematics = useMemo(
     () =>
-      computeKinematics(points, calibration, {
+      computeKinematics(measuredPoints, calibration, {
         massKg,
         filter: DEFAULT_FILTER,
       }),
-    [points, calibration, massKg],
+    [measuredPoints, calibration, massKg],
   );
 
   const proposal = useMemo(() => (kinematics ? proposePhases(kinematics) : null), [kinematics]);
@@ -330,6 +434,13 @@ export function KinemosViewer() {
    */
   const comparable = kinematics !== null && liftMetrics !== null && repSummary !== null;
 
+  // Two extra runs of the pipeline at neighbouring cutoffs — a few hundred
+  // points each — to say whether the peak is the lift's or the filter's.
+  const stability = useMemo(
+    () => (kinematics ? peakStability(points, calibration, { massKg, filter: DEFAULT_FILTER }) : null),
+    [kinematics, points, calibration, massKg],
+  );
+
   const grade = useMemo(
     () =>
       gradeAnalysis({
@@ -345,9 +456,11 @@ export function KinemosViewer() {
         correctionCount,
         trackedFrames: points.length,
         camera,
-        distortionSource: 'none',
+        distortionSource: lensSource,
+        timingRepairs: kinematics?.timingRepairs.length ?? 0,
+        peakSpread: stability?.spread ?? null,
       }),
-    [kinematics, server, calibration, camera, points.length, trackerTier, correctionCount],
+    [kinematics, server, calibration, camera, points.length, trackerTier, correctionCount, stability, lensSource],
   );
 
   /**
@@ -423,7 +536,9 @@ export function KinemosViewer() {
             camera,
             phaseBoundaries: boundaries.length > 0 ? boundaries : null,
             phaseSetId: 'default',
-            metrics: liftMetrics,
+            // The cache the trend views read. Schema-stamped so a season of
+            // rows can be told apart if what is stored ever changes meaning.
+            metrics: liftMetrics ? toStoredMetrics(liftMetrics, repSummary) : null,
             grade: grade.grade,
             gradeErrorMs: grade.expectedVelocityErrorMs,
             gradeFactors: grade.factors,
@@ -554,7 +669,12 @@ export function KinemosViewer() {
       clip?.exerciseName ?? null,
     )
       .then(found => {
-        if (!cancelled) setCandidates(found);
+        if (cancelled) return;
+        setCandidates(found);
+        // Nothing chosen yet: open on the athlete's reference for this
+        // exercise, which is what the reference is for.
+        const reference = found.find(c => c.sameExercise && c.isReference);
+        if (reference) setComparisonId(current => current ?? reference.analysis.id);
       })
       .catch(() => {
         if (!cancelled) setCandidates([]);
@@ -594,6 +714,192 @@ export function KinemosViewer() {
   // frame; the tracker fills the clip forwards and backwards from it. A
   // correction is the same gesture — mark the frame that is wrong, then track
   // again — which is why re-tracking needs no separate code path.
+  /** Track the clip from one anchor, in both directions, and take the result
+   *  into the viewer. Shared by the TRACK button and the plate finder. */
+  const trackFrom = useCallback(
+    async (anchorIndex: number, x: number, y: number, radiusPx: number | undefined) => {
+      if (!server) return;
+      const source = trackerSourceFrom(server);
+      setTrackProgress({ done: 0, total: server.frameCount });
+      try {
+        const result = await trackFromAnchor(
+          source,
+          { index: anchorIndex, x, y },
+          {
+            // The plate is calibrated, so its on-screen radius is known rather
+            // than guessed — quietly the most useful thing the calibration does
+            // for the tracker.
+            templateRadiusPx: radiusPx === undefined ? undefined : Math.max(10, radiusPx),
+            onProgress: (done, total) => setTrackProgress({ done, total }),
+          },
+        );
+        if (result.points.length < 2) {
+          setSaveError(
+            'Tracking could not get hold of the bar from that point. Mark the bar end more ' +
+              'precisely, or calibrate the plate first so the tracker knows how big it is.',
+          );
+          return;
+        }
+        dirtyRef.current = true;
+        setPoints(result.points.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })));
+        setUncertainIndices(result.lowConfidenceIndices);
+        setTrackerTier('assisted');
+        setSaveError(
+          result.gaveUp
+            ? 'The tracker lost the bar part way through, so the track stops there. Mark it again ' +
+                'further on and re-track.'
+            : null,
+        );
+      } catch {
+        setSaveError('Tracking failed — the clip could not be read frame by frame.');
+      } finally {
+        source.dispose();
+        setTrackProgress(null);
+      }
+    },
+    [server],
+  );
+
+  /**
+   * Track the whole clip as a set and make a rep of each lift.
+   *
+   * The anchor is the mark nearest the playhead, as for TRACK. The set
+   * tracker follows the plate through every rep, cuts the joined track into
+   * reps at their rests and calibrates each on its own rest outline. Each rep
+   * is then persisted as what the rep model already is — an analysis row per
+   * rep index with its own track, calibration and cached metrics — so the
+   * rep picker, the comparison and the trends see them with no change. Rep
+   * 1 replaces the rep the coach is in; later reps take the next indices.
+   */
+  const trackSetNow = useCallback(async () => {
+    if (!server || !source || !id || currentT === null || !ellipse) return;
+    const anchorPoint = points.reduce<KinemosTrackPoint | null>(
+      (best, p) =>
+        best === null || Math.abs(p.t - currentT) < Math.abs(best.t - currentT) ? p : best,
+      null,
+    );
+    if (!anchorPoint) return;
+    setTrackProgress({ done: 0, total: server.frameCount });
+    setSetNote(null);
+    try {
+      const result = await trackSet(
+        server,
+        { index: server.nearestIndex(anchorPoint.t), x: anchorPoint.x, y: anchorPoint.y },
+        {
+          ellipse,
+          plateDiameterCm,
+          onProgress: (done, total) => setTrackProgress({ done, total }),
+        },
+      );
+      if (result.reps.length === 0) {
+        setSetNote(
+          result.points.length < 8
+            ? 'The tracker could not get hold of the bar from that mark.'
+            : 'No rep found: nothing in the track rises 40 cm from a rest. A clip that starts mid-pull is one rep — use TRACK for it.',
+        );
+        return;
+      }
+      // Persist every rep. Rep k takes index (repIndex + k), so the current
+      // analysis becomes rep 1 and a set tracked twice lands on the same rows.
+      const owner = getOwnerId();
+      const indices: number[] = [];
+      let firstApplied = false;
+      for (const rep of result.reps) {
+        const index = repIndex + rep.rep - 1;
+        // One definition of what a stored rep is, shared with the automatic
+        // run on the library (`lib/autoAnalyse.ts`).
+        const analysisId = await persistRep({
+          source,
+          sourceId: id,
+          repIndex: index,
+          server,
+          ownerId: owner,
+          points: rep.points,
+          ellipse: rep.ellipse,
+          calibration: rep.calibration,
+          calibratedAt: { index: server.nearestIndex(rep.segment.liftOffT), t: rep.segment.liftOffT },
+          massKg,
+          massSource,
+          camera,
+        });
+        indices.push(index);
+        if (!firstApplied) {
+          // Rep 1 is the one on screen: take it into the viewer directly,
+          // already saved, rather than round-tripping through a reload.
+          firstApplied = true;
+          analysisIdRef.current = analysisId;
+          dirtyRef.current = false;
+          setPoints(rep.points);
+          setEllipse(rep.ellipse);
+          setUncertainIndices(rep.lowConfidenceIndices);
+          setTrackerTier('assisted');
+          setCorrectionCount(0);
+        }
+      }
+      setRepIndices(current => [...new Set([...current, ...indices])].sort((a, b) => a - b));
+      const own = result.reps.filter(r => r.ownCalibration).length;
+      const byColour = result.joins.filter(j => j.how === 'colour').length;
+      setSetNote(
+        `${result.reps.length} rep${result.reps.length === 1 ? '' : 's'} found` +
+          (result.joins.length > 0
+            ? `, the plate found again ${result.joins.length} time${result.joins.length === 1 ? '' : 's'}` +
+              (byColour > 0 ? ` (${byColour} by its colour, in flight)` : '')
+            : '') +
+          `; ${own} calibrated at ${own === 1 ? 'its' : 'their'} own rest` +
+          (result.colour ? '' : '. The plate has no colour to find it by, so it is found again by shape at each rest') +
+          (result.lostAtEnd ? '. The tracker lost the bar at the end and did not find it again.' : '.'),
+      );
+    } catch (e) {
+      setSetNote(e instanceof Error ? e.message : 'Tracking the set failed — the clip could not be read frame by frame.');
+    } finally {
+      setTrackProgress(null);
+    }
+  }, [server, source, id, currentT, ellipse, points, plateDiameterCm, repIndex, massKg, massSource, camera]);
+
+  /**
+   * Follow a marker on the bar end rather than the plate. The coach clicks
+   * the sticker, this samples its colour there and follows that colour; the
+   * track it produces is stored at the `marker` tier, which the grade prices
+   * tighter than the template one because it is.
+   */
+  const runMarkerTrack = useCallback(async () => {
+    if (!server || currentT === null) return;
+    const anchorPoint = points.reduce<KinemosTrackPoint | null>(
+      (best, p) => (best === null || Math.abs(p.t - currentT) < Math.abs(best.t - currentT) ? p : best),
+      null,
+    );
+    if (!anchorPoint) return;
+    setTrackProgress({ done: 0, total: server.frameCount });
+    setSetNote(null);
+    try {
+      const result = await trackMarkerFrom(
+        server,
+        { index: server.nearestIndex(anchorPoint.t), x: anchorPoint.x, y: anchorPoint.y },
+        (done, total) => setTrackProgress({ done, total }),
+      );
+      if (!result.found) {
+        setSetNote(
+          'Nothing coloured under that mark. A marker has to be a colour nothing else in shot shares — a bright sticker on the end cap. Without one, TRACK follows the plate.',
+        );
+        return;
+      }
+      dirtyRef.current = true;
+      setPoints(result.points);
+      setUncertainIndices(result.lowConfidenceIndices);
+      setTrackerTier('marker');
+      setCorrectionCount(0);
+      setSetNote(
+        `Followed the marker over ${result.points.length} frames` +
+          (result.gaveUp ? ', then lost it — it was hidden too long.' : '.') +
+          ' Graded at the marker tier.',
+      );
+    } catch (e) {
+      setSetNote(e instanceof Error ? e.message : 'The marker could not be followed.');
+    } finally {
+      setTrackProgress(null);
+    }
+  }, [server, currentT, points]);
+
   const runTrack = useCallback(async () => {
     if (!server || currentT === null) return;
     // The mark on this frame if there is one, otherwise the nearest mark in
@@ -605,46 +911,127 @@ export function KinemosViewer() {
       null,
     );
     if (!anchorPoint) return;
-    const anchorIndex = server.nearestIndex(anchorPoint.t);
+    await trackFrom(server.nearestIndex(anchorPoint.t), anchorPoint.x, anchorPoint.y, ellipse?.semiMajorPx);
+  }, [server, currentT, points, ellipse, trackFrom]);
 
-    const source = trackerSourceFrom(server);
-    setTrackProgress({ done: 0, total: server.frameCount });
+  // ── OpenCV assists ────────────────────────────────────────────────────────
+  //
+  // Find the plate (no outline), snap an outline to the edge, and take the
+  // camera's motion out of a track. Each is one deliberate press; each says
+  // what it found in the coach's terms, and none of them touches the video.
+  const findPlateHere = useCallback(async () => {
+    if (!server || currentT === null) return;
+    setAssist({ busy: 'find', note: null });
     try {
-      const result = await trackFromAnchor(
-        source,
-        { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y },
-        {
-          // The plate is calibrated, so its on-screen radius is known rather
-          // than guessed — quietly the most useful thing the calibration does
-          // for the tracker.
-          templateRadiusPx: ellipse ? Math.max(10, ellipse.semiMajorPx) : undefined,
-          onProgress: (done, total) => setTrackProgress({ done, total }),
-        },
-      );
-      if (result.points.length < 2) {
-        setSaveError(
-          'Tracking could not get hold of the bar from that point. Mark the bar end more ' +
-            'precisely, or calibrate the plate first so the tracker knows how big it is.',
-        );
+      const found = await findPlateOnFrame(server, index, undefined, { shape: plateShape });
+      if (!found) {
+        setAssist({ busy: null, note: 'No plate found on this frame. Try a frame where the whole plate is in view, or outline it by hand.' });
         return;
       }
       dirtyRef.current = true;
-      setPoints(result.points.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })));
-      setUncertainIndices(result.lowConfidenceIndices);
-      setTrackerTier('assisted');
-      setSaveError(
-        result.gaveUp
-          ? 'The tracker lost the bar part way through, so the track stops there. Mark it again ' +
-              'further on and re-track.'
-          : null,
-      );
-    } catch {
-      setSaveError('Tracking failed — the clip could not be read frame by frame.');
-    } finally {
-      source.dispose();
-      setTrackProgress(null);
+      setEllipse(found.ellipse);
+      // The plate's centre is the bar end: the anchor the tracker needs.
+      const anchor: KinemosTrackPoint = { t: currentT, x: found.ellipse.cx, y: found.ellipse.cy, s: 'm' };
+      setPoints(prev => [...prev.filter(p => Math.abs(p.t - currentT) > 1e-6), anchor].sort((a, b) => a.t - b.t));
+      setAssist({
+        busy: null,
+        note: `Plate found, edge under ${Math.round(found.support * 100)} % of the outline. Tracking from its centre.`,
+      });
+      // A template exactly the plate's face lost the lock at the second pull
+      // on real footage; a little context round the rim keeps it
+      // (docs/KINEMOS_ACCURACY_STUDY.md §7).
+      await trackFrom(index, found.ellipse.cx, found.ellipse.cy, found.ellipse.semiMajorPx * 1.08);
+    } catch (e) {
+      setAssist({ busy: null, note: e instanceof Error ? e.message : 'The plate finder could not run.' });
     }
-  }, [server, currentT, points, ellipse]);
+  }, [server, currentT, index, trackFrom, plateShape]);
+
+  const snapHere = useCallback(async () => {
+    if (!server || !ellipse) return;
+    setAssist({ busy: 'snap', note: null });
+    try {
+      const out = await snapEllipseOnFrame(server, index, ellipse, { shape: plateShape });
+      if (!out) {
+        setAssist({ busy: null, note: 'No plate edge near the outline on this frame — nothing to snap to.' });
+        return;
+      }
+      const moved = Math.hypot(out.ellipse.cx - ellipse.cx, out.ellipse.cy - ellipse.cy);
+      const grew = out.ellipse.semiMajorPx - ellipse.semiMajorPx;
+      dirtyRef.current = true;
+      setEllipse(out.ellipse);
+      setAssist({
+        busy: null,
+        note:
+          `Snapped: centre moved ${num(moved, 1)} px, radius ${grew >= 0 ? '+' : '−'}${num(Math.abs(grew), 1)} px, ` +
+          `edge under ${Math.round(out.support * 100)} % of the outline${out.support < 0.6 ? ' — part of the plate is hidden; check it' : ''}.`,
+      });
+    } catch (e) {
+      setAssist({ busy: null, note: e instanceof Error ? e.message : 'The snap could not run.' });
+    }
+  }, [server, ellipse, index, plateShape]);
+
+  const stabiliseNow = useCallback(async () => {
+    if (!server || points.length < 8 || currentT === null) return;
+    setStabiliseProgress({ done: 0, total: server.frameCount });
+    setStabiliseNote(null);
+    try {
+      // The anchor is the frame the coach marked, or the nearest to the playhead.
+      const anchor = points.find(p => p.s === 'm') ?? points[0];
+      const out = await stabiliseTrack(server, anchor.t, points, ellipse?.semiMajorPx ?? 20, (done, total) =>
+        setStabiliseProgress({ done, total }),
+      );
+      dirtyRef.current = true;
+      setPoints(out.points);
+      setCamera('stabilised');
+      setStabiliseNote(
+        `Camera moved up to ${num(out.maxShiftPx, 1)} px; the track was corrected by up to ${num(out.maxCorrectionPx, 1)} px` +
+          (out.weakFrames > 0 ? `, with ${out.weakFrames} frames where the background gave little to hold on to.` : '.'),
+      );
+    } catch (e) {
+      setStabiliseNote(e instanceof Error ? e.message : 'Stabilisation could not run.');
+    } finally {
+      setStabiliseProgress(null);
+    }
+  }, [server, points, currentT, ellipse]);
+
+  const recentreNow = useCallback(async () => {
+    if (!server || !ellipse || points.length < 8) return;
+    setRecentreProgress({ done: 0, total: points.length });
+    setRecentreNote(null);
+    try {
+      const out = await recentreTrackOnOutline(
+        server,
+        points,
+        ellipse,
+        (done, total) => setRecentreProgress({ done, total }),
+        { shape: plateShape },
+      );
+      dirtyRef.current = true;
+      setPoints(out.points);
+      let scaleNote = '';
+      if (out.midPull) {
+        // The scale is re-read where the plate is at camera height — see
+        // RecentreTrackResult.midPull — and the calibration frame follows
+        // it, so the outline on screen is the plate it describes.
+        const before = ellipse.semiMajorPx;
+        const after = out.midPull.ellipse.semiMajorPx;
+        setEllipse(out.midPull.ellipse);
+        seek(server.nearestIndex(out.midPull.t));
+        scaleNote =
+          ` Scale re-read at mid-pull from ${out.midPull.frames} frames: plate ${num(2 * after, 1)} px across` +
+          (Math.abs(after - before) >= 0.25 ? ` (was ${num(2 * before, 1)} px on the calibration frame).` : '.');
+      }
+      setRecentreNote(
+        `${out.recentred} of ${points.length} points now sit on the fitted outline's centre, moved by up to ${num(out.largestMovePx, 1)} px` +
+          (out.kept > 0 ? `; ${out.kept} kept the tracker's point because too little rim was visible.` : '.') +
+          scaleNote,
+      );
+    } catch (e) {
+      setRecentreNote(e instanceof Error ? e.message : 'Re-centring could not run.');
+    } finally {
+      setRecentreProgress(null);
+    }
+  }, [server, points, ellipse, plateShape, seek]);
 
   /** Seek to the next frame the tracker was unsure about, after the playhead.
    *  Wraps, so repeated presses walk the whole set. */
@@ -768,6 +1155,357 @@ export function KinemosViewer() {
     }
   }, [frame, server, ensureId, clip, index, points, currentT, ellipse]);
 
+  // The stored lens for this clip's phone, if one has ever been measured.
+  // Looked up by make and model, so a profile measured on one clip corrects
+  // every later clip from the same phone — which is what makes design §6.1's
+  // "model-lookup tier" real without a shipped table of phones nobody
+  // measured.
+  useEffect(() => {
+    let alive = true;
+    setLensK1(0);
+    setLensSource('none');
+    setLensNote(null);
+    if (!server || !clip) return;
+    profileForClip(clip.deviceMake, clip.deviceModel, server.displayWidth, server.displayHeight, clip.athleteId)
+      .then(found => {
+        if (!alive || found.source === 'none') return;
+        setLensK1(found.model.k1);
+        setLensSource(found.source);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [server, clip]);
+
+  /**
+   * Measure this clip's lens from the straight edges already in the gym, and
+   * remember it against the phone. A refusal is a real answer — a hall with
+   * nothing straight in shot, or a lens with nothing to correct — and says so
+   * rather than storing a confident zero.
+   */
+  const measureLens = useCallback(async () => {
+    if (!server) return;
+    setLensBusy(true);
+    setLensNote(null);
+    try {
+      const result = await fitClipDistortion(server);
+      const fit = result.fit;
+      if (!fit) {
+        setLensNote(describeRefusal(result));
+        return;
+      }
+      setLensK1(fit.model.k1);
+      const key = deviceKeyFor(clip?.deviceMake ?? null, clip?.deviceModel ?? null);
+      if (!key) {
+        // Still applied to this clip — it is measured, and it is right — but
+        // there is nothing to file it under for the next one.
+        setLensSource('profile');
+        setLensNote(`${describeFit(fit)} Applied here; not stored, because the clip does not say which phone shot it.`);
+        return;
+      }
+      await saveDeviceProfile({
+        deviceMake: clip?.deviceMake ?? null,
+        deviceModel: clip?.deviceModel ?? null,
+        athleteId: clip?.athleteId ?? null,
+        ownerId: getOwnerId(),
+        k1: fit.model.k1,
+        residualBeforePx: fit.residualBeforePx,
+        residualAfterPx: fit.residualAfterPx,
+        chains: fit.chains,
+        frames: fit.framesUsed,
+        frameWidth: server.displayWidth,
+        frameHeight: server.displayHeight,
+        sourceKind: source ?? null,
+        sourceId: id ?? null,
+      });
+      setLensSource('profile');
+      setLensNote(`${describeFit(fit)} Stored for ${key} — every clip from it is corrected from now on.`);
+    } catch (e) {
+      const text = (e as { message?: string } | null)?.message ?? '';
+      setLensNote(
+        /kinemos_device_profiles/.test(text)
+          ? 'Measuring needs the kinemos_device_profiles table — the 20260903140000 migration has not been applied.'
+          : 'The lens could not be measured.',
+      );
+    } finally {
+      setLensBusy(false);
+    }
+  }, [server, clip, source, id]);
+
+  const clearLens = useCallback(() => {
+    setLensK1(0);
+    setLensSource('none');
+    setLensNote('Back to no correction for this clip. The stored profile is still there; measuring again replaces it.');
+  }, []);
+
+  // ── Sharing ───────────────────────────────────────────────────────────────
+  /** The most recent talkover of this rep, for a share to carry. */
+  const latestTalkover = useMemo(
+    () => [...annotations].reverse().find(a => a.kind === 'talkover' && a.asset_key) ?? null,
+    [annotations],
+  );
+
+  /**
+   * Hand this rep to its athlete: this frame with the bar path drawn, the
+   * numbers as they stand, and the coach's words, into the athlete's general
+   * coach thread. The message is stamped with the athlete's own environment,
+   * as the inbox does, or the athlete app never finds it.
+   */
+  const shareNow = useCallback(
+    async (message: string) => {
+      if (!frame || !server || !clip?.athleteId || !repSummary) return;
+      setShareBusy(true);
+      setShareNote(null);
+      try {
+        const analysisId = await ensureId();
+        if (!analysisId) return;
+        const caption = [clip.athleteName, clip.exerciseName, clip.date ? formatDateShort(clip.date) : null]
+          .filter(Boolean)
+          .join(' · ');
+        const image = await composeSnapshot({
+          frame: frame.canvas as CanvasImageSource,
+          width: server.displayWidth,
+          height: server.displayHeight,
+          points,
+          currentT,
+          ellipse,
+          caption,
+        });
+        const coachEnv = getOwnerId();
+        const ownerId = await fetchAthleteOwnerId(clip.athleteId, coachEnv ?? '');
+        if (!ownerId) {
+          setShareNote('The athlete has no environment to send into.');
+          return;
+        }
+        const share = await createShare({
+          analysisId,
+          athleteId: clip.athleteId,
+          ownerId,
+          senderCoachId: activeCoachId,
+          note: message,
+          image,
+          summary: {
+            athleteName: clip.athleteName,
+            exerciseName: clip.exerciseName,
+            date: clip.date,
+            loadKg: massKg,
+            repIndex,
+            label: null,
+            vmaxMs: repSummary.peakVerticalVelocityMs,
+            peakHeightCm: repSummary.peakHeightCm,
+            grade: grade?.grade ?? null,
+            clipUrl: clip.playbackUrl ?? null,
+            talkoverUrl: latestTalkover?.asset_key ? kinemosObjectUrl(latestTalkover.asset_key) : null,
+          },
+        });
+        setShares(current => [share, ...current]);
+        setShareNote(`Sent to ${clip.athleteName ?? 'the athlete'} — it is in their coach thread now.`);
+      } catch (e) {
+        const text = (e as { message?: string } | null)?.message ?? '';
+        setShareNote(
+          /kinemos_shares/.test(text)
+            ? 'Sharing needs the kinemos_shares table — the 20260903120000 migration has not been applied.'
+            : 'The share could not be sent.',
+        );
+      } finally {
+        setShareBusy(false);
+      }
+    },
+    [frame, server, clip, repSummary, ensureId, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade, latestTalkover],
+  );
+
+  /**
+   * The clip with the bar path burned in, as a file the coach's browser
+   * downloads. The caption names the lift; the readout is the bar's
+   * vertical velocity at each frame when there is a calibration to give one.
+   */
+  const exportNow = useCallback(async () => {
+    if (!server || points.length < 2) return;
+    setExporting({ done: 0, total: 1 });
+    setExportNote(null);
+    try {
+      const caption = [
+        clip?.athleteName,
+        [clip?.exerciseName, massKg !== null ? `${num(massKg, Number.isInteger(massKg) ? 0 : 1)} kg` : null].filter(Boolean).join(' '),
+        clip?.date ? formatDateShort(clip.date) : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      const series = kinematics;
+      const result = await exportOverlayVideo({
+        server,
+        points,
+        caption,
+        readout: series
+          ? t => {
+              const v = valueAt(series.t, series.vyMs, t);
+              return v === null || t < series.t[0] || t > series.t[series.t.length - 1] ? null : `${num(v, 2)} m/s`;
+            }
+          : null,
+        onProgress: (done, total) => setExporting({ done, total }),
+      });
+      const stem = [clip?.athleteName, clip?.exerciseName, clip?.date, `rep${repIndex}`]
+        .filter(Boolean)
+        .join('-')
+        .replace(/[^\p{L}\p{N}-]+/gu, '_');
+      const name = `${stem || 'kinemos'}.${result.extension}`;
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setExportNote(
+        `${name} — ${num(result.blob.size / 1_000_000, 1)} MB, ${result.frames} frames, ${num(result.durationS, 1)} s` +
+          (result.extension === 'webm' ? '. This browser has no H.264 encoder, so it is WebM; Chrome or Edge on a desktop writes MP4.' : '.'),
+      );
+    } catch (e) {
+      setExportNote(e instanceof Error ? e.message : 'The export failed.');
+    } finally {
+      setExporting(null);
+    }
+  }, [server, points, clip, massKg, kinematics, repIndex]);
+
+  // ── Talkover ──────────────────────────────────────────────────────────────
+  // The recorder reads the stage through refs, so scrubbing while it runs
+  // needs no re-render of the recorder and no dependency churn here.
+  const liveFrameRef = useRef(frame);
+  liveFrameRef.current = frame;
+  const liveTRef = useRef(currentT);
+  liveTRef.current = currentT;
+  const livePointsRef = useRef(points);
+  livePointsRef.current = points;
+
+  const toggleTalkover = useCallback(async () => {
+    if (talkover) {
+      // Stop, store, list.
+      setTalkoverBusy(true);
+      try {
+        const recording = await talkover.stop();
+        setTalkover(null);
+        const analysisId = await ensureId();
+        if (!analysisId) return;
+        const key = await uploadTalkover(recording.blob, recording.mimeType);
+        const row = await addAnnotation(analysisId, {
+          kind: 'talkover',
+          frameIndex: index,
+          frameT: currentT,
+          assetKey: key,
+          ownerId: getOwnerId(),
+          body: `Talkover — ${formatTalkoverLength(recording.durationS)}${recording.withAudio ? '' : ', no microphone'}`,
+          payload: { durationS: recording.durationS, mimeType: recording.mimeType, withAudio: recording.withAudio },
+        });
+        setAnnotations(current => [...current, row]);
+        setTalkoverNote(
+          recording.withAudio
+            ? `Saved — ${formatTalkoverLength(recording.durationS)}. It can go with the next share.`
+            : `Saved without sound — the microphone was not granted. ${formatTalkoverLength(recording.durationS)} of picture.`,
+        );
+      } catch (e) {
+        setTalkover(null);
+        setTalkoverNote(e instanceof Error ? e.message : 'The talkover could not be saved.');
+      } finally {
+        setTalkoverBusy(false);
+      }
+      return;
+    }
+    if (!server) return;
+    setTalkoverNote(null);
+    try {
+      const caption = [clip?.athleteName, clip?.exerciseName, clip?.date ? formatDateShort(clip.date) : null]
+        .filter(Boolean)
+        .join(' · ');
+      const controller = await startTalkover({
+        width: server.displayWidth,
+        height: server.displayHeight,
+        getFrame: () => (liveFrameRef.current?.canvas as CanvasImageSource | undefined) ?? null,
+        getT: () => liveTRef.current,
+        getPoints: () => livePointsRef.current,
+        caption,
+      });
+      setTalkover(controller);
+      if (!controller.withAudio) setTalkoverNote('Recording the picture only — the microphone was not granted.');
+    } catch (e) {
+      setTalkoverNote(e instanceof Error ? e.message : 'Recording could not start.');
+    }
+  }, [talkover, server, ensureId, index, currentT, clip]);
+
+  /** The same picture and numbers, to a colleague coach. */
+  const shareWithCoach = useCallback(
+    async (coachId: string, message: string) => {
+      if (!frame || !server || !repSummary) return;
+      setShareBusy(true);
+      setShareNote(null);
+      try {
+        const analysisId = await ensureId();
+        if (!analysisId) return;
+        const caption = [clip?.athleteName, clip?.exerciseName, clip?.date ? formatDateShort(clip.date) : null]
+          .filter(Boolean)
+          .join(' · ');
+        const image = await composeSnapshot({
+          frame: frame.canvas as CanvasImageSource,
+          width: server.displayWidth,
+          height: server.displayHeight,
+          points,
+          currentT,
+          ellipse,
+          caption,
+        });
+        const ownerId = getOwnerId();
+        if (!ownerId) {
+          setShareNote('No environment to share within.');
+          return;
+        }
+        const share = await createClubShare({
+          analysisId,
+          ownerId,
+          senderCoachId: activeCoachId,
+          recipientCoachId: coachId,
+          note: message,
+          image,
+          summary: {
+            athleteName: clip?.athleteName ?? null,
+            exerciseName: clip?.exerciseName ?? null,
+            date: clip?.date ?? null,
+            loadKg: massKg,
+            repIndex,
+            label: null,
+            vmaxMs: repSummary.peakVerticalVelocityMs,
+            peakHeightCm: repSummary.peakHeightCm,
+            grade: grade?.grade ?? null,
+            clipUrl: clip?.playbackUrl ?? null,
+            talkoverUrl: latestTalkover?.asset_key ? kinemosObjectUrl(latestTalkover.asset_key) : null,
+          },
+        });
+        setShares(current => [share, ...current]);
+        const name = colleagues.find(c => c.id === coachId)?.name ?? 'your colleague';
+        setShareNote(`Sent to ${name} — it is on their video library under “Shared with you”.`);
+      } catch (e) {
+        const text = (e as { message?: string } | null)?.message ?? '';
+        setShareNote(
+          /kinemos_shares/.test(text)
+            ? 'Sharing needs the kinemos_shares table — the 20260903120000 migration has not been applied.'
+            : 'The share could not be sent.',
+        );
+      } finally {
+        setShareBusy(false);
+      }
+    },
+    [frame, server, repSummary, ensureId, clip, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade, latestTalkover, colleagues],
+  );
+
+  const removeShare = useCallback(async (shareId: string) => {
+    try {
+      await deleteShare(shareId);
+      setShares(current => current.filter(s => s.id !== shareId));
+    } catch {
+      setShareNote('That share could not be taken back.');
+    }
+  }, []);
+
   const removeAnnotation = useCallback(async (annotationId: string) => {
     try {
       await deleteAnnotationRow(annotationId);
@@ -776,6 +1514,62 @@ export function KinemosViewer() {
       setSaveError('That annotation could not be deleted.');
     }
   }, []);
+
+  // ── Knee height ───────────────────────────────────────────────────────────
+  // The knee is an annotation — a measurement whose payload says what it
+  // is — so it travels with the rep, lists in the rail and deletes like any
+  // other. One per rep: a new click replaces the old row.
+  const kneeAnnotation = useMemo(
+    () => annotations.find(a => a.kind === 'measurement' && a.payload?.type === 'knee') ?? null,
+    [annotations],
+  );
+  const kneePoint = useMemo<PxPoint | null>(() => {
+    const p = kneeAnnotation?.payload?.point as { x?: unknown; y?: unknown } | undefined;
+    return p && typeof p.x === 'number' && typeof p.y === 'number' ? { x: p.x, y: p.y } : null;
+  }, [kneeAnnotation]);
+  /** Knee height above the bar's first mark, cm — the height the charts
+   *  and the analyzer measure from. Null until there is a track to measure
+   *  from and a calibration to measure with. */
+  const kneeCm = useMemo(() => {
+    if (!kneePoint || !calibration || points.length === 0) return null;
+    const origin = points.reduce((first, p) => (p.t < first.t ? p : first), points[0]);
+    return displacementToCm(calibration, kneePoint.x - origin.x, kneePoint.y - origin.y).y;
+  }, [kneePoint, calibration, points]);
+  const kneeReadout = useMemo(() => {
+    if (kneeCm === null) return null;
+    const crossing = kinematics ? kneeCrossing(kinematics, kneeCm) : null;
+    return { heightCm: kneeCm, t: crossing?.t ?? null, velocityMs: crossing?.valueMs ?? null };
+  }, [kneeCm, kinematics]);
+
+  const markKnee = useCallback(
+    async (point: PxPoint) => {
+      try {
+        const analysisId = await ensureId();
+        if (!analysisId) return;
+        if (kneeAnnotation) await deleteAnnotationRow(kneeAnnotation.id);
+        const heightCm =
+          calibration && points.length > 0
+            ? displacementToCm(
+                calibration,
+                point.x - points.reduce((first, p) => (p.t < first.t ? p : first), points[0]).x,
+                point.y - points.reduce((first, p) => (p.t < first.t ? p : first), points[0]).y,
+              ).y
+            : null;
+        const row = await addAnnotation(analysisId, {
+          kind: 'measurement',
+          frameIndex: index,
+          frameT: currentT,
+          ownerId: getOwnerId(),
+          body: heightCm === null ? 'Knee height' : `Knee height — ${num(heightCm, 1)} cm above the bar`,
+          payload: { type: 'knee', point, heightCm },
+        });
+        setAnnotations(current => [...current.filter(a => a.id !== kneeAnnotation?.id), row]);
+      } catch {
+        setSaveError('The knee mark could not be saved.');
+      }
+    },
+    [ensureId, kneeAnnotation, calibration, points, index, currentT],
+  );
 
   const clearCalibrationNow = useCallback(async () => {
     setEllipse(null);
@@ -857,6 +1651,57 @@ export function KinemosViewer() {
     );
   }
 
+  const toggleReference = async () => {
+    if (referenceBusy) return;
+    const next = !isReference;
+    setReferenceBusy(true);
+    try {
+      const analysisId = await ensureId();
+      if (!analysisId) return;
+      await markAsReference(
+        { analysisId, athleteId: clip.athleteId, exerciseName: clip.exerciseName },
+        next,
+      );
+      setIsReference(next);
+    } catch {
+      setSaveError('The reference could not be saved.');
+    } finally {
+      setReferenceBusy(false);
+    }
+  };
+
+  /**
+   * Mark this rep as a model lift for the whole club (P5b) — an exemplar
+   * offered when comparing ANY athlete, not only its own. Unlike the
+   * reference lift there is no one-per-anything rule: a club may keep
+   * several models of one lift, and the label is what tells them apart.
+   */
+  const toggleModel = async () => {
+    if (referenceBusy) return;
+    const next = !isModel;
+    setReferenceBusy(true);
+    try {
+      const analysisId = await ensureId();
+      if (!analysisId) return;
+      const label = next
+        ? window.prompt(
+            'What is this a model of? A model lift without a name is an anonymous bar path.',
+            modelLabel ?? [clip.athleteName, clip.exerciseName].filter(Boolean).join(' · '),
+          )
+        : null;
+      // A cancelled prompt cancels the marking; an empty one does not, because
+      // a coach who cleared the box meant to leave it unnamed.
+      if (next && label === null) return;
+      await saveAnalysisState(analysisId, { isModel: next, modelLabel: next ? label : null });
+      setIsModel(next);
+      setModelLabel(next ? label : null);
+    } catch {
+      setSaveError('The model lift could not be saved.');
+    } finally {
+      setReferenceBusy(false);
+    }
+  };
+
   const title = clip.exerciseName ?? 'Clip';
   const subtitle = [
     clip.athleteName,
@@ -926,7 +1771,10 @@ export function KinemosViewer() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
           <button
             type="button"
-            onClick={() => setComparing(current => !current)}
+            onClick={() => {
+              setTrending(false);
+              setComparing(current => !current);
+            }}
             title={
               comparable
                 ? 'Compare this lift with another of the same athlete'
@@ -957,6 +1805,115 @@ export function KinemosViewer() {
           >
             <Columns2 size={12} />
             COMPARE
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleReference()}
+            disabled={!comparable || referenceBusy}
+            aria-pressed={isReference}
+            title={
+              !comparable
+                ? 'A reference needs a calibrated, marked lift'
+                : isReference
+                  ? `This is ${clip.athleteName ?? 'the athlete'}’s reference ${clip.exerciseName ?? 'lift'}. Comparison opens on it and the trend view draws it as a line. Press to unmark.`
+                  : `Make this ${clip.athleteName ?? 'the athlete'}’s reference ${clip.exerciseName ?? 'lift'} — the one the others are judged against. Replaces any current reference for this exercise.`
+            }
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 24,
+              padding: '0 9px',
+              border: '1px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: isReference ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+              color: comparable
+                ? isReference
+                  ? 'var(--color-accent)'
+                  : 'var(--color-text-primary)'
+                : 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-micro)',
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              cursor: comparable ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <Star size={12} fill={isReference ? 'currentColor' : 'none'} />
+            {isReference ? 'REFERENCE' : 'SET REFERENCE'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleModel()}
+            disabled={!comparable || referenceBusy}
+            aria-pressed={isModel}
+            title={
+              !comparable
+                ? 'A model lift needs a calibrated, marked lift'
+                : isModel
+                  ? `A model lift for the whole club${modelLabel ? `: “${modelLabel}”` : ''}. It is offered when comparing any athlete. Press to unmark.`
+                  : 'Make this a model lift for the whole club — an exemplar offered when comparing any athlete, not only this one.'
+            }
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 24,
+              padding: '0 9px',
+              border: '1px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: isModel ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+              color: comparable
+                ? isModel
+                  ? 'var(--color-accent)'
+                  : 'var(--color-text-primary)'
+                : 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-micro)',
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              cursor: comparable ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <GraduationCap size={12} />
+            {isModel ? 'MODEL' : 'SET MODEL'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setComparing(false);
+              setTrending(current => !current);
+            }}
+            title={
+              clip.athleteId
+                ? `${clip.athleteName ?? 'This athlete'}’s analysed lifts over time and against load`
+                : 'Trends need an athlete on the clip'
+            }
+            disabled={!clip.athleteId}
+            aria-pressed={trending}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 24,
+              padding: '0 9px',
+              border: '1px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: trending ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+              color: clip.athleteId
+                ? trending
+                  ? 'var(--color-accent)'
+                  : 'var(--color-text-primary)'
+                : 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-micro)',
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              cursor: clip.athleteId ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <TrendingUp size={12} />
+            TRENDS
           </button>
           <GradeChip grade={grade} />
         </div>
@@ -1005,10 +1962,24 @@ export function KinemosViewer() {
         />
       )}
 
+      {trending && (
+        <TrendsView
+          athleteId={clip.athleteId}
+          athleteName={clip.athleteName}
+          exerciseName={clip.exerciseName}
+          currentAnalysisId={analysisIdRef.current}
+          onClose={() => setTrending(false)}
+          onOpen={record => {
+            setTrending(false);
+            navigate(`/kinemos/analysis/${record.sourceKind}/${record.sourceId}`);
+          }}
+        />
+      )}
+
       <div
         style={{
           flexGrow: 1,
-          display: comparing && comparable ? 'none' : 'flex',
+          display: trending || (comparing && comparable) ? 'none' : 'flex',
           minHeight: 0,
         }}
       >
@@ -1122,6 +2093,8 @@ export function KinemosViewer() {
                 measurePoints={measurePoints}
                 onMeasurePoint={addMeasurePoint}
                 onMark={handleMark}
+                knee={kneePoint}
+                onKnee={p => void markKnee(p)}
               />
               <ViewerTransport
                 index={index}
@@ -1175,6 +2148,20 @@ export function KinemosViewer() {
             }}
             onActivate={() => setTool('calibrate')}
             onClear={() => void clearCalibrationNow()}
+            onFind={() => void findPlateHere()}
+            onSnap={() => void snapHere()}
+            assist={assist}
+            shape={plateShape}
+            onShape={setPlateShape}
+            lens={{
+              source: lensSource,
+              k1: lensK1,
+              device: [clip.deviceMake, clip.deviceModel].filter(Boolean).join(' ') || null,
+              busy: lensBusy,
+              note: lensNote,
+              onMeasure: () => void measureLens(),
+              onClear: clearLens,
+            }}
           />
           <ReadoutRail
             repIndices={repIndices}
@@ -1187,6 +2174,34 @@ export function KinemosViewer() {
             onClearMarks={() => void clearMarks()}
             tool={tool}
             measureValue={measureValue}
+            kneeCm={kneeCm}
+            kneeMarked={kneePoint !== null}
+            share={{
+              athleteName: clip.athleteId ? clip.athleteName ?? 'the athlete' : null,
+              shares,
+              busy: shareBusy,
+              note: shareNote,
+              ready: points.length > 1 && calibration !== null && repSummary !== null,
+              onShare: message => void shareNow(message),
+              onDelete: shareId => void removeShare(shareId),
+              onExport: () => void exportNow(),
+              exporting,
+              exportNote,
+              talkoverIncluded: latestTalkover !== null,
+              colleagues,
+              onShareWithCoach: (coachId, message) => void shareWithCoach(coachId, message),
+            }}
+            talkover={
+              talkoverMimeType() === null
+                ? null
+                : {
+                    recording: talkover !== null,
+                    startedAt: talkover?.startedAt ?? null,
+                    busy: talkoverBusy,
+                    note: talkoverNote,
+                    onToggle: () => void toggleTalkover(),
+                  }
+            }
             measureComplete={measureComplete}
             onSaveMeasurement={() => void saveMeasurement()}
             onClearMeasurement={() => setMeasurePoints([])}
@@ -1203,6 +2218,9 @@ export function KinemosViewer() {
               correctionCount,
               onTrack: () => void runTrack(),
               onNextUncertain: jumpToNextUncertain,
+              onTrackSet: points.length > 0 && status === 'ready' && ellipse ? () => void trackSetNow() : undefined,
+              setNote,
+              onTrackMarker: points.length > 0 && status === 'ready' ? () => void runMarkerTrack() : undefined,
             }}
           />
           <MetricsPanel
@@ -1216,6 +2234,7 @@ export function KinemosViewer() {
               setMassSource(kg === null ? null : 'manual');
             }}
             emptyReason={metricsEmptyReason}
+            knee={kneeReadout}
           />
           <GradePanel
             grade={grade}
@@ -1224,6 +2243,16 @@ export function KinemosViewer() {
               dirtyRef.current = true;
               setCamera(next);
             }}
+            stabilise={
+              points.length >= 8
+                ? { onRun: () => void stabiliseNow(), progress: stabiliseProgress, note: stabiliseNote }
+                : undefined
+            }
+            recentre={
+              points.length >= 8 && ellipse
+                ? { onRun: () => void recentreNow(), progress: recentreProgress, note: recentreNote }
+                : undefined
+            }
           />
         </aside>
       </div>
@@ -1240,6 +2269,7 @@ export function KinemosViewer() {
             if (server) seek(server.nearestIndex(t));
           }}
           emptyReason={analysisEmptyReason}
+          kneeCm={kneeCm}
         />
       )}
     </div>

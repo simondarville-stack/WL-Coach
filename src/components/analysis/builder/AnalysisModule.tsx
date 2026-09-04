@@ -32,6 +32,7 @@ const NORM_LABEL: Record<Normalization, string> = {
 };
 import { PRESETS } from './presets';
 import { loadCoachMetricSpecs, saveCoachMetricSpecs, specToMetric, type CoachMetricSpec } from './coachMetrics';
+import { kinemosAnalysisMetrics } from '../../../kinemos/lib/analysisMetrics';
 import { loadSavedViews, saveView, deleteView, setDefaultView, getDefaultView, touchView, type SavedView } from './savedViews';
 import { resultToCsv, downloadText, downloadXlsx, copyResultToClipboard, exportChartSvg, triggerPrint } from './exportUtils';
 
@@ -70,7 +71,13 @@ export function AnalysisModule() {
     return () => document.removeEventListener('mousedown', onDown);
   }, [exportOpen]);
 
-  const registry = useMemo(() => createRegistry(coachSpecs.map(specToMetric)), [coachSpecs]);
+  // KinEMOS measures join the coach's own at runtime — never in the seed
+  // (docs/KINEMOS_DESIGN.md §13 Q3). Coach metrics come last so a coach can
+  // still override any id.
+  const registry = useMemo(
+    () => createRegistry([...kinemosAnalysisMetrics(), ...coachSpecs.map(specToMetric)]),
+    [coachSpecs],
+  );
   const updateSpecs = (next: CoachMetricSpec[]) => {
     setCoachSpecs(next);
     saveCoachMetricSpecs(next);

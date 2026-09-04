@@ -4,7 +4,9 @@
  * The pipeline, in the order design §6.3 fixes and for the reasons it gives:
  *
  *     track (px, real timestamps)
- *       → calibrate to cm on the plate's own axes   (anisotropic; see calibration.ts)
+ *       → repair mis-stamped frames                 (timing.ts — before anything
+ *                                                    that differentiates)
+ *       → calibrate to cm, gravity up               (anisotropic; see calibration.ts)
  *       → resample onto a uniform grid              (the filter assumes uniform Δt)
  *       → zero-phase Butterworth on POSITION        (filtering velocity instead
  *                                                    smooths away the peak)
@@ -34,6 +36,7 @@ import {
   resampleUniform,
   type FilterSettings,
 } from './signal';
+import { repairTiming, type TimingRepair } from './timing';
 
 /** Standard gravity. The bar is accelerated against it, so it is part of the
  *  force the lifter produces even when the bar is moving at constant speed. */
@@ -50,6 +53,9 @@ export interface KinematicsOptions {
   /** Force a resampling step. Defaults to the track's own median interval, so
    *  a constant-rate clip is resampled onto its own timestamps. */
   dt?: number;
+  /** Skip the timing repair. Only for showing what a mis-stamped frame does
+   *  to a velocity curve; the default is to repair. */
+  repairTiming?: boolean;
 }
 
 /**
@@ -82,6 +88,9 @@ export interface KinematicSeries {
   /** False when the filter was skipped — the series is then RAW, and the UI
    *  must say so rather than implying it was smoothed. */
   filtered: boolean;
+  /** Frames whose timestamps were repaired or dropped before resampling.
+   *  Empty on a clean clip; worth showing when it is not. */
+  timingRepairs: TimingRepair[];
 }
 
 /** Per-rep headline figures. Phase-specific numbers live in `phases.ts`, which
@@ -117,7 +126,15 @@ export function computeKinematics(
   if (!calibration || calibration.confidence === 'degenerate') return null;
   if (points.length < MIN_POINTS_FOR_KINEMATICS) return null;
 
-  const sorted = [...points].sort((a, b) => a.t - b.t);
+  const ordered = [...points].sort((a, b) => a.t - b.t);
+  // A mis-stamped frame is repaired in pixels, before calibration: the
+  // acceleration bound is a physical one and needs only the vertical scale.
+  const repaired =
+    options.repairTiming === false
+      ? { points: ordered, repairs: [] as TimingRepair[] }
+      : repairTiming(ordered, { cmPerPx: calibration.cmPerPxV });
+  const sorted = repaired.points;
+  if (sorted.length < MIN_POINTS_FOR_KINEMATICS) return null;
   const origin = sorted[0];
 
   // Into the plate's frame: cm, y up, relative to the first mark.
@@ -162,7 +179,51 @@ export function computeKinematics(
     massKg,
     filter,
     filtered,
+    timingRepairs: repaired.repairs,
   };
+}
+
+export interface PeakStability {
+  /** Peak vertical velocity at the chosen cutoff, m/s. */
+  peakMs: number;
+  /** The same peak with the cutoff two-thirds and four-thirds of the chosen
+   *  one — 4 and 8 Hz around the 6 Hz default. */
+  peakAtLowerMs: number;
+  peakAtHigherMs: number;
+  /** (higher − lower) / peak. A plateau reads the same at every cutoff; a
+   *  transient near the peak — a blurred frame, the bar whipping on the
+   *  sleeve — makes the number a function of the filter. */
+  spread: number;
+}
+
+/**
+ * How much the peak velocity is a property of the lift, and how much of the
+ * filter.
+ *
+ * A snatch second pull holds its peak for a tenth of a second, which a
+ * low-pass at any sensible cutoff passes unchanged. When the peak instead
+ * moves with the cutoff, something short-lived sits under it: on the first
+ * real footage a one-frame lurch of the plate moved the 6 Hz peak 5 % while
+ * a second view of the same lift held still to 1 %
+ * (docs/KINEMOS_ACCURACY_STUDY.md). The spread is the honest way to report
+ * that: not a different number, but how far the number can be trusted.
+ */
+export function peakStability(
+  points: readonly TrackPoint[],
+  calibration: Calibration | null,
+  options: KinematicsOptions = {},
+): PeakStability | null {
+  const filter = options.filter ?? DEFAULT_FILTER;
+  if (filter.kind === 'none') return null;
+  const at = (cutoffHz: number): number | null => {
+    const series = computeKinematics(points, calibration, { ...options, filter: { ...filter, cutoffHz } });
+    return series ? summariseRep(series).peakVerticalVelocityMs : null;
+  };
+  const peak = at(filter.cutoffHz);
+  const lower = at((filter.cutoffHz * 2) / 3);
+  const higher = at((filter.cutoffHz * 4) / 3);
+  if (peak === null || lower === null || higher === null || !(peak > 0)) return null;
+  return { peakMs: peak, peakAtLowerMs: lower, peakAtHigherMs: higher, spread: (higher - lower) / peak };
 }
 
 /** Headline figures from a computed series. */

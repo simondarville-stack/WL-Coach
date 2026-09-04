@@ -220,3 +220,29 @@ describe('gradeAnalysis', () => {
     expect(result.improvements.length).toBeLessThanOrEqual(1);
   });
 });
+
+describe('the informational factors', () => {
+  it('says nothing about timing or peak stability when there is nothing to say', () => {
+    const ids = gradeAnalysis(inputs()).factors.map(f => f.id);
+    expect(ids).not.toContain('timing');
+    expect(ids).not.toContain('peak');
+  });
+
+  it('reports repaired frames without moving the letter', () => {
+    const clean = gradeAnalysis(inputs());
+    const repaired = gradeAnalysis(inputs({ timingRepairs: 1 }));
+    const factor = repaired.factors.find(f => f.id === 'timing')!;
+    expect(factor.value).toBe('1 frame repaired');
+    expect(factor.verdict).toBe('fair');
+    expect(repaired.grade).toBe(clean.grade);
+    expect(gradeAnalysis(inputs({ timingRepairs: 4 })).factors.find(f => f.id === 'timing')!.verdict).toBe('weak');
+  });
+
+  it('flags a peak that moves with the filter cutoff', () => {
+    const steady = gradeAnalysis(inputs({ peakSpread: 0.01 })).factors.find(f => f.id === 'peak')!;
+    expect(steady.verdict).toBe('good');
+    expect(steady.value).toBe('±0,5 % across cutoffs');
+    expect(gradeAnalysis(inputs({ peakSpread: 0.055 })).factors.find(f => f.id === 'peak')!.verdict).toBe('fair');
+    expect(gradeAnalysis(inputs({ peakSpread: 0.1 })).factors.find(f => f.id === 'peak')!.verdict).toBe('weak');
+  });
+});

@@ -14,25 +14,14 @@
  * calibration rather than read from the cached `metrics` column. The cache is
  * for trend views that read a season at once; a comparison the coach is looking
  * at should agree with the viewer beside it, and the only way to guarantee that
- * is to run the same pipeline.
+ * is to run the same pipeline — `computeFromBundle`, shared with the cache
+ * refresh so every writer of the cache computes the same way too.
  */
-import { calibrateFromEllipse } from '../engine/calibration';
-import {
-  computeKinematics,
-  summariseRep,
-  type KinematicSeries,
-  type RepSummary,
-} from '../engine/kinematics';
-import {
-  computeLiftMetrics,
-  proposePhases,
-  spansFrom,
-  type LiftMetrics,
-  type PhaseBoundary,
-} from '../engine/phases';
-import { DEFAULT_FILTER } from '../engine/signal';
+import type { KinematicSeries, RepSummary } from '../engine/kinematics';
+import type { LiftMetrics, PhaseBoundary } from '../engine/phases';
 import type { KinemosAnalysis, KinemosTrackPoint } from '../../lib/database.types';
-import { listRecentAnalyses, loadBundle, plateEllipseFrom } from './analysisService';
+import { listRecentAnalyses, loadBundle } from './analysisService';
+import { computeFromBundle } from './recompute';
 import { loadLibrary, type LibrarySource, type LibraryVideo } from './videoLibrary';
 
 /** An analysis the coach could compare the current one against. */
@@ -42,6 +31,16 @@ export interface ComparisonCandidate {
   /** True when it is the same exercise as well as the same athlete — the
    *  comparison a coach usually means. */
   sameExercise: boolean;
+  /** The athlete's reference lift for this exercise — listed first and
+   *  preselected, because "how does this compare to the good one" is the
+   *  question the reference exists to answer. */
+  isReference: boolean;
+  /** A model lift from the club's library (P5b): an exemplar offered whoever
+   *  the athlete is. Listed after the athlete's own lifts, because "how does
+   *  this compare to me last month" is asked far more often than "how does
+   *  this compare to a textbook". */
+  isModel: boolean;
+  modelLabel: string | null;
 }
 
 /** A loaded comparison subject: everything needed to draw and to tabulate. */
@@ -82,19 +81,31 @@ export async function findComparable(
       continue;
     }
     const clip = byKey.get(`${analysis.source_kind}:${analysis.source_id}`);
-    if (!clip || clip.athleteId !== athleteId) continue;
+    if (!clip) continue;
+    const isModel = analysis.is_model === true;
+    // The athlete's own lifts, plus the club's model lifts whoever they
+    // belong to — a model is an exemplar for everybody or it is not a model.
+    if (clip.athleteId !== athleteId && !isModel) continue;
     candidates.push({
       analysis,
       clip,
       sameExercise:
         !!exerciseName && (clip.exerciseName ?? '').toLowerCase() === exerciseName.toLowerCase(),
+      isReference: analysis.is_reference === true && clip.athleteId === athleteId,
+      isModel,
+      modelLabel: analysis.model_label ?? null,
     });
   }
 
-  // Same exercise first, then newest. A coach comparing a snatch to a snatch is
-  // the common case; comparing a snatch to a clean is occasionally the point.
+  // Same exercise first; within that, the athlete's own reference, then their
+  // own other lifts, then the club's models. "How does this compare to me
+  // last month" is asked far more often than "how does this compare to a
+  // textbook", and the textbook should not push the coach's own history down
+  // the list.
   return candidates.sort((a, b) => {
     if (a.sameExercise !== b.sameExercise) return a.sameExercise ? -1 : 1;
+    if (a.isReference !== b.isReference) return a.isReference ? -1 : 1;
+    if (a.isModel !== b.isModel) return a.isModel ? 1 : -1;
     return (b.clip.date ?? '').localeCompare(a.clip.date ?? '');
   });
 }
@@ -113,36 +124,9 @@ export async function loadComparisonSubject(
     candidate.analysis.source_id,
     candidate.analysis.rep_index,
   );
-  if (!bundle?.track || !bundle.calibration) return null;
-  const points = bundle.track.points ?? [];
-  if (points.length < 2) return null;
+  if (!bundle) return null;
+  const computed = computeFromBundle(bundle);
+  if (!computed) return null;
 
-  const calibration = calibrateFromEllipse(
-    plateEllipseFrom(bundle.calibration),
-    Number(bundle.calibration.plate_diameter_cm),
-  );
-  const series = computeKinematics(points, calibration, {
-    massKg: bundle.analysis.mass_kg === null ? null : Number(bundle.analysis.mass_kg),
-    filter: DEFAULT_FILTER,
-  });
-  if (!series) return null;
-
-  // A coach-corrected phase set is the answer; anything else is re-proposed
-  // against the series as it is now, for the same reason the viewer does.
-  const stored = bundle.analysis.phase_boundaries;
-  const boundaries =
-    stored && stored.some(b => b.source === 'coach')
-      ? (stored as PhaseBoundary[])
-      : proposePhases(series).boundaries;
-
-  const spans = spansFrom(boundaries);
-  return {
-    analysis: bundle.analysis,
-    clip: candidate.clip,
-    points,
-    series,
-    boundaries,
-    metrics: computeLiftMetrics(series, spans),
-    summary: summariseRep(series),
-  };
+  return { analysis: bundle.analysis, clip: candidate.clip, ...computed };
 }

@@ -21,7 +21,7 @@
  * segment per card — filled = reviewed, bright = where you are.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { getOwnerId } from '../../lib/ownerContext';
 import { useAthleteStore } from '../../store/athleteStore';
@@ -61,6 +61,7 @@ const HISTORY_PREFETCH_MARGIN = 3;
 
 export function ReviewScroller() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const ownerId = getOwnerId();
   const athletes = useAthleteStore(s => s.athletes);
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
@@ -137,6 +138,54 @@ export function ReviewScroller() {
   useEffect(() => {
     void useAthleteStore.getState().fetchAthletes();
   }, []);
+
+  // ── Jump to the session behind a card ────────────────────────────────────
+  //
+  // The reel is triage; the training log is where a coach actually works on a
+  // session. Both surfaces mount this same scroller, and their logs live at
+  // different routes, so the target is chosen from the path we are on:
+  //   coach mobile (/coach/review) → /coach/a/<athlete>/d/<day>?w=<week>
+  //   desktop      (/review)       → /planner/<week>?mode=log&day=<day>
+  // The planner reads its athlete from the store rather than the URL, so the
+  // desktop branch sets the selection first (same handshake CoachInbox uses).
+  //
+  // week_start + day_index come from the session row itself, never
+  // mondayOf(date): a session performed late can sit in a different week than
+  // the slot it was planned for, and the slot is what the log is keyed by.
+  // '/coach' plus the legacy prefixes FieldApp still answers on, so a card
+  // opened before the redirect lands still routes to the mobile day screen.
+  const isCoachMobile = ['/coach', '/field', '/fieldcoach', '/coach-overview'].some(prefix =>
+    pathname.toLowerCase().startsWith(prefix),
+  );
+  const openSession = useCallback(
+    (athleteId: string, weekStart: string | null, dayIndex: number | null) => {
+      if (!weekStart || dayIndex == null) return;
+      if (isCoachMobile) {
+        navigate(`/coach/a/${athleteId}/d/${dayIndex}?w=${weekStart}`);
+        return;
+      }
+      const athlete = athleteById.get(athleteId);
+      if (athlete) useAthleteStore.getState().setSelectedAthlete(athlete);
+      navigate(`/planner/${weekStart}?mode=log&day=${dayIndex}`);
+    },
+    [isCoachMobile, navigate, athleteById],
+  );
+
+  /** The jump handler for one card, or null when it has no session slot
+   *  (a direct message, a clip whose log exercise resolved no session, or a
+   *  demo card). */
+  const openSessionFor = useCallback(
+    (item: ReviewFeedItem): (() => void) | null => {
+      if (item.key.startsWith(DEMO_KEY_PREFIX)) return null;
+      const slot =
+        item.kind === 'session'
+          ? { week: item.session.week_start, day: item.session.day_index }
+          : { week: item.sessionWeekStart, day: item.sessionDayIndex };
+      if (!slot.week || slot.day == null) return null;
+      return () => openSession(item.athleteId, slot.week, slot.day);
+    },
+    [openSession],
+  );
 
   // ── Load (snapshot — reviewing a card does not reshuffle the feed) ───────
   const load = useCallback(async () => {
@@ -534,6 +583,7 @@ export function ReviewScroller() {
           // would become once a viewer existed. `log` + the video id is the
           // same source reference the analysis rows carry.
           onOpenInKinemos={() => navigate(`/kinemos/analysis/log/${item.video.id}`)}
+          onOpenSession={openSessionFor(item)}
         />
       )}
       {item.kind === 'thread' && (
@@ -542,6 +592,7 @@ export function ReviewScroller() {
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
           onReply={text => replyToThread(item, text)}
+          onOpenSession={openSessionFor(item)}
         />
       )}
       {item.kind === 'session' && (
@@ -552,6 +603,7 @@ export function ReviewScroller() {
           onComment={text => commentOnSession(item, item.session.id, text)}
           reactions={quickReactions}
           externalSent={keyboardSent[item.key]}
+          onOpenSession={openSessionFor(item)}
         />
       )}
     </section>

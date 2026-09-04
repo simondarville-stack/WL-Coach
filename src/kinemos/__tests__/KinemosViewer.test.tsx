@@ -89,6 +89,8 @@ function libraryVideo(overrides: Partial<LibraryVideo> = {}): LibraryVideo {
     fps: 60,
     width: 1920,
     height: 1080,
+    deviceMake: null,
+    deviceModel: null,
     playbackUrl: '/api/kinemos/video/vid-1.mp4',
     isEmbed: false,
     thumbnailUrl: null,

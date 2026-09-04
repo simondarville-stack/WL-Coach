@@ -81,13 +81,71 @@ All modules are **active** — nothing is currently disabled or hidden:
   filtering, velocity, phases, power and the A/B/C quality grade (0.80.0) — and
   assisted bar tracking, anchor-and-supervise, in pure TypeScript (0.81.0), and
   lift-vs-lift comparison inside the viewer — charts 0.82.0, synced
-  side-by-side playback 0.83.0.
+  side-by-side playback 0.83.0 — and metric trends (0.84.0): a TRENDS view in
+  the viewer plus KinEMOS measures inside the Analysis builder, both read
+  through `src/kinemos/lib/analysisAdapter.ts` (design §13 Q3: metrics stay
+  adjacent, Analysis never imports the engine) — and a per-athlete reference
+  lift that comparison opens on and trends draw as a line — and the OpenCV
+  assists: find the plate with no click, snap an outline to the rim at
+  sub-pixel, stabilise a handheld camera's track (`src/kinemos/cv/*`,
+  `@techstark/opencv-js` loaded lazily as its own chunk; the tracker itself
+  stays pure TypeScript, having out-measured OpenCV's trackers) — and, from
+  the two-view accuracy study (`docs/KINEMOS_ACCURACY_STUDY.md`, the
+  reference for why the pipeline is shaped as it is): gravity-anchored
+  calibration (the plate outline gives scales, never which way is up), a
+  timing repair for mis-stamped frames before resampling
+  (`src/kinemos/engine/timing.ts`), per-frame re-centring of the track on the
+  plate outline, and a peak-stability factor in the grade — and, from the
+  first phone footage of whole sets (`docs/KINEMOS_P3_PLAN.md` §8): a
+  tracker whose search radius follows the physics of the clip and that
+  survives a blurred second pull, and `src/kinemos/engine/reps.ts`, which
+  cuts a track of a set into its reps from rests and rises alone.
+  The metric set includes the German Weightlifting Analyzer's measures
+  (V1/V2/Vmax/Vmin, t_turn, S_vmax/S_max/S_fly/S_remain/S_sit/S_fall, F1–Fbr
+  as % of load, PSK) as `AnalyzerMetrics` in `engine/phases.ts` — from
+  Simon's 2018 DTU report, P3 plan §9 — and `engine/reps.ts` cuts a set into
+  reps — and, from 0.86.0 (P3 plan §10): TRACK THE SET in the viewer (one
+  click on a double or triple gives a rep per lift, each calibrated at its
+  own rest; `src/kinemos/lib/setTracker.ts`, the same procedure the harness
+  runs), the plate found again by its colour after a loss
+  (`engine/plateColour.ts`, pure), charts against height with V1/V2/Vmax/Vmin
+  marked (`vs time | vs height` on the analysis panel), and a knee-height
+  mark (KNEE tool) that checks the phase edges against the coach's eye.
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
-  imports. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
-  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
-  `_P3_PLAN.md`.
+  imports, and it never imports `cv/`. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
+  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md`, `_P3_PLAN.md`,
+  `_P4_PLAN.md` and `_P5_PLAN.md`.
+  From 0.87.0 (P3 plan §11–§12, P4 plan): **sharing** — a rep handed to its
+  athlete as a card in their coach thread, to a colleague coach via "Shared
+  with you" on the library, as an mp4/WebM with the bar path burned in
+  (`lib/overlayExport.ts`), or as a talkover recorded over the scrubbed lift
+  (`lib/talkover.ts`); the **lens tier** (`engine/distortion.ts`,
+  `engine/edgeChains.ts`, `lib/distortionFit.ts`) fitting a one-parameter
+  division model to the gym's own straight edges, with `probeSensitivity` so
+  a refusal says whether the lens is clean or the edges simply cannot tell;
+  **marker mode** (`engine/markerTracker.ts`, design §6.2 tier 2); and P4's
+  **consent + labelled export** (`lib/flywheel.ts`, design §10), the
+  **benchmark** (`npm run bench`, `verify/bench.mjs`) and **zero-click
+  analysis** (`lib/autoAnalyse.ts`) — whose `persistRep` is the single
+  definition of a stored rep. The learned tracker of design §6.2 tier 3 is
+  deliberately not built; P4 plan §5 says what would have to be true first.
+  From 0.88.0 (P5 plan): **load–velocity profiles**
+  (`engine/loadVelocity.ts`) — expected velocity at a load, the load for a
+  target velocity, a 1RM estimated from submaximal work, and velocity loss
+  measured from the best rep of a set, with explicit refusals rather than a
+  confident line through four points; a **model-lift library** (`is_model` /
+  `model_label` on an analysis) for comparing against a lift that is simply
+  correct, alongside P3c's per-athlete reference lift; **live mode** at
+  `/kinemos/live` (`engine/liveReps.ts`, a three-state machine fed one
+  sample at a time) — which answers design §13 open question 4 as a VBT-unit
+  readout rather than live path drawing, stores nothing and grades nothing;
+  and **pre-analysed arrivals** (`lib/arrivals.ts`) running the P4c pipeline
+  on import from the local file and on a stoppable backlog sweep, since a
+  pure client-side SPA has no server to pre-analyse on. Lifter pose tracking
+  is deliberately not built; P5 plan §6 says why.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
-  for the analysis panels) — open them under `npm run dev`.
+  for the analysis panels, a trends bench with a Playwright screenshot driver)
+  — open them under `npm run dev`; `npm run bench` scores engine variants.
 
 **Deletion policy:** shipped code and database tables are never deleted
 without explicit instruction. **Carve-out for failed experiments:** once the

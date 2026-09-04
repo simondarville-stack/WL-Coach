@@ -44,6 +44,7 @@ const ReviewScroller = lazy(() => import('./components/review/ReviewScroller').t
 // reach a coach who never opens the module.
 const KinemosLibrary = lazy(() => import('./kinemos/KinemosLibrary').then(m => ({ default: m.KinemosLibrary })));
 const KinemosViewer = lazy(() => import('./kinemos/KinemosViewer').then(m => ({ default: m.KinemosViewer })));
+const KinemosLive = lazy(() => import('./kinemos/KinemosLive').then(m => ({ default: m.KinemosLive })));
 
 /** Route-chunk loading state — same minimal spinner the app boot uses. */
 function RouteFallback() {
@@ -348,6 +349,10 @@ function CoachApp() {
               {/* The P1 study room. Source kind and id are separate segments so a
                   library key (`log:<uuid>`) never has to survive URL escaping. */}
               <Route path="/kinemos/analysis/:kind/:id" element={<KinemosViewer />} />
+              {/* Live mode (P5c). Its own route rather than a mode on the
+                  library: it holds a camera open, so leaving it must stop
+                  the stream, and an unmount is the only reliable signal. */}
+              <Route path="/kinemos/live" element={<KinemosLive />} />
               {/* SD-04: remove intermediate hop; both routes redirect to dashboard */}
               <Route path="/athlete-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />

@@ -1277,6 +1277,20 @@ export interface KinemosAnalysis {
    *  infer it, and worth about half the error budget. */
   camera: 'tripod' | 'stabilised' | 'handheld' | 'unknown' | null;
 
+  /** The athlete's reference lift for this exercise — the one their other
+   *  lifts are judged against. One per (athlete, exercise), enforced by
+   *  `referenceService`, not the database (see migration 20260902200000). */
+  is_reference: boolean;
+
+  /** A model lift: an exemplar offered when comparing ANY athlete, not only
+   *  its own (design §8 comparison item 3, the club-wide half that the
+   *  per-athlete reference above does not cover). Several may exist for one
+   *  lift; choosing between them is the coach's business. */
+  is_model: boolean;
+  /** What it is a model OF, in the coach's words — "Textbook second pull".
+   *  A model lift without a name is an anonymous bar path. */
+  model_label: string | null;
+
   created_at: string;
   updated_at: string;
 }
@@ -1356,6 +1370,92 @@ export interface KinemosAnnotation {
   payload: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Whether one athlete's coach-corrected tracks may be used as machine-
+ *  learning training data (design §10). Granting and revoking are both
+ *  dated, because a withdrawal ends future use rather than rewriting what
+ *  was lawfully done before it. */
+export interface KinemosTrainingConsent {
+  id: string;
+  owner_id: string | null;
+  athlete_id: string;
+  granted_at: string | null;
+  revoked_at: string | null;
+  recorded_by_coach_id: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A lens, measured once and reused for every clip from the same phone
+ *  (design §6.1's model/profile tiers). `k1` is the division model's single
+ *  coefficient, normalised by half the image diagonal so it describes the
+ *  lens rather than the recording. */
+export interface KinemosDeviceProfile {
+  id: string;
+  owner_id: string | null;
+  /** Normalised "<make> <model>", lower case — what a clip is looked up by. */
+  device_key: string;
+  device_make: string | null;
+  device_model: string | null;
+  athlete_id: string | null;
+  k1: number;
+  method: 'plumb-line' | 'manual';
+  residual_before_px: number | null;
+  residual_after_px: number | null;
+  chains: number | null;
+  frames: number | null;
+  frame_width: number | null;
+  frame_height: number | null;
+  source_kind: 'log' | 'event' | 'direct' | null;
+  source_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What a share's card says — frozen when the coach shared it, so a rep
+ *  re-tracked later does not rewrite what the athlete was sent. */
+export interface KinemosShareSummary {
+  athleteName: string | null;
+  exerciseName: string | null;
+  /** The lift's date, YYYY-MM-DD. */
+  date: string | null;
+  loadKg: number | null;
+  repIndex: number;
+  label: string | null;
+  vmaxMs: number | null;
+  peakHeightCm: number | null;
+  grade: 'A' | 'B' | 'C' | null;
+  /** Where the clip plays from, when the athlete may watch it. */
+  clipUrl: string | null;
+  /** The coach talking through the lift, when a talkover was included. */
+  talkoverUrl?: string | null;
+}
+
+/** One analysed rep handed to an athlete (or, later, a colleague or an
+ *  export): the picture, the numbers as they stood, and a reference to the
+ *  message that carried the coach's words. */
+export interface KinemosShare {
+  id: string;
+  owner_id: string | null;
+  analysis_id: string;
+  channel: 'athlete' | 'club' | 'export';
+  athlete_id: string | null;
+  sender_coach_id: string | null;
+  message_id: string | null;
+  /** The colleague it went to, on the club channel. */
+  recipient_coach_id: string | null;
+  /** The sender's words on a club share — coaches have no thread of their
+   *  own to carry them. */
+  note: string | null;
+  /** R2 key of the share's picture. Only the key, never a URL. */
+  asset_key: string | null;
+  summary: KinemosShareSummary;
+  created_at: string;
+  athlete_read_at: string | null;
+  /** When the colleague first opened a club share. */
+  coach_read_at: string | null;
 }
 
 export interface Database {
@@ -1709,6 +1809,26 @@ export interface Database {
           Record<string, unknown>;
         Update: Partial<Omit<KinemosAnnotation, 'id' | 'created_at' | 'updated_at'>> &
           Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_training_consent: {
+        Row: KinemosTrainingConsent & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosTrainingConsent, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosTrainingConsent, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_device_profiles: {
+        Row: KinemosDeviceProfile & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosDeviceProfile, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosDeviceProfile, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_shares: {
+        Row: KinemosShare & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosShare, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<KinemosShare, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       kinemos_videos: {

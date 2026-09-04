@@ -16,6 +16,9 @@ import {
   DEFAULT_PHASE_THRESHOLDS,
   computeLiftMetrics,
   enforceMonotonic,
+  forcePercentOf,
+  kneeCrossing,
+  locateAnalyzerEvents,
   proposePhases,
   spansFrom,
   valueAt,
@@ -181,10 +184,18 @@ describe('proposePhases — a pull with no dip', () => {
 
 describe('proposePhases — thresholds are the coach’s, not the code’s', () => {
   it('stops believing the dip once the prominence bar is raised above it', () => {
-    // The synthetic dip is 0,25 m/s deep. Demanding 0,5 makes it noise.
+    // The synthetic dip is 0,25 m/s deep. Demanding 0,5 makes it noise — and
+    // the transition is then read from acceleration instead, which the
+    // boundaries say. Raising that bar too leaves nothing to find.
+    const strictVelocity = proposePhases(series, DEFAULT_PHASE_SET, {
+      ...DEFAULT_PHASE_THRESHOLDS,
+      minProminenceMs: 0.5,
+    });
+    expect(strictVelocity.boundaries.find(b => b.phaseId === 'transition')!.rule).toBe('acceleration-peak');
     const strict = proposePhases(series, DEFAULT_PHASE_SET, {
       ...DEFAULT_PHASE_THRESHOLDS,
       minProminenceMs: 0.5,
+      minUnweightingMs2: Infinity,
     });
     expect(strict.fullyDetected).toBe(false);
   });
@@ -310,6 +321,162 @@ describe('valueAt', () => {
 
   it('is null on an empty series', () => {
     expect(valueAt([], [], 1)).toBeNull();
+  });
+});
+
+describe('computeAnalyzerMetrics — the German analyzer measures', () => {
+  const spans = spansFrom(proposePhases(series).boundaries);
+  const a = computeLiftMetrics(series, spans).analyzer;
+
+  it('reads V1, V2, Vmax and Vmin off the profile the lift was built with', () => {
+    expect(a.v1Ms).toBeCloseTo(1.0, 1);
+    expect(a.v2Ms).toBeCloseTo(0.75, 1);
+    expect(a.vmaxMs).toBeCloseTo(1.85, 1);
+    expect(a.vminMs).toBeCloseTo(-0.6, 1);
+  });
+
+  it('times the turnover from Vmax to Vmin', () => {
+    // Built as 1,3 s → 1,7 s.
+    expect(a.tTurnS).toBeCloseTo(0.4, 1);
+  });
+
+  it('places the flight between the height at Vmax and the apex', () => {
+    expect(a.sVmaxCm).not.toBeNull();
+    expect(a.sMaxCm!).toBeGreaterThan(a.sVmaxCm!);
+    expect(a.sFlyCm).toBeCloseTo(a.sMaxCm! - a.sVmaxCm!, 6);
+    // 1,85 m/s ballistic rise is 17,4 cm; the profile decelerates faster than
+    // gravity would, so the bar gains less than that — a negative remainder.
+    expect(a.sRemainCm).toBeCloseTo(a.sFlyCm! - 17.45, 0);
+    expect(a.sRemainPct).toBeCloseTo((a.sRemainCm! / a.sMaxCm!) * 100, 6);
+  });
+
+  it('measures the fall into the catch', () => {
+    expect(a.sSitCm).not.toBeNull();
+    expect(a.sSitCm!).toBeLessThan(a.sMaxCm!);
+    expect(a.sFallCm).toBeCloseTo(a.sMaxCm! - a.sSitCm!, 6);
+  });
+
+  it('gives forces as a share of the load, from acceleration alone', () => {
+    // Pulling harder than gravity in both pulls; easing off through the knee;
+    // braking harder than gravity in the catch.
+    expect(a.f1Pct!).toBeGreaterThan(100);
+    expect(a.f3Pct!).toBeGreaterThan(100);
+    expect(a.f2Pct!).toBeLessThan(100);
+    expect(a.fbrPct!).toBeGreaterThan(100);
+    const noMass = computeKinematics(syntheticLift(), cal)!;
+    const b = computeLiftMetrics(noMass, spansFrom(proposePhases(noMass).boundaries)).analyzer;
+    expect(b.f3Pct).toBeCloseTo(a.f3Pct!, 6);
+    expect(b.pskNs).toBeNull();
+  });
+
+  it('gives PSK as load × Vmax when a mass is known', () => {
+    expect(a.pskNs).toBeCloseTo(100 * a.vmaxMs!, 6);
+  });
+
+  it('is all null when the phase set has none of the phases it reads', () => {
+    const m = computeLiftMetrics(series, []);
+    expect(m.analyzer.v1Ms).toBeNull();
+    expect(m.analyzer.f3Pct).toBeNull();
+    // Vmax needs no phase.
+    expect(m.analyzer.vmaxMs).toBeCloseTo(1.85, 1);
+  });
+});
+
+describe('locateAnalyzerEvents — the landmarks the charts draw', () => {
+  const spans = spansFrom(proposePhases(series).boundaries);
+  const events = locateAnalyzerEvents(series, spans);
+  const a = computeLiftMetrics(series, spans).analyzer;
+
+  it('puts each landmark where the profile was built', () => {
+    expect(events.v1!.t).toBeCloseTo(0.8, 1);
+    expect(events.vmax!.t).toBeCloseTo(1.3, 1);
+    expect(events.vmin!.t).toBeCloseTo(1.7, 1);
+    expect(events.apex!.t).toBeGreaterThan(events.vmax!.t);
+    expect(events.apex!.t).toBeLessThan(events.vmin!.t);
+    expect(events.sit!.t).toBeGreaterThan(events.apex!.t);
+  });
+
+  it('is the same search the analyzer numbers come from', () => {
+    expect(events.v1!.valueMs).toBe(a.v1Ms);
+    expect(events.v2!.valueMs).toBe(a.v2Ms);
+    expect(events.vmax!.valueMs).toBe(a.vmaxMs);
+    expect(events.vmin!.valueMs).toBe(a.vminMs);
+    expect(events.vmax!.heightCm).toBe(a.sVmaxCm);
+    expect(events.apex!.heightCm).toBe(a.sMaxCm);
+    expect(events.sit!.heightCm).toBe(a.sSitCm);
+  });
+
+  it('climbs: each landmark of the pull is higher than the one before', () => {
+    expect(events.v2!.heightCm).toBeGreaterThan(events.v1!.heightCm);
+    expect(events.vmax!.heightCm).toBeGreaterThan(events.v2!.heightCm);
+    expect(events.apex!.heightCm).toBeGreaterThan(events.vmax!.heightCm);
+  });
+
+  it('has no V1 or V2 without the phases, and still has Vmax', () => {
+    const bare = locateAnalyzerEvents(series, []);
+    expect(bare.v1).toBeNull();
+    expect(bare.v2).toBeNull();
+    expect(bare.vmax!.valueMs).toBeCloseTo(1.85, 1);
+  });
+
+  it('finds the bar passing a knee height on the way up, and not one it never reaches', () => {
+    // Half way up to Vmax's height: crossed once, between V1 and Vmax.
+    const knee = events.vmax!.heightCm / 2;
+    const crossing = kneeCrossing(series, knee)!;
+    expect(crossing.heightCm).toBe(knee);
+    expect(crossing.t).toBeGreaterThan(series.t[0]);
+    expect(crossing.t).toBeLessThan(events.vmax!.t);
+    expect(crossing.valueMs).toBeGreaterThan(0);
+    expect(kneeCrossing(series, events.apex!.heightCm + 50)).toBeNull();
+  });
+
+  it('gives force as a share of the load, sample by sample', () => {
+    const f = forcePercentOf(series);
+    expect(f.length).toBe(series.t.length);
+    // At rest the bar's weight is the whole force.
+    expect(f[0]).toBeCloseTo(100, 0);
+  });
+});
+
+describe('proposePhases — a pull with a shoulder rather than a dip', () => {
+  // The bar never slows through the knee; it only stops speeding up for a
+  // moment. Velocity has no trough, acceleration does.
+  const SHOULDER: Array<[number, number]> = [
+    [0.0, 0], [0.4, 0], [0.8, 1.0], [1.0, 1.03], [1.3, 1.85], [1.5, 0], [1.7, -0.6], [1.9, 0], [2.3, 0],
+  ];
+  const shoulderAt = (t: number): number => {
+    for (let i = 1; i < SHOULDER.length; i++) {
+      const [t0, v0] = SHOULDER[i - 1];
+      const [t1, v1] = SHOULDER[i];
+      if (t <= t1) return v0 + (v1 - v0) * smoothstep((t - t0) / (t1 - t0));
+    }
+    return 0;
+  };
+  const lift = computeKinematics(syntheticLift(FPS, shoulderAt), cal, { massKg: 100 })!;
+  const { boundaries, fullyDetected } = proposePhases(lift);
+
+  it('finds the transition from the acceleration trough and says which signature it used', () => {
+    expect(fullyDetected).toBe(true);
+    const transition = boundaries.find(b => b.phaseId === 'transition')!;
+    const secondPull = boundaries.find(b => b.phaseId === 'second_pull')!;
+    expect(transition.rule).toBe('acceleration-peak');
+    expect(secondPull.rule).toBe('acceleration-trough');
+    expect(transition.source).toBe('detected');
+    // The shoulder was built between 0,8 and 1,0 s: the first pull's drive
+    // lets go on the way into it, the second pull starts in the middle of it.
+    expect(transition.t).toBeGreaterThan(0.65);
+    expect(transition.t).toBeLessThan(0.95);
+    expect(secondPull.t).toBeGreaterThan(transition.t);
+    expect(secondPull.t).toBeLessThan(1.1);
+  });
+
+  it('gives the analyzer its V1, V2 and forces from those edges', () => {
+    const a = computeLiftMetrics(lift, spansFrom(boundaries)).analyzer;
+    expect(a.v1Ms).not.toBeNull();
+    expect(a.v2Ms).not.toBeNull();
+    expect(a.f1Pct!).toBeGreaterThan(100);
+    expect(a.f2Pct!).toBeLessThan(a.f1Pct!);
+    expect(a.f3Pct!).toBeGreaterThan(a.f2Pct!);
   });
 });
 

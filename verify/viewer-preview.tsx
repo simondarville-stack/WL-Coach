@@ -358,7 +358,7 @@ function useReferenceSubject(playbackUrl: string): {
     } as unknown as KinemosAnalysis;
 
     return {
-      candidate: { analysis, clip, sameExercise: true },
+      candidate: { analysis, clip, sameExercise: true, isReference: false, isModel: false, modelLabel: null },
       subject: {
         analysis,
         clip,
@@ -665,6 +665,9 @@ function Bench() {
           currentT={currentT}
           onSeekT={setCurrentT}
           emptyReason={null}
+          // `?knee=40` marks a knee height, cm above the start, to see the
+          // line in both domains.
+          kneeCm={Number(new URLSearchParams(window.location.search).get('knee')) || null}
         />
       )}
     </div>

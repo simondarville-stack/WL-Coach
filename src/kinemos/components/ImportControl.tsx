@@ -30,20 +30,31 @@ import { useClipEditor } from '../../components/planner/useClipEditor';
 import { readVideoDurationSeconds } from '../../lib/videoProbe';
 import { importDirectVideo, unreadableContainer } from '../lib/directImport';
 import { KINEMOS_IMPORT_MAX_BYTES } from '../lib/kinemosStorage';
+import {
+  analyseOnImportEnabled,
+  runArrivalQueue,
+  setAnalyseOnImport,
+  type ArrivalTarget,
+} from '../lib/arrivals';
+import { getOwnerId } from '../../lib/ownerContext';
 import type { Athlete } from '../../lib/database.types';
 
 interface ImportControlProps {
   athletes: Athlete[];
   exercises: { id: string; name: string }[];
   onImported: () => void;
+  /** Say what the automatic analysis is doing, on the page that owns the
+   *  library. The control does the work; the page shows the sentence. */
+  onArrivalNote?: (note: string | null) => void;
 }
 
-export function ImportControl({ athletes, exercises, onImported }: ImportControlProps) {
+export function ImportControl({ athletes, exercises, onImported, onArrivalNote }: ImportControlProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [athleteId, setAthleteId] = useState('');
   const [exerciseId, setExerciseId] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autoAnalyse, setAutoAnalyse] = useState(analyseOnImportEnabled);
 
   const clipEditor = useClipEditor({
     maxBytes: KINEMOS_IMPORT_MAX_BYTES,
@@ -87,10 +98,11 @@ export function ImportControl({ athletes, exercises, onImported }: ImportControl
     }
     if (!prepared) return; // backed out of the editor
 
+    const arrivals: ArrivalTarget[] = [];
     try {
       for (let i = 0; i < prepared.length; i++) {
         setBusy(prepared.length > 1 ? `Importing ${i + 1} of ${prepared.length}…` : 'Importing…');
-        await importDirectVideo(prepared[i], {
+        const imported = await importDirectVideo(prepared[i], {
           athleteId: athleteId || null,
           exerciseId: exerciseId || null,
           originalDurationS,
@@ -98,10 +110,41 @@ export function ImportControl({ athletes, exercises, onImported }: ImportControl
           // if the editor actually returned a different file.
           trimmed: prepared.length > 1 || prepared[i] !== file,
         });
+        // The prepared file, not the uploaded copy: the frames are already in
+        // this browser, so analysing them costs no download at all (P5d).
+        arrivals.push({
+          source: 'direct',
+          sourceId: imported.id,
+          label: prepared.length > 1 ? `${file.name} — clip ${i + 1}` : file.name,
+          file: prepared[i],
+        });
       }
       onImported();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed.');
+      return;
+    } finally {
+      setBusy(null);
+    }
+
+    // After the refresh, never before it: the coach sees their clips in the
+    // library immediately, and the analysis fills them in behind that.
+    if (!autoAnalyse || arrivals.length === 0) return;
+    setBusy('Analysing…');
+    try {
+      await runArrivalQueue(arrivals, {
+        ownerId: getOwnerId(),
+        onProgress: p =>
+          onArrivalNote?.(
+            p.total > 1
+              ? `Analysing ${p.index} of ${p.total} — ${p.stage.toLowerCase()}`
+              : `Analysing ${p.label} — ${p.stage.toLowerCase()}`,
+          ),
+        onDone: outcome => {
+          onArrivalNote?.(outcome.message);
+          onImported();
+        },
+      });
     } finally {
       setBusy(null);
     }
@@ -166,6 +209,31 @@ export function ImportControl({ athletes, exercises, onImported }: ImportControl
       >
         {busy ?? 'Import video'}
       </Button>
+
+      {/* COACH-CONFIG candidate: belongs in a KinEMOS settings row once there
+          is one. Here for now because this is where its cost is paid — a
+          minute of this laptop's CPU per clip, right after the upload. */}
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-xs)',
+          fontSize: 'var(--text-label)',
+          color: 'var(--color-text-secondary)',
+          cursor: 'pointer',
+        }}
+        title="Find the plate, follow the bar and store every rep as soon as the clip lands. Runs in this browser."
+      >
+        <input
+          type="checkbox"
+          checked={autoAnalyse}
+          onChange={e => {
+            setAutoAnalyse(e.target.checked);
+            setAnalyseOnImport(e.target.checked);
+          }}
+        />
+        Analyse on import
+      </label>
 
       {error && (
         <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-danger-text)' }}>

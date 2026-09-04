@@ -235,7 +235,12 @@ Coach-visible quality/effort tiers:
    - **Corrected by measurement (P2b, 0.81.0).** Two of the three assumptions
      above did not survive contact with a ground-truth test. The details are in
      `docs/KINEMOS_P2_PLAN.md` §4; in short:
-     - **OpenCV was not needed at all.** For this target — one large,
+     - **OpenCV was not needed for the tracker** — and, measured again in
+       P3d against the library's own trackers on degraded footage, still is
+       not (`docs/KINEMOS_P3_PLAN.md` §7). It IS used, lazily loaded, for the
+       work around the tracker: plate detection, sub-pixel outline snapping,
+       and the stabiliser tier of the calibration ladder (`src/kinemos/cv/*`).
+     - For this target — one large,
        high-contrast disc, anchored by the coach — normalised cross-correlation
        over a masked template with parabolic sub-pixel refinement reaches
        0,04 px RMS on synthetic images and 0,09 px through a real
@@ -445,15 +450,59 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   **decode stall that had shipped with the frame server in 0.79.0**: overlapping
   `getCanvas` calls stop resolving past a few dozen and never reject, freezing
   the picture under a transport that carries on. Fixed with a serial decode
-  queue; see the P3 plan. Trends and the model lift stay deferred; sharing,
-  talkover and the calibration tiers are untouched.
+  queue; see the P3 plan. *P3b (metric trends) shipped in 0.84.0* once §13 Q3
+  was decided: one metric catalogue in the engine, a read-only adapter that
+  projects stored analyses for the trend view and for the Analysis module's
+  measures, and a TRENDS view in the viewer that never shows velocity without
+  load. *P3c (the reference lift) shipped in the same 0.84.0*: a coach marks
+  one analysed rep as the athlete's reference for an exercise; comparison
+  opens on it and trends draw it as a line. *P3d–P3g shipped in 0.84.0 to
+  0.86.0*: the OpenCV assists, the two-view accuracy study, sets tracked
+  from one click with each rep at its own calibration, the German
+  analyzer's measures, colour re-acquisition, charts against height and the
+  knee mark (P3 plan §7–§10). Sharing, talkover, overlay export and the
+  device-profile calibration tier are untouched.
 - **P4 — Intelligence.** `kinemos-research` repo: literature, benchmarking on
   labelled clips, consented flywheel data collection wired in-product;
   ML-assisted detection/tracking (toward zero-click and server-side
   pre-analysis); lifter pose tracking enters here or P5.
+  *P4a–P4c shipped in 0.87.0; scope and findings in
+  `docs/KINEMOS_P4_PLAN.md`.* Per-athlete consent, recorded and revocable
+  (§10), with an export of coach-corrected tracks as labelled data that
+  carries no video and no names. A benchmark (`npm run bench`) that runs
+  clips × variants through the real harness and scores them two ways —
+  position RMS against ground truth, and two-view agreement where no truth
+  exists; its first run reproduced the accuracy study's 2,8 % independently
+  and exposed a trade-off nobody had stated (the variant that wins on real
+  footage loses on the synthetic clip). And **zero-click analysis**, which
+  §3 called a non-goal and §12 put behind a model: P3d's plate detector
+  supplies the one click P3g's set tracker still needed, so a wand on any
+  library row finds the plate, follows the bar, splits the reps and stores
+  them — graded exactly as a hand-anchored analysis is, which is what makes
+  offering it honest. **The learned tracker (§6.2 tier 3) is NOT built**:
+  the labels do not exist yet, the classical tracker's numbers are not
+  obviously beatable, and P4 plan §5 records what would have to be true
+  first.
 - **P5 — Frontier (shapes TBD).** Live webcam mode (product shape
   undecided), model-lift library, VBT→planner suggestions (LV profiles,
   velocity-loss cutoffs), 80–99 % pre-analysed arrivals.
+  *P5a–P5d shipped in 0.88.0; scope in `docs/KINEMOS_P5_PLAN.md`.*
+  **Load–velocity profiles** (`engine/loadVelocity.ts`) fit a line through a
+  season of (load, peak velocity) pairs and refuse to when it would be
+  nonsense — under four points, under 15 % load spread, or a non-negative
+  slope — giving expected velocity at a load, the load for a target
+  velocity, an estimated 1RM from submaximal work, and velocity loss
+  measured from the *best* rep of a set. A **model-lift library**
+  (`is_model` / `model_label`) answers the question a per-athlete reference
+  lift cannot: how a rep compares to one that is simply correct. **Live
+  mode** at `/kinemos/live` — which answers open question 4 below.
+  And **pre-analysed arrivals**, which §12 put behind a server: with no
+  server to have, `lib/arrivals.ts` runs the pipeline at the two moments the
+  clip is in the browser anyway — on import, from the local file about to be
+  uploaded (no download at all), and on a stoppable backlog sweep from the
+  library. **Lifter pose tracking is NOT built**: the weights are not
+  reachable, the coaching claim it would make is unstated, and P5 plan §6
+  records what would change that.
 
 Each phase merges to `main` behind the KinEMOS entry point; premium gating is
 a feature flag until auth/billing lands. Long-running KinEMOS work uses a
@@ -475,11 +524,28 @@ dedicated `git worktree` (shared-working-tree hazard).
    exercise, date, metric id, value, plus the grade as a quality flag — so
    trend views and Soll-Ist can chart peak velocity per phase or power next
    to load and volume without the Analysis code importing the engine.
+   *Built in 0.84.0 (P3b): `analysisAdapter.ts` projects the records,
+   `analysisMetrics.ts` declares the measures, `factFetch` carries the values
+   on a KinEMOS fact row that counts nothing towards training totals.*
    Rationale: the engine stays pure (§4 rule 1), the schema needs no
    surgery, and a KinEMOS metric definition can change without a migration
    of Analysis facts. Revisit only if a coach-defined Analysis metric ever
    needs to *combine* a KinEMOS value with a load value inside one formula;
    that is the case an adapter cannot serve.
-4. Live-mode product shape (P5) — deliberately open.
+4. Live-mode product shape (P5) — **DECIDED 03/09/2026: a VBT-unit readout,
+   not live path drawing.** A bar path drawn live can only be consumed by
+   looking away from the lifter at the exact moment you should not; the path
+   is a review artefact KinEMOS already does properly (two overlaid,
+   phase-aligned, with a delta table); and live has exactly one job the
+   recorded viewer cannot do — the stop cue, which has to be decided between
+   reps or not at all. So `/kinemos/live` is a big velocity number, a set
+   list and a velocity-loss cue. *Built in 0.88.0 (P5c):
+   `engine/liveReps.ts` is a three-state machine fed one sample at a time
+   (the whole-track logic in `engine/reps.ts` cannot run live, since it reads
+   five seconds either side of the rep), emitting at the catch rather than
+   the apex so a dumped bar is not counted, learning the floor rather than
+   being told it, and discarding steps no barbell makes. Nothing live is
+   stored or graded — an uncalibrated phone is an everyday-tier measurement
+   and the screen says so. Rationale and the full argument: P5 plan §4.
 5. Retention/cost policy revisit trigger — define a storage threshold that
    forces the raw-video-expiry conversation.

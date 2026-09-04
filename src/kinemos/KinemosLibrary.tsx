@@ -11,9 +11,9 @@
  * library is worth having on its own, and it is the thing every later phase
  * reads from.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Ruler, Trash2, X } from 'lucide-react';
+import { Radio, Ruler, Trash2, Wand2, X } from 'lucide-react';
 import {
   Button,
   DataTable,
@@ -33,6 +33,13 @@ import { ClipPlayerModal } from './components/ClipPlayerModal';
 import { ImportControl } from './components/ImportControl';
 import { deleteDirectVideo } from './lib/directImport';
 import { loadLibrary, type LibraryFilters, type LibrarySource, type LibraryVideo } from './lib/videoLibrary';
+import { SharedWithYou } from './components/SharedWithYou';
+import { TrainingDataPanel } from './components/TrainingDataPanel';
+import { useCoachStore } from '../store/coachStore';
+import { getOwnerId } from '../lib/ownerContext';
+import { openFrameServer } from './engine/frameServer';
+import { autoAnalyse, describeAutoAnalysis } from './lib/autoAnalyse';
+import { analysedClipKeys, runArrivalQueue, targetFor, unanalysedClips } from './lib/arrivals';
 
 const SOURCE_LABEL: Record<LibrarySource, string> = {
   log: 'Log',
@@ -63,11 +70,21 @@ export function KinemosLibrary() {
 
   const { athletes, fetchAthletes } = useAthletes();
   const { exercises, fetchExercises } = useExercises();
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
+  const coaches = useCoachStore(s => s.coaches);
+  const coachNames = useMemo(() => new Map(coaches.map(c => [c.id, c.name])), [coaches]);
 
   const [rows, setRows] = useState<LibraryVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<LibraryVideo | null>(null);
+
+  const [autoBusy, setAutoBusy] = useState<string | null>(null);
+  const [autoNote, setAutoNote] = useState<string | null>(null);
+  const [sweeping, setSweeping] = useState(false);
+  /** A ref, not state: the queue reads it between clips and must see the
+   *  latest value, not the one captured when the sweep started. */
+  const stopSweep = useRef(false);
 
   const [athleteId, setAthleteId] = useState('');
   const [source, setSource] = useState<'' | LibrarySource>('');
@@ -127,6 +144,77 @@ export function KinemosLibrary() {
     () => [...new Set(rows.map(r => r.exerciseName).filter((n): n is string => !!n))].sort(),
     [rows],
   );
+
+  /**
+   * Analyse a clip with no clicks at all. The whole pipeline runs in the
+   * browser, so this opens the clip's frame server, does the work and closes
+   * it again — the coach stays on the library and gets a sentence saying
+   * what happened.
+   */
+  const runAuto = useCallback(async (row: LibraryVideo) => {
+    setAutoBusy(row.key);
+    setAutoNote(`Opening ${row.athleteName ?? 'the clip'}…`);
+    let server: Awaited<ReturnType<typeof openFrameServer>> | null = null;
+    try {
+      server = await openFrameServer(row.playbackUrl);
+      const result = await autoAnalyse(server, {
+        source: row.source,
+        sourceId: row.sourceId,
+        ownerId: getOwnerId(),
+        massKg: row.loadKg,
+        massSource: row.loadKg == null ? null : 'logged',
+        onProgress: (stage, done, total) =>
+          setAutoNote(total > 1 ? `${stage} — ${done} of ${total}` : `${stage}…`),
+      });
+      setAutoNote(describeAutoAnalysis(result, [row.athleteName, row.exerciseName].filter(Boolean).join(' · ') || 'Clip'));
+    } catch (e) {
+      setAutoNote(e instanceof Error ? e.message : 'That clip could not be analysed.');
+    } finally {
+      server?.close();
+      setAutoBusy(null);
+    }
+  }, []);
+
+  /**
+   * The backlog sweep (P5d). Clips that arrived before analyse-on-import
+   * existed, and every clip from the athlete app — which never passes through
+   * a coach's browser at all — are analysed here, one at a time, stoppable
+   * between clips.
+   *
+   * Deliberately not automatic on page load: it is minutes of this laptop's
+   * CPU and megabytes of download, and starting that because someone opened
+   * the library would be a hostile thing to do.
+   */
+  const runSweep = useCallback(async () => {
+    setSweeping(true);
+    stopSweep.current = false;
+    try {
+      const analysed = await analysedClipKeys();
+      const pending = unanalysedClips(rows, analysed);
+      if (pending.length === 0) {
+        setAutoNote('Every clip in the library has already been analysed.');
+        return;
+      }
+      let analysedCount = 0;
+      await runArrivalQueue(pending.map(targetFor), {
+        ownerId: getOwnerId(),
+        shouldStop: () => stopSweep.current,
+        onProgress: p => setAutoNote(`Analysing ${p.index} of ${p.total} — ${p.label}, ${p.stage.toLowerCase()}`),
+        onDone: outcome => {
+          if (outcome.result && !outcome.result.problem) analysedCount += 1;
+        },
+      });
+      await refresh();
+      setAutoNote(
+        `Swept ${pending.length} clip${pending.length === 1 ? '' : 's'}: ${analysedCount} analysed. ` +
+          'The rest need a plate outlined by hand — open them in the viewer.',
+      );
+    } catch (e) {
+      setAutoNote(e instanceof Error ? e.message : 'The sweep could not be run.');
+    } finally {
+      setSweeping(false);
+    }
+  }, [refresh, rows]);
 
   const handleDelete = async (video: LibraryVideo) => {
     const ok = await confirmDialog({
@@ -242,10 +330,33 @@ export function KinemosLibrary() {
     {
       key: 'actions',
       header: '',
-      width: '76px',
+      width: '108px',
       align: 'right',
       render: row => (
         <span style={{ display: 'inline-flex', gap: 2 }}>
+          {/* Zero-click: find the plate, follow the bar through the set, cut
+              it into reps and store them all, with nothing asked of the coach
+              (P4c). The grade on each rep is the same one a hand-anchored
+              analysis gets, which is what makes it safe to offer here. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Wand2 size={14} />}
+            disabled={row.isEmbed || autoBusy !== null}
+            title={
+              row.isEmbed
+                ? 'Streaming clips cannot be analysed'
+                : autoBusy === row.key
+                  ? 'Analysing…'
+                  : 'Analyse it now, with no clicks: find the plate, follow the bar, split the reps and store them. Loads OpenCV the first time, about 13 MB.'
+            }
+            aria-label="Analyse automatically"
+            onClick={e => {
+              e.stopPropagation();
+              if (!row.isEmbed) void runAuto(row);
+            }}
+          />
           <Button
             variant="ghost"
             size="sm"
@@ -292,8 +403,32 @@ export function KinemosLibrary() {
           eyebrow="KinEMOS"
           title="Video library"
           subtitle="Every lift video in EMOS — log clips, competition footage, and direct imports."
-          metadata={`${visible.length} of ${rows.length} clips`}
+          metadata={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+              <span>{`${visible.length} of ${rows.length} clips`}</span>
+              {/* Live mode is the one KinEMOS surface that is not about a clip
+                  in the library, so it hangs off the header rather than the
+                  table. */}
+              <Button variant="ghost" size="sm" icon={<Radio size={14} />} onClick={() => navigate('/kinemos/live')}>
+                Live
+              </Button>
+            </div>
+          }
         />
+
+        <SharedWithYou coachId={activeCoachId} coachNames={coachNames} />
+        <TrainingDataPanel athletes={athletes.map(a => ({ id: a.id, name: a.name }))} />
+        {autoNote && (
+          <p
+            style={{
+              margin: '0 0 var(--space-md)',
+              fontSize: 'var(--text-caption)',
+              color: 'var(--color-text-secondary)',
+            }}
+          >
+            {autoNote}
+          </p>
+        )}
 
         <div
           style={{
@@ -365,7 +500,25 @@ export function KinemosLibrary() {
           </div>
           )}
 
-          <ImportControl athletes={athletes} exercises={exercises} onImported={refresh} />
+          <ImportControl
+            athletes={athletes}
+            exercises={exercises}
+            onImported={refresh}
+            onArrivalNote={setAutoNote}
+          />
+
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Wand2 size={14} />}
+            onClick={() => {
+              if (sweeping) stopSweep.current = true;
+              else void runSweep();
+            }}
+            title="Analyse every clip that has none yet, one at a time, in this browser."
+          >
+            {sweeping ? 'Stop sweep' : 'Analyse the backlog'}
+          </Button>
         </div>
 
         {loading ? (

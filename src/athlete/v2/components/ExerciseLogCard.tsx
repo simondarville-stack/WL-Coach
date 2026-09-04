@@ -485,6 +485,15 @@ export function ExerciseLogCard({
                     .sort((a, b) => b.set_number - a.set_number)[0];
                   const defaultLoad = lastCompleted?.performed_load ?? null;
                   const defaultReps = lastCompleted?.performed_reps ?? null;
+                  // Prefer the raw string the athlete logged: on a combo it is
+                  // the tuple ("1+1+1"), and offering its numeric sum as the
+                  // "same as last" default would re-introduce the "3" the
+                  // whole tuple round-trip exists to avoid.
+                  const defaultRepsText =
+                    lastCompleted?.performed_text ??
+                    (defaultReps != null ? String(defaultReps) : null);
+                  const defaultRepsTuple =
+                    defaultRepsText?.includes('+') ? defaultRepsText : null;
                   return (
                     <>
                       {loggedExtraSets.map(s => (
@@ -497,6 +506,10 @@ export function ExerciseLogCard({
                             plannedRepsValue: null,
                             plannedLoadValue: null,
                             freeTextMode: isFreeTextUnit,
+                            // Extra sets on a combo have no prescription, so
+                            // the reps pad would come up numeric — with no "+"
+                            // key the athlete cannot type the tuple at all.
+                            comboReps: planned.exercise.is_combo,
                           }}
                           logged={s}
                           onSave={onSaveSet}
@@ -521,11 +534,13 @@ export function ExerciseLogCard({
                             key={`blank-${setNumber}`}
                             input={{
                               setNumber,
-                              plannedRepsText: defaultReps != null ? String(defaultReps) : '—',
+                              plannedRepsText: defaultRepsText ?? '—',
                               plannedLoadText: defaultLoad != null ? String(defaultLoad) : '—',
                               plannedRepsValue: defaultReps,
                               plannedLoadValue: defaultLoad,
+                              plannedRepsTuple: defaultRepsTuple,
                               freeTextMode: isFreeTextUnit,
+                              comboReps: planned.exercise.is_combo,
                             }}
                             logged={null}
                             onSave={onSaveSet}

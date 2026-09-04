@@ -28,8 +28,14 @@
  *
  * Engine purity: numbers in, numbers out.
  */
-import type { KinematicSeries, RepSummary } from './kinematics';
-import type { LiftMetrics, PhaseBoundary } from './phases';
+import type { KinematicSeries } from './kinematics';
+import {
+  METRIC_CATALOGUE,
+  type BetterWhen,
+  type ComputedLift,
+  type MetricDefinition,
+} from './metricCatalogue';
+import type { PhaseBoundary } from './phases';
 
 /** The physical event two lifts are laid on top of each other at. */
 export type AlignmentAnchor = 'clip-start' | 'liftoff' | 'peak-velocity' | 'apex';
@@ -146,9 +152,7 @@ function readAt(t: readonly number[], values: readonly number[], at: number): nu
   return values[n - 1];
 }
 
-/** Which way is up, for a given metric. Null where it genuinely depends on the
- *  lifter and the interface must not pass judgement. */
-export type BetterWhen = 'higher' | 'lower' | null;
+export type { BetterWhen } from './metricCatalogue';
 
 export interface MetricDelta {
   id: string;
@@ -170,28 +174,17 @@ export interface MetricDelta {
   why: string;
 }
 
-/** Below these, a difference is inside the noise of an everyday analysis and is
- *  reported as "the same" rather than as a change. COACH-CONFIG in spirit —
- *  a hardcore-tier setup could tighten them. */
-const SIGNIFICANT: Record<string, number> = {
-  peakVelocity: 0.03,
-  firstPull: 0.03,
-  secondPull: 0.03,
-  transitionLoss: 0.03,
-  turnover: 0.03,
-  peakHeight: 1,
-  loopWidth: 1,
-  peakPower: 40,
-  duration: 0.05,
-};
-
 /**
  * The delta table. `a` is the reference lift (usually the older one) and `b` is
  * the one being judged, so a positive delta means "b is higher than a".
+ *
+ * The rows are the metric catalogue, in its order: which metrics exist, what
+ * they are called and which way is up are decided once, in
+ * `metricCatalogue.ts`, and a trend view lists exactly the same set.
  */
 export function compareMetrics(
-  a: { metrics: LiftMetrics; summary: RepSummary },
-  b: { metrics: LiftMetrics; summary: RepSummary },
+  a: ComputedLift,
+  b: ComputedLift,
   options: {
     /**
      * False when the two lifts were done with materially different bars. Power
@@ -202,124 +195,32 @@ export function compareMetrics(
     massesComparable?: boolean;
   } = {},
 ): MetricDelta[] {
-  const phase = (m: LiftMetrics, id: string) => m.phases.find(p => p.phaseId === id) ?? null;
-
-  const rows: Array<Omit<MetricDelta, 'delta' | 'verdict'>> = [
-    {
-      id: 'peakVelocity',
-      label: 'Peak velocity',
-      unit: 'm/s',
-      decimals: 2,
-      a: a.metrics.peakVelocityMs,
-      b: b.metrics.peakVelocityMs,
-      betterWhen: 'higher',
-      why: 'The headline number, and the one that decides whether a heavy attempt gets overhead.',
-    },
-    {
-      id: 'firstPull',
-      label: 'First pull',
-      unit: 'm/s',
-      decimals: 2,
-      a: phase(a.metrics, 'first_pull')?.peakVelocityMs ?? null,
-      b: phase(b.metrics, 'first_pull')?.peakVelocityMs ?? null,
-      // Faster off the floor is not automatically better — many coaches teach a
-      // patient first pull precisely so the second can be faster.
-      betterWhen: null,
-      why: 'How fast the bar left the floor. Faster is not automatically better: a patient first pull is a coaching choice.',
-    },
-    {
-      id: 'secondPull',
-      label: 'Second pull',
-      unit: 'm/s',
-      decimals: 2,
-      a: phase(a.metrics, 'second_pull')?.peakVelocityMs ?? null,
-      b: phase(b.metrics, 'second_pull')?.peakVelocityMs ?? null,
-      betterWhen: 'higher',
-      why: 'The extension. This is where a missed lift is usually lost.',
-    },
-    {
-      id: 'transitionLoss',
-      label: 'Loss 1st → 2nd',
-      unit: 'm/s',
-      decimals: 2,
-      a: a.metrics.transitionVelocityLossMs,
-      b: b.metrics.transitionVelocityLossMs,
-      betterWhen: 'lower',
-      why: 'How much speed the bar gave up through the transition. Less is generally better, though some dip is normal.',
-    },
-    {
-      id: 'turnover',
-      label: 'Turnover',
-      unit: 'm/s',
-      decimals: 2,
-      a: a.metrics.turnoverVelocityMs,
-      b: b.metrics.turnoverVelocityMs,
-      betterWhen: 'higher',
-      why: 'Mean upward velocity while the bar is being pulled under.',
-    },
-    {
-      id: 'peakHeight',
-      label: 'Peak height',
-      unit: 'cm',
-      decimals: 1,
-      a: a.summary.peakHeightCm,
-      b: b.summary.peakHeightCm,
-      betterWhen: null,
-      why: 'How high the bar got above its start. Higher costs energy; whether it is better depends on whether the lift was made.',
-    },
-    {
-      id: 'loopWidth',
-      label: 'Loop width',
-      unit: 'cm',
-      decimals: 1,
-      a: a.summary.loopWidthCm,
-      b: b.summary.loopWidthCm,
-      betterWhen: null,
-      why: 'Total horizontal spread of the path. A tighter path is not universally better — the loop is how the bar gets past the knees.',
-    },
-    {
-      id: 'peakPower',
-      label: 'Peak power',
-      unit: 'W',
-      decimals: 0,
-      a: a.metrics.peakPowerW,
-      b: b.metrics.peakPowerW,
-      betterWhen: 'higher',
-      why: 'Barbell power at its peak. Only comparable when both lifts carry a mass and the masses are close — a heavier bar moving slower can out-power a lighter bar moving faster, which says nothing about the lifter.',
-    },
-    {
-      id: 'duration',
-      label: 'Pull duration',
-      unit: 's',
-      decimals: 2,
-      a: a.summary.durationS,
-      b: b.summary.durationS,
-      betterWhen: null,
-      why: 'Time from the first marked frame to the last. Sensitive to how each clip was marked, so read it as context rather than as a result.',
-    },
-  ];
-
   const massesComparable = options.massesComparable ?? true;
 
-  return rows.map(row => {
+  return METRIC_CATALOGUE.map(metric => {
+    const row = {
+      id: metric.id,
+      label: metric.label,
+      unit: metric.unit,
+      decimals: metric.decimals,
+      a: metric.read(a),
+      b: metric.read(b),
+      betterWhen: metric.betterWhen,
+      why: metric.why,
+    };
     const delta = row.a !== null && row.b !== null ? row.b - row.a : null;
     if (row.id === 'peakPower' && !massesComparable && delta !== null) {
       return { ...row, delta, betterWhen: null, verdict: 'incomparable' as const };
     }
-    return { ...row, delta, verdict: verdictFor(row.id, delta, row.betterWhen) };
+    return { ...row, delta, verdict: verdictFor(metric, delta) };
   });
 }
 
-function verdictFor(
-  id: string,
-  delta: number | null,
-  betterWhen: BetterWhen,
-): MetricDelta['verdict'] {
+function verdictFor(metric: MetricDefinition, delta: number | null): MetricDelta['verdict'] {
   if (delta === null) return null;
-  const threshold = SIGNIFICANT[id] ?? 0;
-  if (Math.abs(delta) <= threshold) return 'same';
-  if (betterWhen === null) return 'different';
-  const isBetter = betterWhen === 'higher' ? delta > 0 : delta < 0;
+  if (Math.abs(delta) <= metric.significant) return 'same';
+  if (metric.betterWhen === null) return 'different';
+  const isBetter = metric.betterWhen === 'higher' ? delta > 0 : delta < 0;
   return isBetter ? 'better' : 'worse';
 }
 

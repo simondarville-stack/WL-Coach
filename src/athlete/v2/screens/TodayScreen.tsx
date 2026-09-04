@@ -756,6 +756,10 @@ export function TodayScreen() {
           plannedReps: row.plannedRepsValue,
           performedLoad: row.plannedLoadValue,
           performedReps: row.plannedRepsValue,
+          // Same rule as the one-tap ✓ in SetEntryRow: on a combo the
+          // prescribed tuple ("1+1+1") is the truth, plannedRepsValue only
+          // its sum. Without this, "Log as prescribed" wrote 3.
+          performedText: row.plannedRepsTuple ?? null,
           rpe: null,
           status: 'completed',
         });
