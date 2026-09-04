@@ -12,7 +12,61 @@ import { findPlate, refinePlateEllipse, type RefineOptions, type RefineResult } 
 import { estimateCameraMotion, motionSummary, stabilisePoints } from '../cv/stabilise';
 import type { KinemosTrackPoint } from '../../lib/database.types';
 import { trackMarker } from '../engine/markerTracker';
+import { grayFromRgba, type GrayImage } from '../engine/tracker';
 import { trackerSourceFrom } from './trackerSource';
+
+/**
+ * Longest frame edge the plate SEARCH runs at. Finding a plate is a coarse
+ * question — a disc a few per cent of the frame across — and OpenCV answers
+ * it on a 1280 px frame as surely as on the original, at a thirtieth of the
+ * memory on an 8K clip: the finder on a full 7680 × 4320 frame is a 133 MB
+ * image plus its blurred and edge copies inside the wasm heap, which is
+ * enough to take the tab down (testset, 04/09/2026). The fit is then REFINED
+ * at full resolution, on a region around the plate, so the scale the
+ * calibration reads is still measured on the real pixels.
+ */
+const FIND_MAX_EDGE = 1280;
+
+/** The frame scaled to at most `maxEdge` on its long side, as greyscale. */
+async function grayScaled(
+  server: FrameServer,
+  index: number,
+  maxEdge: number,
+): Promise<{ gray: GrayImage; scale: number }> {
+  const long = Math.max(server.displayWidth, server.displayHeight);
+  const scale = Math.min(1, maxEdge / long);
+  const width = Math.max(1, Math.round(server.displayWidth * scale));
+  const height = Math.max(1, Math.round(server.displayHeight * scale));
+  const frame = await server.frameAt(index);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('The plate finder needs a 2D canvas, which this browser did not provide.');
+  ctx.drawImage(frame.canvas as CanvasImageSource, 0, 0, width, height);
+  return { gray: grayFromRgba(ctx.getImageData(0, 0, width, height).data, width, height), scale };
+}
+
+/** Refine an outline on the real pixels, reading only a region around it. */
+async function refineOnRegion(
+  source: ReturnType<typeof trackerSourceFrom>,
+  index: number,
+  guess: PlateEllipse,
+  fit: OutlineFitOptions,
+): Promise<RefineResult | null> {
+  const half = Math.ceil(Math.max(guess.semiMajorPx, guess.semiMinorPx) * 1.6) + 8;
+  const gray = await source.getGray(index, {
+    x: Math.round(guess.cx) - half,
+    y: Math.round(guess.cy) - half,
+    width: 2 * half + 1,
+    height: 2 * half + 1,
+  });
+  const ox = gray.originX ?? 0;
+  const oy = gray.originY ?? 0;
+  const local = await refinePlateEllipse(gray, { ...guess, cx: guess.cx - ox, cy: guess.cy - oy }, fit);
+  if (!local) return null;
+  return { ...local, ellipse: { ...local.ellipse, cx: local.ellipse.cx + ox, cy: local.ellipse.cy + oy } };
+}
 
 /** Plausible plate radii on this frame: 3–22 % of the frame height covers a
  *  phone at arm's length to a phone at the back of the hall. */
@@ -40,8 +94,27 @@ export async function findPlateOnFrame(
 ): Promise<RefineResult | null> {
   const source = trackerSourceFrom(server);
   try {
-    const gray = await source.getGray(index);
-    return await findPlate(gray, { ...radiusRange(server), near, ...fit });
+    const { gray, scale } = await grayScaled(server, index, FIND_MAX_EDGE);
+    const range = radiusRange(server);
+    const found = await findPlate(gray, {
+      minRadiusPx: Math.max(3, Math.round(range.minRadiusPx * scale)),
+      maxRadiusPx: Math.max(4, Math.round(range.maxRadiusPx * scale)),
+      near: near ? { x: near.x * scale, y: near.y * scale } : undefined,
+      ...fit,
+    });
+    if (!found) return null;
+    if (scale === 1) return found;
+    const up: PlateEllipse = {
+      cx: found.ellipse.cx / scale,
+      cy: found.ellipse.cy / scale,
+      semiMajorPx: found.ellipse.semiMajorPx / scale,
+      semiMinorPx: found.ellipse.semiMinorPx / scale,
+      tiltDeg: found.ellipse.tiltDeg,
+    };
+    // Back on the real pixels for the fit the calibration will read. Should
+    // the refinement not hold, the scaled-up find stands, with its own
+    // support figure.
+    return (await refineOnRegion(source, index, up, fit)) ?? { ...found, ellipse: up };
   } finally {
     source.dispose();
   }
@@ -56,8 +129,7 @@ export async function snapEllipseOnFrame(
 ): Promise<RefineResult | null> {
   const source = trackerSourceFrom(server);
   try {
-    const gray = await source.getGray(index);
-    return await refinePlateEllipse(gray, ellipse, fit);
+    return await refineOnRegion(source, index, ellipse, fit);
   } finally {
     source.dispose();
   }

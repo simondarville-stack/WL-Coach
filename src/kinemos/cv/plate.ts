@@ -62,17 +62,23 @@ export async function detectPlates(
   const circles = new cv.Mat();
   try {
     cv.GaussianBlur(src, blurred, new cv.Size(5, 5), 1.2, 1.2, cv.BORDER_DEFAULT);
-    cv.HoughCircles(
-      blurred,
-      circles,
-      cv.HOUGH_GRADIENT,
-      1,
-      Math.max(8, options.minRadiusPx),
-      100,
-      18,
-      Math.round(options.minRadiusPx),
-      Math.round(options.maxRadiusPx),
-    );
+    // HOUGH_GRADIENT_ALT, not HOUGH_GRADIENT. The classic method with a low
+    // accumulator threshold (18) took the tab down on a busy gym frame — a
+    // 1280 × 720 view of a hall with plates on every wall has ~80 000 edge
+    // pixels, and the classic method sorts distances to all of them for
+    // every candidate centre; at threshold 40 it survived, in 4,7 s, with
+    // 427 circles. The ALT method (Yuen et al.'s "perfectness" test) found
+    // 16 in 257 ms on the same frame (testset, 04/09/2026). `param2` is how
+    // perfect a circle must be, 0–1; a second, looser pass runs when a strict
+    // one finds nothing — a plate part hidden by the lifter's shin is still
+    // a plate.
+    const minDist = Math.max(8, options.minRadiusPx);
+    const minR = Math.round(options.minRadiusPx);
+    const maxR = Math.round(options.maxRadiusPx);
+    for (const perfectness of [0.85, 0.7]) {
+      cv.HoughCircles(blurred, circles, cv.HOUGH_GRADIENT_ALT, 1.5, minDist, 300, perfectness, minR, maxR);
+      if (circles.cols > 0) break;
+    }
     const step = circles.channels();
     const found: PlateCandidate[] = [];
     for (let i = 0; i < circles.cols; i++) {
