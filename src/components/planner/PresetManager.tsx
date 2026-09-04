@@ -25,6 +25,8 @@ interface PresetManagerProps {
   updatePreset: (id: string, patch: Partial<CoachPresetInput>) => Promise<void>;
   deletePreset: (id: string) => Promise<void>;
   loadIncrement: number;
+  /** Coach's per-click load step (grid_click_increment). */
+  clickIncrement?: number;
   /** Preset to open expanded on mount — the save-row-as-preset flow lands
    *  the coach directly on the freshly captured preset for naming. */
   initialOpenId?: string | null;
@@ -144,6 +146,7 @@ export function PresetManager({
   updatePreset,
   deletePreset,
   loadIncrement,
+  clickIncrement,
   initialOpenId = null,
 }: PresetManagerProps) {
   const [openId, setOpenId] = useState<string | null>(initialOpenId);
@@ -266,6 +269,7 @@ export function PresetManager({
                       prescriptionRaw={p.prescription_raw}
                       unit={p.unit ?? 'absolute_kg'}
                       loadIncrement={loadIncrement}
+                      clickIncrement={clickIncrement}
                       isCombo={false}
                       onSave={(raw, unitOverride) => {
                         void updatePreset(p.id, {

@@ -10,6 +10,7 @@ import type { FillGuidePreview } from './fillGuidePlan';
 import { MacroGridCell } from './MacroGridCell';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useRepeatOnHold } from '../../hooks/useRepeatOnHold';
+import { gestureDelta, DEFAULT_CLICK_INCREMENT, SHIFT_STEP_MULTIPLIER } from '../../lib/stepGesture';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
 import { getWeekTypeColor, getMondayOfWeekISO } from '../../lib/weekUtils';
 import { getISOWeek as isoWeekOfDate, formatDateShort, addDaysToISO } from '../../lib/dateUtils';
@@ -89,6 +90,8 @@ interface MacroTableV2Props {
   /** Write a whole target cell in ONE row upsert — value, prose and reps
    *  together, so a unit and its number can never be written out of step. */
   onUpdateTargetCell?: (weekId: string, teId: string, fields: Partial<MacroTarget>) => Promise<void>;
+  /** Coach's per-click load step (grid_click_increment); counts always step by 1. */
+  clickIncrement?: number;
   /** Set the exercise COLUMN's unit (kg / % / free text). */
   onSetColumnUnit?: (teId: string, unit: 'absolute_kg' | 'percentage' | 'free_text_reps') => Promise<void>;
   onRemoveExercise: (trackedExId: string) => Promise<void>;
@@ -158,6 +161,7 @@ export function MacroTableV2({
   targets,
   phases,
   onUpdateTarget,
+  clickIncrement = DEFAULT_CLICK_INCREMENT,
   onUpdateWeekType,
   onUpdateTotalReps,
   onUpdateTonnageTarget,
@@ -457,7 +461,7 @@ export function MacroTableV2({
       onUpdateTarget(weekId, teId, field, String(prevValue ?? 0));
       return false;
     }
-    return stepInline(weekId, teId, field, e.button === 2 ? -1 : 1);
+    return stepInline(weekId, teId, field, gestureDelta(e));
   }, [onUpdateTarget, deleteMode, stepInline]);
 
   // Latest gate + step for the hold-to-repeat timer to call.
@@ -521,7 +525,7 @@ export function MacroTableV2({
       else setEditing(week.id);
       return false;
     }
-    return stepWeekField(week.id, field, e.button === 2 ? -step : step, onUpdate);
+    return stepWeekField(week.id, field, gestureDelta(e, step), onUpdate);
   };
 
   /**
@@ -547,7 +551,7 @@ export function MacroTableV2({
   const weekFieldStepRef = useRef(handleWeekFieldClick);
   weekFieldStepRef.current = handleWeekFieldClick;
 
-  const weekFieldTitle = 'Click +, right-click −, hold to repeat, Ctrl+click to type';
+  const weekFieldTitle = `Click +, right-click −, Shift ×${SHIFT_STEP_MULTIPLIER}, hold to repeat, Ctrl+click to type`;
 
   const weeksWithK = macroWeeks.filter(w => w.total_reps_target != null);
   const avgK = weeksWithK.length > 0
@@ -1343,6 +1347,7 @@ export function MacroTableV2({
                               prevReps={prev?.target_reps_at_max ?? null}
                               prevSets={prev?.target_sets_at_max ?? null}
                               onUpdate={(vals) => handleGridUpdate(week.id, te.id, vals)}
+                              clickIncrement={clickIncrement}
                               deleteMode={deleteMode}
                               onDelete={() => handleGridDelete(week.id, te.id)}
                             />

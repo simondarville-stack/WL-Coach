@@ -227,6 +227,7 @@ export function ExerciseDetail({
   }
 
   const loadIncrement = settings?.grid_load_increment ?? 5;
+  const clickIncrement = settings?.grid_click_increment ?? 1;
   const defaultPrescriptionLoad = settings?.default_prescription_load ?? 50;
 
   useEffect(() => {
@@ -919,6 +920,7 @@ export function ExerciseDetail({
                 prescriptionRaw={plannedExercise.prescription_raw}
                 unit={plannedExercise.unit}
                 loadIncrement={loadIncrement}
+                clickIncrement={clickIncrement}
                 defaultLoad={defaultPrescriptionLoad}
                 isCombo={isCombo}
                 comboPartCount={isCombo ? (members.length || 2) : undefined}

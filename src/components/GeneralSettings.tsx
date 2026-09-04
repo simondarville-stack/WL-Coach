@@ -13,6 +13,7 @@ import { FlagSettingsSection } from './dashboard-v2/FlagSettingsSection';
 import { ReviewSettingsSection } from './review/ReviewSettingsSection';
 import { alertDialog } from './ui';
 import { Spinner } from './ui';
+import { SHIFT_STEP_MULTIPLIER } from '../lib/stepGesture';
 
 const DEFAULT_WEEK_TYPES: WeekTypeConfig[] = [
   { name: 'High',   abbreviation: 'h', color: '#E24B4A' },
@@ -506,9 +507,12 @@ export function GeneralSettings() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Click Increment</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Click Increment (kg / %)</label>
                 <p className="text-sm text-gray-600 mb-3">
-                  Value change per click on load/reps/sets cells (left-click increases, right-click decreases)
+                  How much one click moves a <strong>load</strong> cell — left-click up, right-click down,
+                  Shift for a ×{SHIFT_STEP_MULTIPLIER} jump, hold the button to repeat. Reps, sets and combo
+                  entries always step by 1: they are counts, so a fractional step would not be a real
+                  prescription. Applies to the prescription grid and the macrocycle table alike.
                 </p>
                 <div className="flex items-center gap-3">
                   <input

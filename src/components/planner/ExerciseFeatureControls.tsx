@@ -21,6 +21,7 @@ import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
 import { formatSeconds, parseTimeInput, timeEditValue, parseTempoInput } from '../../lib/exerciseFeatures';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useRepeatOnHold } from '../../hooks/useRepeatOnHold';
+import { gestureDelta, SHIFT_STEP_MULTIPLIER } from '../../lib/stepGesture';
 
 function fmtNum(v: number | null | undefined): string {
   if (v == null) return '—';
@@ -111,7 +112,7 @@ function GestureValue({
         e.stopPropagation();
         if (deleteHeld) { onRemove(); return; }
         if (editOnClick || e.ctrlKey || e.metaKey) { setEditing(editValue); return; }
-        const delta = e.button === 2 ? -1 : 1;
+        const delta = gestureDelta(e);
         hold.start(() => onStepRef.current(delta));
       }}
       onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}
@@ -121,7 +122,7 @@ function GestureValue({
         ? 'Click to remove this feature'
         : editOnClick
         ? `${title} · click to type · Del-held removes`
-        : `${title} · click +1 · right-click −1 · hold to repeat · Ctrl+click type · Del-held removes`}
+        : `${title} · click +1 · right-click −1 · Shift ×${SHIFT_STEP_MULTIPLIER} · hold to repeat · Ctrl+click type · Del-held removes`}
       style={{
         border: 'none', background: 'none', cursor: 'pointer', padding: '0 2px',
         borderRadius: 3, fontSize: 10, lineHeight: 1.4, fontWeight: 600,

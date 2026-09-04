@@ -1939,6 +1939,7 @@ export function WeeklyPlanner() {
                 onSaveAsPreset={handleSaveRowAsPreset}
                 saveAthleteVisibility={saveAthleteVisibility}
                 loadIncrement={settings?.grid_load_increment ?? 5}
+                clickIncrement={settings?.grid_click_increment ?? 1}
                 defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
                 isLinkedToGroupPlan={planSelection.type === 'individual' && !!currentWeekPlan?.source_group_plan_id}
               />
@@ -2085,6 +2086,7 @@ export function WeeklyPlanner() {
             updatePreset={updatePreset}
             deletePreset={deletePreset}
             loadIncrement={settings?.grid_load_increment ?? 5}
+            clickIncrement={settings?.grid_click_increment ?? 1}
             initialOpenId={presetManagerFocusId}
           />
         )}

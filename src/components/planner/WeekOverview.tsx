@@ -167,6 +167,8 @@ interface WeekOverviewProps {
   /** Persist which row parts the athlete app hides (eye menu). */
   saveAthleteVisibility?: (plannedExId: string, hidden: import('../../lib/database.types').AthleteHiddenKey[]) => Promise<void>;
   loadIncrement: number;
+  /** Coach's per-click load step (grid_click_increment). */
+  clickIncrement?: number;
   defaultPrescriptionLoad: number;
   isLinkedToGroupPlan?: boolean;
 }
@@ -205,6 +207,7 @@ export function WeekOverview({
   onSaveAsPreset,
   saveAthleteVisibility,
   loadIncrement,
+  clickIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
 }: WeekOverviewProps) {
@@ -336,6 +339,7 @@ export function WeekOverview({
       onSaveAsPreset={onSaveAsPreset}
       saveAthleteVisibility={saveAthleteVisibility}
       loadIncrement={loadIncrement}
+      clickIncrement={clickIncrement}
       defaultPrescriptionLoad={defaultPrescriptionLoad}
       isLinkedToGroupPlan={isLinkedToGroupPlan}
     />

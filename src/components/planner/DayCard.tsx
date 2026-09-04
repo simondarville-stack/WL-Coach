@@ -94,6 +94,8 @@ interface DayCardProps {
   /** Persist which row parts the athlete app hides (eye menu). */
   saveAthleteVisibility?: (plannedExId: string, hidden: AthleteHiddenKey[]) => Promise<void>;
   loadIncrement: number;
+  /** Coach's per-click load step (grid_click_increment). */
+  clickIncrement?: number;
   defaultPrescriptionLoad: number;
   /** True when the current view is an individual plan linked to a group plan.
    *  G/I source badges are only meaningful in that case. */
@@ -134,6 +136,7 @@ export function DayCard({
   onSaveAsPreset,
   saveAthleteVisibility,
   loadIncrement,
+  clickIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
 }: DayCardProps) {
@@ -840,6 +843,7 @@ export function DayCard({
                               prescriptionRaw={ex.prescription_raw}
                               unit={ex.unit}
                               loadIncrement={loadIncrement}
+                              clickIncrement={clickIncrement}
                               defaultLoad={defaultPrescriptionLoad}
                               isCombo
                               comboPartCount={(members?.length) || 2}
@@ -878,6 +882,7 @@ export function DayCard({
                               prescriptionRaw={ex.prescription_raw}
                               unit={ex.unit}
                               loadIncrement={loadIncrement}
+                              clickIncrement={clickIncrement}
                               defaultLoad={defaultPrescriptionLoad}
                               isCombo={false}
                               compact

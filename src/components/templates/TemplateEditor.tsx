@@ -56,6 +56,7 @@ export function TemplateEditor() {
   const { settings, fetchSettings } = useSettings();
 
   const loadIncrement = settings?.grid_load_increment ?? 5;
+  const clickIncrement = settings?.grid_click_increment ?? 1;
   const defaultPrescriptionLoad = settings?.default_prescription_load ?? 50;
 
   const [template, setTemplate] = useState<ProgramTemplateFull | null>(null);
@@ -417,6 +418,7 @@ export function TemplateEditor() {
             day={day}
             allExercises={allExercises}
             loadIncrement={loadIncrement}
+            clickIncrement={clickIncrement}
             defaultLoad={defaultPrescriptionLoad}
             draggingDayId={draggingDayId}
             draggingExId={draggingExId}
@@ -479,6 +481,8 @@ interface DayBlockProps {
   day: ProgramTemplateDayWithExercises;
   allExercises: Exercise[];
   loadIncrement: number;
+  /** Coach's per-click load step (grid_click_increment). */
+  clickIncrement?: number;
   defaultLoad: number;
   draggingDayId: string | null;
   draggingExId: string | null;
@@ -499,7 +503,7 @@ interface DayBlockProps {
 }
 
 function DayBlock({
-  day, allExercises, loadIncrement, defaultLoad,
+  day, allExercises, loadIncrement, clickIncrement, defaultLoad,
   draggingDayId, draggingExId, dropIndicator,
   onLabelChange, onDelete, onAddExercise, onDeleteExercise,
   onExerciseField, onExercisePrescription,
@@ -670,6 +674,7 @@ function DayBlock({
               exercise={ex}
               dayId={day.id}
               loadIncrement={loadIncrement}
+              clickIncrement={clickIncrement}
               defaultLoad={defaultLoad}
               isDragSource={draggingExId === ex.id}
               dropIndicator={dropIndicator}
@@ -701,6 +706,8 @@ interface ExerciseRowProps {
   exercise: ProgramTemplateExerciseWithExercise;
   dayId: string;
   loadIncrement: number;
+  /** Coach's per-click load step (grid_click_increment). */
+  clickIncrement?: number;
   defaultLoad: number;
   isDragSource: boolean;
   dropIndicator: DropIndicator;
@@ -714,7 +721,7 @@ interface ExerciseRowProps {
 }
 
 function ExerciseRow({
-  exercise, dayId, loadIncrement, defaultLoad,
+  exercise, dayId, loadIncrement, clickIncrement, defaultLoad,
   isDragSource, dropIndicator,
   onDelete, onFieldChange, onPrescriptionSave,
   onDragStart, onDragEnd, onSetDropIndicator, onCommitDrop,
@@ -817,6 +824,7 @@ function ExerciseRow({
         prescriptionRaw={exercise.prescription_raw}
         unit={exercise.unit}
         loadIncrement={loadIncrement}
+        clickIncrement={clickIncrement}
         defaultLoad={defaultLoad}
         isCombo={exercise.is_combo}
         comboPartCount={comboPartCount}

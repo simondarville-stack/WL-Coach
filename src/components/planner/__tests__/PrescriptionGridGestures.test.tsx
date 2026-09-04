@@ -11,10 +11,11 @@ import { PrescriptionGrid } from '../PrescriptionGrid';
  */
 
 /** Mirrors a real call site: echoes the saved raw back and applies the unit. */
-function Harness({ raw, unit: initialUnit, isCombo, onWrite }: {
+function Harness({ raw, unit: initialUnit, isCombo, clickIncrement, onWrite }: {
   raw: string;
   unit: string;
   isCombo?: boolean;
+  clickIncrement?: number;
   onWrite: (raw: string, unit?: string) => void;
 }) {
   const [value, setValue] = useState(raw);
@@ -24,6 +25,7 @@ function Harness({ raw, unit: initialUnit, isCombo, onWrite }: {
       prescriptionRaw={value}
       unit={unit}
       loadIncrement={5}
+      clickIncrement={clickIncrement}
       isCombo={isCombo}
       onSave={(next, unitOverride) => {
         onWrite(next, unitOverride);
@@ -176,5 +178,74 @@ describe('Ctrl+click takes a whole notation line', () => {
     // Comma decimals are not accepted as input anywhere in EMOS; the point is
     // that it does NOT become a 82 column plus a phantom 5 column.
     expect(onWrite2.mock.calls[0][0]).toBe('82×3');
+  });
+});
+
+/**
+ * The click increment is a coach setting (`grid_click_increment`) that used to
+ * be saveable and inert — nothing read it. These pin the wiring: the value has
+ * to reach the load cell, and it must NOT reach the counts.
+ */
+describe('the coach click increment and the Shift jump', () => {
+  const repsCell = () => screen.getAllByRole('button')[1];
+  const setsCell = () => screen.getAllByRole('button')[2];
+
+  it('moves a load cell by the coach increment, not by 1', () => {
+    const onWrite = vi.fn();
+    render(<Harness raw="80×3×5" unit="absolute_kg" clickIncrement={2.5} onWrite={onWrite} />);
+
+    fireEvent.mouseDown(loadCell(), { button: 0 });
+    expect(onWrite).toHaveBeenCalledWith('82.5×3×5', undefined);
+  });
+
+  it('multiplies the increment by 5 under Shift', () => {
+    const onWrite = vi.fn();
+    render(<Harness raw="80×3×5" unit="absolute_kg" clickIncrement={2.5} onWrite={onWrite} />);
+
+    fireEvent.mouseDown(loadCell(), { button: 0, shiftKey: true });
+    expect(onWrite).toHaveBeenCalledWith('92.5×3×5', undefined);
+  });
+
+  it('goes down by the same amounts on right-click', () => {
+    const onWrite = vi.fn();
+    const { unmount } = render(<Harness raw="80×3×5" unit="absolute_kg" clickIncrement={2.5} onWrite={onWrite} />);
+    fireEvent.mouseDown(loadCell(), { button: 2 });
+    expect(onWrite).toHaveBeenCalledWith('77.5×3×5', undefined);
+    unmount();
+
+    const onWrite2 = vi.fn();
+    render(<Harness raw="80×3×5" unit="absolute_kg" clickIncrement={2.5} onWrite={onWrite2} />);
+    fireEvent.mouseDown(loadCell(), { button: 2, shiftKey: true });
+    expect(onWrite2).toHaveBeenCalledWith('67.5×3×5', undefined);
+  });
+
+  it('leaves reps and sets stepping by 1 whatever the increment says', () => {
+    const onWrite = vi.fn();
+    const { unmount } = render(<Harness raw="80×3×5" unit="absolute_kg" clickIncrement={2.5} onWrite={onWrite} />);
+    fireEvent.mouseDown(repsCell(), { button: 0 });
+    // 4 reps, not 5,5 — a prescription cannot ask for half a rep.
+    expect(onWrite).toHaveBeenCalledWith('80×4×5', undefined);
+    unmount();
+
+    const onWrite2 = vi.fn();
+    render(<Harness raw="80×3×5" unit="absolute_kg" clickIncrement={2.5} onWrite={onWrite2} />);
+    fireEvent.mouseDown(setsCell(), { button: 0 });
+    expect(onWrite2).toHaveBeenCalledWith('80×3×6', undefined);
+  });
+
+  it('still gives counts the Shift jump, in whole numbers', () => {
+    const onWrite = vi.fn();
+    render(<Harness raw="80×3×5" unit="absolute_kg" clickIncrement={2.5} onWrite={onWrite} />);
+
+    fireEvent.mouseDown(repsCell(), { button: 0, shiftKey: true });
+    expect(onWrite).toHaveBeenCalledWith('80×8×5', undefined);
+  });
+
+  it('defaults to 1 when no increment is threaded', () => {
+    const onWrite = vi.fn();
+    render(<Harness raw="80×3×5" unit="absolute_kg" onWrite={onWrite} />);
+
+    fireEvent.mouseDown(loadCell(), { button: 0 });
+    expect(onWrite).toHaveBeenCalledWith('81×3×5', undefined);
   });
 });

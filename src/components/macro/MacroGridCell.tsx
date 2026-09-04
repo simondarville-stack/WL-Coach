@@ -4,6 +4,7 @@ import {
   type MacroTargetUnit,
 } from '../../lib/macroTargetUnit';
 import { useRepeatOnHold } from '../../hooks/useRepeatOnHold';
+import { gestureDelta, roundStep, DEFAULT_CLICK_INCREMENT, SHIFT_STEP_MULTIPLIER } from '../../lib/stepGesture';
 
 interface MacroGridCellProps {
   load: number | null;
@@ -24,6 +25,10 @@ interface MacroGridCellProps {
     unit?: MacroTargetUnit;
     loadText?: string | null;
   }) => void;
+  /** How much ONE click moves the load line — the coach's
+   *  `grid_click_increment`. Reps and sets are counts and always step by 1.
+   *  Shift multiplies either by 5. */
+  clickIncrement?: number;
   disabled?: boolean;
   deleteMode?: boolean;
   onDelete?: () => void;
@@ -35,6 +40,7 @@ export function MacroGridCell({
   unit = 'absolute_kg',
   loadText = null,
   prevLoad, prevReps, prevSets,
+  clickIncrement = DEFAULT_CLICK_INCREMENT,
   onUpdate, disabled,
   deleteMode, onDelete,
   compact,
@@ -95,8 +101,7 @@ export function MacroGridCell({
       return false;
     }
 
-    const delta = e.button === 2 ? -1 : 1;
-    const next = Math.max(0, (load ?? 0) + delta);
+    const next = roundStep(Math.max(0, (load ?? 0) + gestureDelta(e, clickIncrement)));
     if (next === (load ?? 0)) return false;
     onUpdate({ load: next });
     return true;
@@ -122,9 +127,13 @@ export function MacroGridCell({
       return false;
     }
 
-    const delta = e.button === 2 ? -1 : 1;
+    const delta = gestureDelta(e);
 
-    if (e.shiftKey) return stepSets(delta);
+    // Alt steps SETS from the reps line. This shortcut used to live on Shift,
+    // which now means "×5" on every stepper in the app; it moved rather than
+    // went away, because the sets counter it duplicates is hidden at 1 and the
+    // shortcut is how a coach reaches it without hunting.
+    if (e.altKey) return stepSets(delta);
     const next = Math.max(1, (reps ?? 1) + delta);
     if (next === (reps ?? 1)) return false;
     onUpdate({ reps: next });
@@ -326,7 +335,7 @@ export function MacroGridCell({
             ? 'Click to clear'
             : isText
             ? 'Click to type. Type a number for kg, or add % for percentages.'
-            : `Load: click +1 · right-click −1 · hold to repeat · Ctrl+click to type${unit === 'percentage' ? ' · this column is in %' : ''}`}
+            : `Load: click ±${clickIncrement} · right-click − · Shift ×${SHIFT_STEP_MULTIPLIER} · hold to repeat · Ctrl+click to type${unit === 'percentage' ? ' · this column is in %' : ''}`}
           onMouseDown={e => { if (e.button === 0 || e.button === 2) hold.start(() => stepsRef.current.handleLoadClick(e)); }}
           onContextMenu={e => e.preventDefault()}
         >
@@ -337,7 +346,7 @@ export function MacroGridCell({
           className={`text-[9px] font-mono cursor-pointer px-2 leading-tight ${
             isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)]'
           }`}
-          title={isDeleteMode ? 'Click to clear' : 'Reps: click +1 · right-click −1 · hold to repeat · Shift for sets · Ctrl+click to type'}
+          title={isDeleteMode ? 'Click to clear' : `Reps: click +1 · right-click −1 · Shift ×${SHIFT_STEP_MULTIPLIER} · hold to repeat · Alt for sets · Ctrl+click to type`}
           onMouseDown={e => { if (e.button === 0 || e.button === 2) hold.start(() => stepsRef.current.handleRepsClick(e)); }}
           onContextMenu={e => e.preventDefault()}
         >
@@ -352,13 +361,13 @@ export function MacroGridCell({
             ? 'opacity-0 group-hover:opacity-40'
             : (isDeleteMode ? 'opacity-80 text-[color:var(--color-danger-text)]' : 'opacity-80 text-[color:var(--color-text-tertiary)]')
         } ${isDeleteMode && !setsIsOne ? '' : 'text-[color:var(--color-text-tertiary)]'}`}
-        title={isDeleteMode ? 'Click to clear' : 'Sets: click +1 · right-click −1 · hold to repeat'}
+        title={isDeleteMode ? 'Click to clear' : `Sets: click +1 · right-click −1 · Shift ×${SHIFT_STEP_MULTIPLIER} · hold to repeat`}
         onMouseDown={(e) => {
           if (e.button !== 0 && e.button !== 2) return;
           e.preventDefault();
           e.stopPropagation();
           if (isDeleteMode) { onDelete?.(); return; }
-          const delta = e.button === 2 ? -1 : 1;
+          const delta = gestureDelta(e);
           hold.start(() => stepsRef.current.stepSets(delta));
         }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}

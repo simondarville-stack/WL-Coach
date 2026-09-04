@@ -1505,6 +1505,7 @@ This OVERWRITES ${filled} week${filled === 1 ? '' : 's'} already prescribed on $
               actuals={displayedActuals}
               onUpdateTarget={handleUpdateTarget}
               onUpdateTargetCell={handleUpdateTargetCell}
+              clickIncrement={settings?.grid_click_increment ?? 1}
               onSetColumnUnit={updateTrackedExerciseUnit}
               onUpdateWeekType={handleUpdateWeekType}
               onUpdateTotalReps={handleUpdateTotalReps}

@@ -161,6 +161,7 @@ export function DayEditor({
   );
 
   const loadIncrement = settings?.grid_load_increment ?? 5;
+  const clickIncrement = settings?.grid_click_increment ?? 1;
   const defaultPrescriptionLoad = settings?.default_prescription_load ?? 50;
 
   async function handleAddExercise(exercise: Exercise) {
@@ -614,6 +615,7 @@ export function DayEditor({
                         prescriptionRaw={ex.prescription_raw}
                         unit={ex.unit}
                         loadIncrement={loadIncrement}
+                        clickIncrement={clickIncrement}
                         defaultLoad={defaultPrescriptionLoad}
                         isCombo={ex.is_combo}
                         comboPartCount={ex.is_combo ? ((comboMembers[ex.id] ?? []).length || 2) : undefined}

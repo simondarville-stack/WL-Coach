@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useRef, useState } from 'react';
 import { useRepeatOnHold } from '../useRepeatOnHold';
+import { gestureDelta, SHIFT_STEP_MULTIPLIER } from '../../lib/stepGesture';
 
 /**
  * A stand-in for the house ±1 stepper: a number in local state, a button that
@@ -9,7 +10,7 @@ import { useRepeatOnHold } from '../useRepeatOnHold';
  * repeat reads the value the last tick wrote instead of the one captured at
  * mousedown.
  */
-function Stepper({ floor = 0, onStepSpy }: { floor?: number; onStepSpy?: () => void }) {
+function Stepper({ floor = 0, base = 1, onStepSpy }: { floor?: number; base?: number; onStepSpy?: () => void }) {
   const [value, setValue] = useState(10);
   const hold = useRepeatOnHold({ delay: 100, interval: 50, minInterval: 50 });
 
@@ -30,7 +31,8 @@ function Stepper({ floor = 0, onStepSpy }: { floor?: number; onStepSpy?: () => v
         if (e.button !== 0 && e.button !== 2) return;
         // Ctrl+click opens an edit in the real cells: a refusal, never a hold.
         if (e.ctrlKey) return;
-        const delta = e.button === 2 ? -1 : 1;
+        // Read the delta ONCE, exactly as the real callers do.
+        const delta = gestureDelta(e, base);
         hold.start(() => stepRef.current(delta));
       }}
     >
@@ -104,6 +106,34 @@ describe('useRepeatOnHold', () => {
     const callsAtFloor = onStepSpy.mock.calls.length;
     advance(1000);
     expect(onStepSpy).toHaveBeenCalledTimes(callsAtFloor);
+  });
+
+  it('keeps the Shift jump for the whole hold, not just the first click', () => {
+    render(<Stepper />);
+
+    // The delta is read once at mousedown, so releasing Shift mid-hold cannot
+    // silently drop the coach back to ±1 halfway through a jump.
+    fireEvent.mouseDown(cell(), { button: 0, shiftKey: true });
+    expect(cell()).toHaveTextContent(String(10 + SHIFT_STEP_MULTIPLIER));
+
+    advance(100);
+    expect(cell()).toHaveTextContent(String(10 + SHIFT_STEP_MULTIPLIER * 2));
+    advance(50);
+    expect(cell()).toHaveTextContent(String(10 + SHIFT_STEP_MULTIPLIER * 3));
+
+    fireEvent.mouseUp(window);
+  });
+
+  it('scales a load cell by the coach click increment, Shift included', () => {
+    render(<Stepper base={2.5} />);
+
+    fireEvent.mouseDown(cell(), { button: 0 });
+    expect(cell()).toHaveTextContent('12.5');
+    fireEvent.mouseUp(window);
+
+    fireEvent.mouseDown(cell(), { button: 0, shiftKey: true });
+    expect(cell()).toHaveTextContent('25');
+    fireEvent.mouseUp(window);
   });
 
   it('never arms when the gesture was refused', () => {
