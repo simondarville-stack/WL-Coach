@@ -58,3 +58,9 @@ CREATE TABLE IF NOT EXISTS kinemos_device_profiles (
 -- (last write wins, as everywhere in EMOS).
 CREATE UNIQUE INDEX IF NOT EXISTS kinemos_device_profiles_key_idx
   ON kinemos_device_profiles (owner_id, device_key);
+
+-- RLS on with the permissive policy, matching every other KinEMOS table.
+-- See the note in 20260903120000_kinemos_shares.sql.
+ALTER TABLE kinemos_device_profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS anon_all ON kinemos_device_profiles;
+CREATE POLICY anon_all ON kinemos_device_profiles FOR ALL USING (true) WITH CHECK (true);

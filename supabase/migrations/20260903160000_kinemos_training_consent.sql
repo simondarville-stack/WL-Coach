@@ -36,3 +36,10 @@ CREATE TABLE IF NOT EXISTS kinemos_training_consent (
 -- One standing record per athlete per environment.
 CREATE UNIQUE INDEX IF NOT EXISTS kinemos_training_consent_athlete_idx
   ON kinemos_training_consent (owner_id, athlete_id);
+
+-- RLS on with the permissive policy, matching every other KinEMOS table.
+-- See the note in 20260903120000_kinemos_shares.sql. This table records a
+-- consent decision, so it is the first one the auth phase should tighten.
+ALTER TABLE kinemos_training_consent ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS anon_all ON kinemos_training_consent;
+CREATE POLICY anon_all ON kinemos_training_consent FOR ALL USING (true) WITH CHECK (true);

@@ -49,3 +49,13 @@ CREATE TABLE IF NOT EXISTS kinemos_shares (
 CREATE INDEX IF NOT EXISTS kinemos_shares_athlete_idx ON kinemos_shares (athlete_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS kinemos_shares_analysis_idx ON kinemos_shares (analysis_id);
 CREATE INDEX IF NOT EXISTS kinemos_shares_recipient_idx ON kinemos_shares (recipient_coach_id, created_at DESC);
+
+-- RLS on, with the same permissive policy every other KinEMOS table carries.
+-- Auth is a later phase (CLAUDE.md, "Auth & access"), so this enforces
+-- nothing today — but a public table with RLS switched off is flagged by
+-- Supabase's own security advisor, and the switch is what the auth phase
+-- will tighten. Enabling it now means that phase edits a policy rather than
+-- discovering a table that was never governed at all.
+ALTER TABLE kinemos_shares ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS anon_all ON kinemos_shares;
+CREATE POLICY anon_all ON kinemos_shares FOR ALL USING (true) WITH CHECK (true);
