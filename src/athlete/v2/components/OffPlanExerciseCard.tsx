@@ -104,6 +104,13 @@ export function OffPlanExerciseCard({
   const lastCompleted = [...sortedSets].reverse().find(s => s.status === 'completed');
   const defaultLoad = lastCompleted?.performed_load ?? null;
   const defaultReps = lastCompleted?.performed_reps ?? null;
+  // On a combo the last set's raw value is the tuple ("2+1"); offering its
+  // numeric sum as the "same as last" default would log 3 where the athlete
+  // did 2+1. Keep the string, and pass it as the tuple so a value-less ✓
+  // records it verbatim.
+  const defaultRepsText =
+    lastCompleted?.performed_text ?? (defaultReps != null ? String(defaultReps) : null);
+  const defaultRepsTuple = defaultRepsText?.includes('+') ? defaultRepsText : null;
   const nextSetNumber =
     sortedSets.length > 0 ? Math.max(...sortedSets.map(s => s.set_number)) + 1 : 1;
 
@@ -174,10 +181,11 @@ export function OffPlanExerciseCard({
             key={`blank-${nextSetNumber + i}`}
             input={{
               setNumber: nextSetNumber + i,
-              plannedRepsText: defaultReps != null ? String(defaultReps) : '—',
+              plannedRepsText: defaultRepsText ?? '—',
               plannedLoadText: defaultLoad != null ? String(defaultLoad) : '—',
               plannedRepsValue: defaultReps,
               plannedLoadValue: defaultLoad,
+              plannedRepsTuple: defaultRepsTuple,
               comboReps: !!combo,
             }}
             logged={null}

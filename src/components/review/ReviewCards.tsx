@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import {
+  ArrowUpRight,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -38,7 +39,17 @@ import { isStreamPlaybackUrl } from '../../lib/streamUploads';
 
 // ─── Shared bits ───────────────────────────────────────────────────────────
 
-function AthleteBadge({ athlete, context }: { athlete: Athlete | undefined; context: string }) {
+function AthleteBadge({
+  athlete,
+  context,
+  onOpenSession,
+}: {
+  athlete: Athlete | undefined;
+  context: string;
+  /** Jump to the session this card came from. Null when the card has no
+   *  session behind it (a direct message, a clip with no log exercise). */
+  onOpenSession?: (() => void) | null;
+}) {
   const name = athlete?.name ?? 'Unknown athlete';
   return (
     <div className="flex items-center gap-2.5 min-w-0">
@@ -55,7 +66,23 @@ function AthleteBadge({ athlete, context }: { athlete: Athlete | undefined; cont
       )}
       <div className="min-w-0 leading-tight">
         <div className="text-sm font-medium text-white truncate">{name}</div>
-        <div className="text-[11px] text-white/60 truncate">{context}</div>
+        {onOpenSession ? (
+          // The context line IS the jump: triage in the reel, then open the
+          // session itself when a card needs more than a comment. Where that
+          // lands differs per surface (desktop planner Log mode vs the coach
+          // mobile day screen) — the caller owns the routing.
+          <button
+            type="button"
+            onClick={onOpenSession}
+            title="Open this session in the training log"
+            className="flex items-center gap-1 max-w-full text-[11px] text-white/70 hover:text-white underline decoration-white/25 underline-offset-2 hover:decoration-white/60 transition-colors"
+          >
+            <span className="truncate">{context}</span>
+            <ArrowUpRight size={11} className="shrink-0 opacity-70" />
+          </button>
+        ) : (
+          <div className="text-[11px] text-white/60 truncate">{context}</div>
+        )}
       </div>
     </div>
   );
@@ -167,14 +194,16 @@ interface CardFrameProps {
   composer: ComposeBarProps;
   /** Rendered between the content and the composer (e.g. technique rating). */
   accessory?: React.ReactNode;
+  /** Makes the context line a jump to the card's session. */
+  onOpenSession?: (() => void) | null;
 }
 
 /** Common frame: header row, content area, composer pinned at the bottom. */
-function CardFrame({ athlete, context, seen, kindIcon, children, composer, accessory }: CardFrameProps) {
+function CardFrame({ athlete, context, seen, kindIcon, children, composer, accessory, onOpenSession }: CardFrameProps) {
   return (
     <div className="h-full flex flex-col px-3 py-3 gap-2">
       <div className="flex items-center justify-between gap-2 shrink-0">
-        <AthleteBadge athlete={athlete} context={context} />
+        <AthleteBadge athlete={athlete} context={context} onOpenSession={onOpenSession} />
         <div className="flex items-center gap-2 text-white/50">
           <SeenDot seen={seen} />
           {kindIcon}
@@ -285,6 +314,9 @@ interface VideoCardProps {
   /** Send this clip to KinEMOS for closer study. Null hides the control.
    *  Routing lives with the caller, which has the router context. */
   onOpenInKinemos?: (() => void) | null;
+  /** Open the session this clip belongs to in the training log. Null when
+   *  the clip has no session behind it. Routing lives with the caller. */
+  onOpenSession?: (() => void) | null;
 }
 
 export function VideoCard({
@@ -298,6 +330,7 @@ export function VideoCard({
   onRateTechnique,
   externalSent,
   onOpenInKinemos,
+  onOpenSession,
 }: VideoCardProps) {
   // Mount the player the first time the card comes near the viewport and
   // keep it mounted after — scrolling back must not restart a buffered clip.
@@ -319,6 +352,7 @@ export function VideoCard({
       athlete={athlete}
       context={context}
       seen={seen}
+      onOpenSession={onOpenSession}
       kindIcon={<Video size={16} />}
       composer={{
         placeholder: `Comment on ${item.exerciseName}…`,
@@ -400,9 +434,12 @@ interface ThreadCardProps {
   athlete: Athlete | undefined;
   seen: boolean;
   onReply: (text: string) => Promise<void>;
+  /** Open the session this thread hangs off. Null for the general
+   *  (no-session) athlete↔coach thread. */
+  onOpenSession?: (() => void) | null;
 }
 
-export function ThreadCard({ item, athlete, seen, onReply }: ThreadCardProps) {
+export function ThreadCard({ item, athlete, seen, onReply, onOpenSession }: ThreadCardProps) {
   const context = item.sessionId
     ? `Session ${item.sessionDate ? formatDateShort(item.sessionDate) : ''}`.trim()
     : 'Direct message';
@@ -411,6 +448,7 @@ export function ThreadCard({ item, athlete, seen, onReply }: ThreadCardProps) {
       athlete={athlete}
       context={context}
       seen={seen}
+      onOpenSession={onOpenSession}
       kindIcon={<MessageCircle size={16} />}
       composer={{ placeholder: 'Reply…', onSend: onReply, showReactions: false }}
     >
@@ -475,6 +513,8 @@ interface SessionCardProps {
   reactions?: string[];
   /** Keyboard quick reactions already sent for this card. */
   externalSent?: string[];
+  /** Open this session in the training log. Routing lives with the caller. */
+  onOpenSession?: (() => void) | null;
 }
 
 export function SessionCard({
@@ -484,6 +524,7 @@ export function SessionCard({
   onComment,
   reactions,
   externalSent,
+  onOpenSession,
 }: SessionCardProps) {
   const s = item.session;
   const headerBits: string[] = [];
@@ -495,6 +536,7 @@ export function SessionCard({
       athlete={athlete}
       context={`Session ${formatDateShort(s.date)}${s.session_label ? ` · ${s.session_label}` : ''}`}
       seen={seen}
+      onOpenSession={onOpenSession}
       kindIcon={<ClipboardList size={16} />}
       composer={{ placeholder: 'Comment on this session…', onSend: onComment, reactions, externalSent }}
     >

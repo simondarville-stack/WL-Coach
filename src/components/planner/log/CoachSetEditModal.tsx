@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, X, Trash2, Plus } from 'lucide-react';
 import type { TrainingLogSet, PlannedExercise, Exercise } from '../../../lib/database.types';
 import { upsertLoggedSet, deleteLoggedSet } from '../../../lib/trainingLogService';
-import { parseNumericInput } from '../../../lib/trainingLogModel';
+import { parseNumericInput, parseRepsInput } from '../../../lib/trainingLogModel';
 import { StackedNotation } from '../StackedNotation';
 import { ConfirmModal } from '../../log/ConfirmModal';
 
@@ -95,7 +95,7 @@ export function CoachSetEditModal({
 
   const saveRow = (
     localId: string,
-    patch: Partial<Pick<TrainingLogSet, 'performed_load' | 'performed_reps' | 'status'>>,
+    patch: Partial<Pick<TrainingLogSet, 'performed_load' | 'performed_reps' | 'performed_text' | 'status'>>,
   ) => {
     setError(null);
     const idx = rows.findIndex(r => r.localId === localId);
@@ -256,17 +256,30 @@ export function CoachSetEditModal({
   );
 }
 
+/** The reps cell's value: the raw tuple when the set carries one, else the
+ *  numeric reps. Non-tuple performed_text is a free-text exercise's prose —
+ *  it belongs to the merged text cell in the athlete app, not in here. */
+function repsValueOf(row: Partial<TrainingLogSet>): string {
+  const text = row.performed_text;
+  if (text != null && text.includes('+')) return text;
+  return row.performed_reps != null ? String(row.performed_reps) : '';
+}
+
 function EditableRow({
   row,
   onSave,
   onDelete,
 }: {
   row: Partial<TrainingLogSet> & { setNumber: number; localId: string };
-  onSave: (patch: Partial<Pick<TrainingLogSet, 'performed_load' | 'performed_reps' | 'status'>>) => void;
+  onSave: (patch: Partial<Pick<TrainingLogSet, 'performed_load' | 'performed_reps' | 'performed_text' | 'status'>>) => void;
   onDelete: () => void;
 }) {
   const [load, setLoad] = useState(row.performed_load != null ? String(row.performed_load) : '');
-  const [reps, setReps] = useState(row.performed_reps != null ? String(row.performed_reps) : '');
+  // performed_text first: on a combo it holds the tuple the athlete actually
+  // did ("1+1+1") and performed_reps only its sum. Editing against the sum
+  // showed the coach "3" and — because the tuple was carried through
+  // untouched — a saved "2" would have left "1+1+1" standing beside it.
+  const [reps, setReps] = useState(repsValueOf(row));
   const status = row.status ?? 'completed';
   const isDone = status === 'completed';
   const isSkipped = status === 'skipped';
@@ -275,14 +288,28 @@ function EditableRow({
     setLoad(row.performed_load != null ? String(row.performed_load) : '');
   }, [row.performed_load]);
   useEffect(() => {
-    setReps(row.performed_reps != null ? String(row.performed_reps) : '');
-  }, [row.performed_reps]);
+    setReps(repsValueOf(row));
+    // Primitive deps on purpose (as with the load cell above): `row` is
+    // re-allocated on every parent render, and depending on it would reset
+    // the cell mid-edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.performed_reps, row.performed_text]);
 
   const commit = () => {
-    const parsedReps = parseNumericInput(reps);
+    // parseRepsInput, not parseNumericInput: "1+1+1" sums to 3 instead of
+    // parseFloat stopping at the first digit and storing 1.
+    const parsedReps = parseRepsInput(reps);
+    const trimmed = reps.trim();
+    // performed_text carries two different things: a combo's rep tuple, which
+    // this cell owns, and a free-text exercise's athlete prose, which a
+    // numeric editor must never touch (COACH-REVIEW-1). Prose wins — only a
+    // tuple (or the absence of one) is ours to rewrite.
+    const existing = row.performed_text ?? null;
+    const prose = existing != null && !existing.includes('+') ? existing : null;
     onSave({
       performed_load: parseNumericInput(load),
       performed_reps: parsedReps != null ? Math.round(parsedReps) : null,
+      performed_text: prose ?? (trimmed.includes('+') ? trimmed : null),
     });
   };
 
@@ -348,7 +375,7 @@ function EditableRow({
       <span className="text-[9px] text-gray-500">kg</span>
       <input
         type="text"
-        inputMode="decimal"
+        inputMode={reps.includes('+') ? 'text' : 'decimal'}
         value={reps}
         onChange={e => setReps(e.target.value)}
         onBlur={commit}

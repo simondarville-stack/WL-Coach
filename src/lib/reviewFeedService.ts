@@ -58,6 +58,10 @@ export interface ReviewVideoItem {
   sessionId: string | null;
   /** Training date of the session the clip belongs to (YYYY-MM-DD). */
   sessionDate: string | null;
+  /** Planner slot of that session — what "jump to this session" navigates to.
+   *  Null when the clip has no session behind it. */
+  sessionWeekStart: string | null;
+  sessionDayIndex: number | null;
   exerciseName: string;
   video: TrainingLogVideo;
   /** Log exercise the clip hangs off — the technique rating writes here. */
@@ -92,6 +96,9 @@ export interface ReviewThreadItem {
   /** Null for the general (no-session) athlete↔coach thread. */
   sessionId: string | null;
   sessionDate: string | null;
+  /** Planner slot of that session — see ReviewVideoItem. */
+  sessionWeekStart: string | null;
+  sessionDayIndex: number | null;
   /** Recent thread context, oldest first — both parties, all coaches. */
   messages: ThreadMessage[];
   /** Athlete messages inside the window behind this card. */
@@ -214,6 +221,12 @@ interface SessionStub {
   id: string;
   date: string;
   athlete_id: string;
+  /** Planner slot the session belongs to — the pair the "jump to this
+   *  session" links need. The performed date can fall in a different week
+   *  than the unit was planned for, so the slot is authoritative, not
+   *  mondayOf(date). */
+  week_start: string;
+  day_index: number;
 }
 
 /** Keys this coach has already reviewed, as `${item_type}:${item_key}`.
@@ -415,7 +428,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       : await (async () => {
           const { data, error } = await supabase
             .from('training_log_sessions')
-            .select('id, date, athlete_id')
+            .select('id, date, athlete_id, week_start, day_index')
             .in('id', [...extraSessionIds]);
           if (error) throw error;
           return (data ?? []) as SessionStub[];
@@ -589,6 +602,8 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       athleteId: v.athlete_id,
       sessionId: le?.session_id ?? null,
       sessionDate: session?.date ?? null,
+      sessionWeekStart: session?.week_start ?? null,
+      sessionDayIndex: session?.day_index ?? null,
       exerciseName:
         (le?.exercise_id && exerciseNameById.get(le.exercise_id)) || 'Exercise',
       video: v,
@@ -608,6 +623,8 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       athleteId: c.athleteId,
       sessionId: c.sessionId,
       sessionDate: c.sessionId ? sessionStubById.get(c.sessionId)?.date ?? null : null,
+      sessionWeekStart: c.sessionId ? sessionStubById.get(c.sessionId)?.week_start ?? null : null,
+      sessionDayIndex: c.sessionId ? sessionStubById.get(c.sessionId)?.day_index ?? null : null,
       messages: context.map(toThreadMessage),
       newCount: c.newCount,
     });
@@ -871,13 +888,18 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
       const { data: threadData } = await q;
       const messages = ((threadData ?? []) as TrainingLogMessage[]).reverse();
       let sessionDate: string | null = null;
+      let sessionWeekStart: string | null = null;
+      let sessionDayIndex: number | null = null;
       if (latest.session_id) {
         const { data: sess } = await supabase
           .from('training_log_sessions')
-          .select('date')
+          .select('date, week_start, day_index')
           .eq('id', latest.session_id)
           .maybeSingle();
-        sessionDate = (sess as { date: string } | null)?.date ?? null;
+        const row = sess as { date: string; week_start: string; day_index: number } | null;
+        sessionDate = row?.date ?? null;
+        sessionWeekStart = row?.week_start ?? null;
+        sessionDayIndex = row?.day_index ?? null;
       }
       items.push({
         kind: 'thread',
@@ -887,6 +909,8 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
         athleteId: latest.athlete_id,
         sessionId: latest.session_id,
         sessionDate,
+        sessionWeekStart,
+        sessionDayIndex,
         messages: messages.map(m => ({
           id: m.id,
           senderType: m.sender_type,
@@ -909,6 +933,8 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
     athleteId: threadAthleteId ?? athleteIds[0] ?? '',
     sessionId: null,
     sessionDate: now.slice(0, 10),
+    sessionWeekStart: null,
+    sessionDayIndex: null,
     exerciseName: 'Snatch',
     video: {
       id: 'demo-video',
