@@ -698,12 +698,11 @@ export function useWeekPlans() {
     await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
   };
 
-  /**
-   * Persist a GPP block payload on a planned_exercise row. The whole
-   * GppSection replaces metadata.gpp; other metadata keys are left
-   * untouched so future structured-content sentinels can share the bag.
-   */
-  const saveGppSection = async (
+  // Internal: the Supabase write for a GPP block. Read-modify-write against the
+  // row's metadata so the gpp key never clobbers features / athleteHidden /
+  // description. Runs behind the per-exercise write chain, so the SELECT always
+  // sees the previous autosave's UPDATE.
+  const writeGppSection = async (
     plannedExId: string,
     gpp: import('../lib/database.types').GppSection,
   ): Promise<void> => {
@@ -723,21 +722,37 @@ export function useWeekPlans() {
       .eq('id', plannedExId);
     if (error) throw error;
     await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
-
-    // Patch the in-memory row so the day card's GPP preview updates live.
-    // The editor autosaves, so a full refetch per save would be both wasteful
-    // and destructive (it re-renders the card under an open editor). Same
-    // optimistic-patch shape savePrescription uses.
-    patchPlannedExercise(plannedExId, ex => ({ ...ex, metadata: { ...(ex.metadata ?? {}), gpp } }));
   };
 
   /**
-   * Persist the exercise-features bag (metadata.features) for a planned
-   * exercise and re-derive the cached summary so Σ/Ø overrides take effect
-   * everywhere summary_* is read (planner totals, analysis, macro fill).
-   * An empty bag clears the key so the JSON stays tidy.
+   * Persist a GPP block payload on a planned_exercise row. The whole
+   * GppSection replaces metadata.gpp; other metadata keys are left
+   * untouched so future structured-content sentinels can share the bag.
+   *
+   * Same shape as savePrescription: patch the in-memory row first so the day
+   * card's GPP preview updates live (a success-path refetch would remount the
+   * editor mid-keystroke), then write behind the per-exercise chain. The
+   * editor autosaves, so unchained writes could otherwise overlap and let an
+   * older keystroke's SELECT land its UPDATE last.
    */
-  const saveExerciseFeatures = async (
+  const saveGppSection = async (
+    plannedExId: string,
+    gpp: import('../lib/database.types').GppSection,
+  ): Promise<void> => {
+    patchPlannedExercise(plannedExId, ex => ({ ...ex, metadata: { ...(ex.metadata ?? {}), gpp } }));
+
+    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
+    const run = () => writeGppSection(plannedExId, gpp);
+    const nextWrite = prevWrite.then(run, run);
+    writeChainRef.current.set(plannedExId, nextWrite);
+    await nextWrite;
+  };
+
+  // Internal: the Supabase writes for a features bag. Read-modify-write against
+  // the row's metadata so feature keys never clobber gpp / athleteHidden /
+  // description, which other paths own. Runs behind the per-exercise write
+  // chain, so the SELECT always sees the previous click's UPDATE.
+  const writeExerciseFeatures = async (
     plannedExId: string,
     features: ExerciseFeatures,
   ): Promise<void> => {
@@ -771,26 +786,61 @@ export function useWeekPlans() {
       .eq('id', plannedExId);
     if (error) throw error;
     await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
-
-    // Optimistic in-memory patch — same shape savePrescription uses, so the
-    // analysis column and day totals update live without a refetch.
-    patchPlannedExercise(plannedExId, ex => ({
-      ...ex,
-      metadata: next as PlannedExerciseMetadata,
-      summary_total_sets: summary.total_sets,
-      summary_total_reps: summary.total_reps,
-      summary_highest_load: summary.highest_load,
-      summary_avg_load: summary.avg_load,
-    }));
   };
 
   /**
-   * Persist which row parts are hidden from the athlete app
-   * (metadata.athleteHidden — the planner's eye menu). Empty array clears
-   * the key. Planner display, analysis and summaries are untouched: this
-   * is athlete-facing display only.
+   * Persist the exercise-features bag (metadata.features) for a planned
+   * exercise and re-derive the cached summary so Σ/Ø overrides take effect
+   * everywhere summary_* is read (planner totals, analysis, macro fill).
+   * An empty bag clears the key so the JSON stays tidy.
+   *
+   * Shaped exactly like savePrescription, and for the same reason: the ⏱ / ⏸ /
+   * Σ / S / Hi / Ø values are click-steppers (click +1 · right-click −1). The
+   * old order — SELECT, UPDATE, UPDATE, *then* patch state — made every step
+   * wait a full round trip before the number moved, and because the caller
+   * derives the next value from the in-memory bag, a burst of clicks all
+   * stepped off the same stale base and silently collapsed into one. Patch
+   * first, write behind the per-exercise chain (shared with savePrescription,
+   * so a features write and a prescription write for the same row stay
+   * ordered relative to each other).
    */
-  const saveAthleteVisibility = async (
+  const saveExerciseFeatures = async (
+    plannedExId: string,
+    features: ExerciseFeatures,
+  ): Promise<void> => {
+    const hasAny = Object.values(features).some(v => v != null);
+
+    // Optimistic + immediate: derive the summary from the in-memory row rather
+    // than re-reading it, so the value moves on the next paint.
+    patchPlannedExercise(plannedExId, ex => {
+      const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
+      if (hasAny) meta.features = features; else delete meta.features;
+      const summary = applyFeatureOverrides(
+        computePrescriptionSummary(ex.prescription_raw ?? '', ex.unit ?? null, !!ex.is_combo),
+        hasAny ? features : undefined,
+      );
+      return {
+        ...ex,
+        metadata: meta,
+        summary_total_sets: summary.total_sets,
+        summary_total_reps: summary.total_reps,
+        summary_highest_load: summary.highest_load,
+        summary_avg_load: summary.avg_load,
+      };
+    });
+
+    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
+    const run = () => writeExerciseFeatures(plannedExId, features);
+    const nextWrite = prevWrite.then(run, run);
+    writeChainRef.current.set(plannedExId, nextWrite);
+    await nextWrite;
+  };
+
+  // Internal: the Supabase write for the athlete-visibility list. Read-modify-
+  // write against the row's metadata so the eye keys never clobber features /
+  // gpp / description. Runs behind the per-exercise write chain, so the SELECT
+  // always sees the previous toggle's UPDATE.
+  const writeAthleteVisibility = async (
     plannedExId: string,
     hidden: import('../lib/database.types').AthleteHiddenKey[],
   ): Promise<void> => {
@@ -811,8 +861,35 @@ export function useWeekPlans() {
       .eq('id', plannedExId);
     if (error) throw error;
     await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
+  };
 
-    patchPlannedExercise(plannedExId, ex => ({ ...ex, metadata: next as PlannedExerciseMetadata }));
+  /**
+   * Persist which row parts are hidden from the athlete app
+   * (metadata.athleteHidden — the planner's eye menu). Empty array clears
+   * the key. Planner display, analysis and summaries are untouched: this
+   * is athlete-facing display only.
+   *
+   * Same shape as savePrescription / saveExerciseFeatures: patch state first,
+   * write behind the per-exercise chain. The eye menu stays open across
+   * toggles and each toggle derives `hidden` from the in-memory list, so the
+   * old patch-last order both delayed the tick by a round trip and let a
+   * second toggle read the pre-first-toggle list and undo it.
+   */
+  const saveAthleteVisibility = async (
+    plannedExId: string,
+    hidden: import('../lib/database.types').AthleteHiddenKey[],
+  ): Promise<void> => {
+    patchPlannedExercise(plannedExId, ex => {
+      const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
+      if (hidden.length > 0) meta.athleteHidden = hidden; else delete meta.athleteHidden;
+      return { ...ex, metadata: meta };
+    });
+
+    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
+    const run = () => writeAthleteVisibility(plannedExId, hidden);
+    const nextWrite = prevWrite.then(run, run);
+    writeChainRef.current.set(plannedExId, nextWrite);
+    await nextWrite;
   };
 
   /**
@@ -839,13 +916,13 @@ export function useWeekPlans() {
     }));
   };
 
-  /**
-   * Persist a caption for an IMAGE / VIDEO sentinel on metadata.description.
-   * Empty / whitespace-only strings clear the key so the JSON stays tidy.
-   */
-  const saveMediaDescription = async (
+  // Internal: the Supabase write for a media caption. Read-modify-write against
+  // the row's metadata so the description key never clobbers features / gpp /
+  // athleteHidden. Runs behind the per-exercise write chain, so the SELECT
+  // always sees the previous debounce's UPDATE.
+  const writeMediaDescription = async (
     plannedExId: string,
-    description: string,
+    trimmed: string,
   ): Promise<void> => {
     const { data: row, error: rErr } = await supabase
       .from('planned_exercises')
@@ -855,7 +932,6 @@ export function useWeekPlans() {
     if (rErr) throw rErr;
     const current = ((row as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>;
     const next = { ...current };
-    const trimmed = description.trim();
     if (trimmed) next.description = trimmed; else delete next.description;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
     const update: any = { metadata: next };
@@ -864,6 +940,34 @@ export function useWeekPlans() {
       .update(update)
       .eq('id', plannedExId);
     if (error) throw error;
+  };
+
+  /**
+   * Persist a caption for an IMAGE / VIDEO sentinel on metadata.description.
+   * Empty / whitespace-only strings clear the key so the JSON stays tidy.
+   *
+   * Same shape as savePrescription: patch first, write behind the per-exercise
+   * chain. The patch is new — this path never mirrored the caption into state,
+   * so the day card kept showing the old one until something forced a refetch.
+   * The caller debounces at 400 ms and flushes on close, which means two writes
+   * can be in flight at once; chaining keeps the last one the one that wins.
+   */
+  const saveMediaDescription = async (
+    plannedExId: string,
+    description: string,
+  ): Promise<void> => {
+    const trimmed = description.trim();
+    patchPlannedExercise(plannedExId, ex => {
+      const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
+      if (trimmed) meta.description = trimmed; else delete meta.description;
+      return { ...ex, metadata: meta };
+    });
+
+    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
+    const run = () => writeMediaDescription(plannedExId, trimmed);
+    const nextWrite = prevWrite.then(run, run);
+    writeChainRef.current.set(plannedExId, nextWrite);
+    await nextWrite;
   };
 
   const fetchOtherDayPrescriptions = async (
