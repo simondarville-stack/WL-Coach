@@ -29,10 +29,16 @@ export interface PlanSelection {
 export function useWeekPlans() {
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
-  // Per-exercise write chain: serializes prescription DB writes so a burst of
-  // rapid clicks persists in click order (never out-of-order, which would leave
-  // a stale value as the final state).
+  // Per-exercise write chain: serializes DB writes so a burst of rapid clicks
+  // persists in click order (never out-of-order, which would leave a stale
+  // value as the final state). Keyed by planned-exercise id, shared by every
+  // writer — see patchThenWrite.
   const writeChainRef = useRef<Map<string, Promise<unknown>>>(new Map());
+  // The one write of each kind still waiting behind the chain, keyed
+  // "<plannedExId>::<kind>". A newer write of the same kind replaces it rather
+  // than queueing, so click-and-hold on a stepper costs one write per drain,
+  // not one per step.
+  const pendingWriteRef = useRef<Map<string, () => Promise<void>>>(new Map());
   const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [athletePRs, setAthletePRs] = useState<AthletePR[]>([]);
   const [macroWeekTarget, setMacroWeekTarget] = useState<number | null>(null);
@@ -630,6 +636,64 @@ export function useWeekPlans() {
     });
   };
 
+  /**
+   * The house shape for every row edit that persists to planned_exercises:
+   * patch the in-memory row synchronously so the UI moves on the NEXT PAINT,
+   * then queue the DB write behind a per-exercise chain.
+   *
+   * Both halves matter, and both were learned the hard way. Patching last made
+   * every click wait out a round trip before the number moved — and because
+   * callers derive the next value from the in-memory row, a burst of clicks all
+   * stepped off the same stale base and silently collapsed into one. Chaining
+   * keeps a burst persisting strictly in order, and lets each write's
+   * read-modify-write SELECT see the previous write's UPDATE.
+   *
+   * There is ONE chain per planned exercise, shared by every writer, so a
+   * features write and a prescription write on the same row stay ordered
+   * relative to each other — the preset-apply path fires both back to back and
+   * writePrescription re-reads metadata.features to re-apply the overrides.
+   * Returning the chained promise keeps flushAndClose's await covering the
+   * whole pending chain, and lets callers .catch() to resync on failure.
+   *
+   * Queued writes of the SAME kind coalesce: while one write is in flight, a
+   * newer write of that kind replaces the one waiting behind it instead of
+   * queueing another. Every writer here sends the complete value, so an
+   * intermediate step has nothing the newest one lacks — which is what makes
+   * click-and-hold viable at all (a two-second hold on a stepper is ~30 steps;
+   * without this, that is ~30 round trips draining long after the release, and
+   * the coach watches the number crawl to where they left it). `kind` keeps a
+   * prescription write from ever coalescing away under a features write —
+   * different columns, both needed.
+   *
+   * Route new planned_exercise writers through here rather than hand-rolling
+   * the pair; four of them drifted out of this shape once already.
+   */
+  const patchThenWrite = (
+    plannedExId: string,
+    kind: 'prescription' | 'features' | 'visibility' | 'gpp' | 'description',
+    patch: (ex: PlannedExercise & { exercise: Exercise }) => PlannedExercise & { exercise: Exercise },
+    write: () => Promise<void>,
+  ): Promise<void> => {
+    patchPlannedExercise(plannedExId, patch);
+
+    // Newest write of this kind wins the queued slot.
+    const slot = `${plannedExId}::${kind}`;
+    pendingWriteRef.current.set(slot, write);
+    const run = () => {
+      const queued = pendingWriteRef.current.get(slot);
+      // Superseded before it ran — a later call took the slot and will run
+      // that value instead. Nothing to do, and nothing lost.
+      if (!queued) return Promise.resolve();
+      pendingWriteRef.current.delete(slot);
+      return queued();
+    };
+
+    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
+    const nextWrite = prevWrite.then(run, run);
+    writeChainRef.current.set(plannedExId, nextWrite);
+    return nextWrite;
+  };
+
   // Public entry point for persisting a prescription. Mirrors the edit to a
   // localStorage draft BEFORE the destructive write so a dropped connection
   // mid-save can't lose the coach's typing, then clears the draft only after
@@ -653,36 +717,31 @@ export function useWeekPlans() {
         updatedAt: Date.now(),
       });
     }
-    // Optimistic + immediate: patch the in-memory row so summaries/totals
-    // update live without a full refetch (which would remount the grid mid-edit
-    // and revert keystrokes). The grid suppresses the prescription_raw echo
-    // (sentRawsRef), so this never remounts it. Same computePrescriptionSummary
-    // the write path uses, so the cached summary stays consistent.
+    // The optimistic patch keeps summaries/totals live without a full refetch,
+    // which would remount the grid mid-edit and revert keystrokes. The grid
+    // suppresses the prescription_raw echo (sentRawsRef), so this never
+    // remounts it. Same computePrescriptionSummary the write path uses, so the
+    // cached summary stays consistent.
     const baseSummary = computePrescriptionSummary(data.prescription, data.unit, !!data.isCombo);
-    patchPlannedExercise(plannedExId, ex => {
-      // Feature overrides (Σ/Ø) survive prescription edits — same rule the
-      // write path applies.
-      const summary = applyFeatureOverrides(baseSummary, ex.metadata?.features);
-      return {
-        ...ex,
-        prescription_raw: data.prescription,
-        unit: data.unit,
-        summary_total_sets: summary.total_sets,
-        summary_total_reps: summary.total_reps,
-        summary_highest_load: summary.highest_load,
-        summary_avg_load: summary.avg_load,
-      };
-    });
-
-    // Serialize the DB write per exercise: chain after any in-flight write so a
-    // burst of clicks persists strictly in order. Returning the chained promise
-    // keeps flushAndClose's await covering the whole pending chain, and lets
-    // callers .catch() to resync on failure.
-    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
-    const run = () => writePrescription(plannedExId, data).then(() => clearPrescriptionDraft(plannedExId));
-    const nextWrite = prevWrite.then(run, run);
-    writeChainRef.current.set(plannedExId, nextWrite);
-    await nextWrite;
+    await patchThenWrite(
+      plannedExId,
+      'prescription',
+      ex => {
+        // Feature overrides (Σ/Ø) survive prescription edits — same rule the
+        // write path applies.
+        const summary = applyFeatureOverrides(baseSummary, ex.metadata?.features);
+        return {
+          ...ex,
+          prescription_raw: data.prescription,
+          unit: data.unit,
+          summary_total_sets: summary.total_sets,
+          summary_total_reps: summary.total_reps,
+          summary_highest_load: summary.highest_load,
+          summary_avg_load: summary.avg_load,
+        };
+      },
+      () => writePrescription(plannedExId, data).then(() => clearPrescriptionDraft(plannedExId)),
+    );
   };
 
   const saveNotes = async (plannedExId: string, notes: string): Promise<void> => {
@@ -739,13 +798,12 @@ export function useWeekPlans() {
     plannedExId: string,
     gpp: import('../lib/database.types').GppSection,
   ): Promise<void> => {
-    patchPlannedExercise(plannedExId, ex => ({ ...ex, metadata: { ...(ex.metadata ?? {}), gpp } }));
-
-    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
-    const run = () => writeGppSection(plannedExId, gpp);
-    const nextWrite = prevWrite.then(run, run);
-    writeChainRef.current.set(plannedExId, nextWrite);
-    await nextWrite;
+    await patchThenWrite(
+      plannedExId,
+      'gpp',
+      ex => ({ ...ex, metadata: { ...(ex.metadata ?? {}), gpp } }),
+      () => writeGppSection(plannedExId, gpp),
+    );
   };
 
   // Internal: the Supabase writes for a features bag. Read-modify-write against
@@ -809,31 +867,29 @@ export function useWeekPlans() {
     features: ExerciseFeatures,
   ): Promise<void> => {
     const hasAny = Object.values(features).some(v => v != null);
-
-    // Optimistic + immediate: derive the summary from the in-memory row rather
-    // than re-reading it, so the value moves on the next paint.
-    patchPlannedExercise(plannedExId, ex => {
-      const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
-      if (hasAny) meta.features = features; else delete meta.features;
-      const summary = applyFeatureOverrides(
-        computePrescriptionSummary(ex.prescription_raw ?? '', ex.unit ?? null, !!ex.is_combo),
-        hasAny ? features : undefined,
-      );
-      return {
-        ...ex,
-        metadata: meta,
-        summary_total_sets: summary.total_sets,
-        summary_total_reps: summary.total_reps,
-        summary_highest_load: summary.highest_load,
-        summary_avg_load: summary.avg_load,
-      };
-    });
-
-    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
-    const run = () => writeExerciseFeatures(plannedExId, features);
-    const nextWrite = prevWrite.then(run, run);
-    writeChainRef.current.set(plannedExId, nextWrite);
-    await nextWrite;
+    await patchThenWrite(
+      plannedExId,
+      'features',
+      // Derive the summary from the in-memory row rather than re-reading it,
+      // so the stepped value moves without waiting on the network.
+      ex => {
+        const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
+        if (hasAny) meta.features = features; else delete meta.features;
+        const summary = applyFeatureOverrides(
+          computePrescriptionSummary(ex.prescription_raw ?? '', ex.unit ?? null, !!ex.is_combo),
+          hasAny ? features : undefined,
+        );
+        return {
+          ...ex,
+          metadata: meta,
+          summary_total_sets: summary.total_sets,
+          summary_total_reps: summary.total_reps,
+          summary_highest_load: summary.highest_load,
+          summary_avg_load: summary.avg_load,
+        };
+      },
+      () => writeExerciseFeatures(plannedExId, features),
+    );
   };
 
   // Internal: the Supabase write for the athlete-visibility list. Read-modify-
@@ -879,17 +935,16 @@ export function useWeekPlans() {
     plannedExId: string,
     hidden: import('../lib/database.types').AthleteHiddenKey[],
   ): Promise<void> => {
-    patchPlannedExercise(plannedExId, ex => {
-      const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
-      if (hidden.length > 0) meta.athleteHidden = hidden; else delete meta.athleteHidden;
-      return { ...ex, metadata: meta };
-    });
-
-    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
-    const run = () => writeAthleteVisibility(plannedExId, hidden);
-    const nextWrite = prevWrite.then(run, run);
-    writeChainRef.current.set(plannedExId, nextWrite);
-    await nextWrite;
+    await patchThenWrite(
+      plannedExId,
+      'visibility',
+      ex => {
+        const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
+        if (hidden.length > 0) meta.athleteHidden = hidden; else delete meta.athleteHidden;
+        return { ...ex, metadata: meta };
+      },
+      () => writeAthleteVisibility(plannedExId, hidden),
+    );
   };
 
   /**
@@ -957,17 +1012,16 @@ export function useWeekPlans() {
     description: string,
   ): Promise<void> => {
     const trimmed = description.trim();
-    patchPlannedExercise(plannedExId, ex => {
-      const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
-      if (trimmed) meta.description = trimmed; else delete meta.description;
-      return { ...ex, metadata: meta };
-    });
-
-    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
-    const run = () => writeMediaDescription(plannedExId, trimmed);
-    const nextWrite = prevWrite.then(run, run);
-    writeChainRef.current.set(plannedExId, nextWrite);
-    await nextWrite;
+    await patchThenWrite(
+      plannedExId,
+      'description',
+      ex => {
+        const meta = { ...(ex.metadata ?? {}) } as PlannedExerciseMetadata;
+        if (trimmed) meta.description = trimmed; else delete meta.description;
+        return { ...ex, metadata: meta };
+      },
+      () => writeMediaDescription(plannedExId, trimmed),
+    );
   };
 
   const fetchOtherDayPrescriptions = async (

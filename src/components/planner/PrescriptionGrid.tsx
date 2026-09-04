@@ -10,6 +10,7 @@ import {
 } from '../../lib/prescriptionParser';
 import type { ParsedSetLine, LoadCmp } from '../../lib/prescriptionParser';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
+import { useRepeatOnHold } from '../../hooks/useRepeatOnHold';
 import { getUnitLabel } from '../../lib/constants';
 import { AutoGrowTextarea } from '../ui';
 import type { CoachPreset } from '../../lib/database.types';
@@ -153,6 +154,7 @@ export function PrescriptionGrid({
   const isFreeTextReps = unit === 'free_text_reps';
   const isFreeText = unit === 'free_text';
   const deleteHeld = useDeleteHeld();
+  const hold = useRepeatOnHold();
 
   const [columns, setColumns] = useState<GridColumn[]>(() => parseToColumns(prescriptionRaw, isCombo, unit));
   const [editing, setEditing] = useState<EditingCell | null>(null);
@@ -434,14 +436,21 @@ export function PrescriptionGrid({
     return true;
   }
 
-  function handleCellClick(e: React.MouseEvent, colId: string, field: 'load' | 'reps' | 'sets') {
+  /**
+   * A cell's mousedown. Returns true only when it performed a plain ±1 step —
+   * the one gesture worth repeating on a held button. Everything else this
+   * mousedown also serves (Del-held removes the column, Alt cycles the unit,
+   * Ctrl opens the edit) returns false, because holding those down would
+   * delete a row, spin the unit, or fight the input that just opened.
+   */
+  function handleCellClick(e: React.MouseEvent, colId: string, field: 'load' | 'reps' | 'sets'): boolean {
     e.preventDefault();
-    if (disabled) return;
+    if (disabled) return false;
     // Del-held stays the outermost mode: an armed delete is never hijacked.
-    if (deleteHeld) { removeColumn(colId); return; }
-    if (field === 'load' && cycleUnit(e)) return;
+    if (deleteHeld) { removeColumn(colId); return false; }
+    if (field === 'load' && cycleUnit(e)) return false;
     const col = columns.find(c => c.id === colId);
-    if (!col) return;
+    if (!col) return false;
 
     if (e.ctrlKey || e.metaKey) {
       let currentValue: string;
@@ -462,46 +471,126 @@ export function PrescriptionGrid({
       }
       else currentValue = col.setsMax != null ? `${col.sets}-${col.setsMax}` : String(col.sets);
       setEditing({ colId, field, value: currentValue });
-      return;
+      return false;
     }
 
     const isRight = e.button === 2;
     const delta = isRight ? -1 : 1;
 
     if (field === 'load') {
-      if (isFreeTextReps) { setEditing({ colId, field: 'load', value: col.loadText }); return; }
+      if (isFreeTextReps) { setEditing({ colId, field: 'load', value: col.loadText }); return false; }
       if (col.loadMax !== null) {
         const rect = (e.target as HTMLElement).getBoundingClientRect();
         const isRightHalf = e.clientX - rect.left > rect.width / 2;
         if (isRightHalf) {
           const nextMax = Math.max(col.load, (col.loadMax || 0) + delta);
+          if (nextMax === col.loadMax) return false;
           updateColumn(colId, { loadMax: nextMax, loadText: `${col.load}-${nextMax}` });
         } else {
           const nextMin = Math.max(0, col.load + delta);
+          if (nextMin === col.load) return false;
           const adjustedMax = Math.max(nextMin, col.loadMax || nextMin);
           updateColumn(colId, { load: nextMin, loadMax: adjustedMax, loadText: `${nextMin}-${adjustedMax}` });
         }
       } else {
         const next = Math.max(0, col.load + delta);
+        if (next === col.load) return false;
         updateColumn(colId, { load: next, loadMax: null, loadText: String(next) });
       }
     } else if (field === 'reps') {
       if (isCombo) {
         const parts = col.repsText.split('+');
         const first = Math.max(0, (parseInt(parts[0], 10) || 0) + delta);
+        if (first === (parseInt(parts[0], 10) || 0)) return false;
         parts[0] = String(first);
         const newRepsText = parts.join('+');
         const newTotalReps = parts.reduce((s, p) => s + (parseInt(p, 10) || 0), 0);
         updateColumn(colId, { repsText: newRepsText, reps: newTotalReps });
       } else {
         const next = Math.max(0, col.reps + delta);
+        if (next === col.reps) return false;
         updateColumn(colId, { reps: next, repsText: String(next) });
       }
     } else {
       const next = Math.max(1, col.sets + delta);
+      if (next === col.sets) return false;
       updateColumn(colId, { sets: next });
     }
+    return true;
   }
+
+  // ─── Repeatable step bodies ────────────────────────────────────────────────
+  // Hoisted out of the render helpers so a held button can call them again on a
+  // timer. Each re-finds its column, and each returns false at its floor so a
+  // hold stops rather than spinning writes at a number that cannot move.
+
+  function stepMultiplier(colId: string, delta: number): boolean {
+    const col = columns.find(c => c.id === colId);
+    if (!col) return false;
+    const next = Math.max(1, (col.multiplier ?? 1) + delta);
+    if (next === (col.multiplier ?? 1)) return false;
+    updateColumn(colId, { multiplier: next });
+    return true;
+  }
+
+  function stepComboPart(colId: string, partIdx: number, delta: number): boolean {
+    const col = columns.find(c => c.id === colId);
+    if (!col) return false;
+    const parts = col.repsText.split('+').map(p => parseInt(p, 10) || 0);
+    if (partIdx >= parts.length) return false;
+    const next = Math.max(0, parts[partIdx] + delta);
+    if (next === parts[partIdx]) return false;
+    parts[partIdx] = next;
+    updateColumn(colId, { repsText: parts.join('+'), reps: parts.reduce((s, p) => s + p, 0) });
+    return true;
+  }
+
+  function stepLoadBound(colId: string, bound: 'min' | 'max', delta: number): boolean {
+    const col = columns.find(c => c.id === colId);
+    if (!col) return false;
+    if (bound === 'min') {
+      const nextMin = Math.max(0, col.load + delta);
+      if (nextMin === col.load) return false;
+      const adjustedMax = Math.max(nextMin, col.loadMax ?? nextMin);
+      updateColumn(colId, { load: nextMin, loadMax: adjustedMax, loadText: `${nextMin}-${adjustedMax}` });
+    } else {
+      const nextMax = Math.max(col.load, (col.loadMax ?? 0) + delta);
+      if (nextMax === col.loadMax) return false;
+      updateColumn(colId, { loadMax: nextMax, loadText: `${col.load}-${nextMax}` });
+    }
+    return true;
+  }
+
+  function stepRangeBound(colId: string, field: 'reps' | 'sets', bound: 'min' | 'max', delta: number): boolean {
+    const col = columns.find(c => c.id === colId);
+    if (!col) return false;
+    const floor = field === 'sets' ? 1 : 0;
+    const minVal = field === 'reps' ? col.reps : col.sets;
+    const rangeMax = (field === 'reps' ? col.repsMax : col.setsMax) ?? minVal;
+    const patch = (min: number, max: number) => {
+      if (field === 'reps') updateColumn(colId, { reps: min, repsMax: max, repsText: `${min}-${max}` });
+      else updateColumn(colId, { sets: min, setsMax: max });
+    };
+    if (bound === 'min') {
+      const nextMin = Math.max(floor, minVal + delta);
+      if (nextMin === minVal) return false;
+      patch(nextMin, Math.max(nextMin, rangeMax));
+    } else {
+      const nextMax = Math.max(minVal, rangeMax + delta);
+      if (nextMax === rangeMax) return false;
+      patch(minVal, nextMax);
+    }
+    return true;
+  }
+
+  /**
+   * The step bodies as of THIS render, for the hold-to-repeat timer to call.
+   * Every one of them reads `columns`, so a repeat that kept calling the
+   * closure captured at mousedown would add 1 to the same number forever.
+   * Dereferencing the ref per tick picks up the state the last tick wrote.
+   */
+  const stepsRef = useRef({ handleCellClick, stepMultiplier, stepComboPart, stepLoadBound, stepRangeBound });
+  stepsRef.current = { handleCellClick, stepMultiplier, stepComboPart, stepLoadBound, stepRangeBound };
 
   function commitEdit() {
     if (!editing) return;
@@ -828,12 +917,12 @@ export function PrescriptionGrid({
                 if (isDeleting) { removeColumn(col.id); return; }
                 if (e.ctrlKey || e.metaKey) { setEditing({ colId: col.id, field: 'multiplier', value: String(col.multiplier ?? 1) }); return; }
                 const delta = e.button === 2 ? -1 : 1;
-                updateColumn(col.id, { multiplier: Math.max(1, (col.multiplier ?? 1) + delta) });
+                hold.start(() => stepsRef.current.stepMultiplier(col.id, delta));
               }}
               onContextMenu={e => e.preventDefault()}
               tabIndex={-1}
               disabled={disabled}
-              title="Rounds of the combo · Left/right-click: ±1 · Ctrl+click: type"
+              title="Rounds of the combo · Left/right-click: ±1 · hold to repeat · Ctrl+click: type"
               className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
               style={{ minWidth: '1rem', padding: '0 2px' }}
             >
@@ -853,12 +942,8 @@ export function PrescriptionGrid({
                 e.preventDefault();
                 if (isDeleting) { removeColumn(col.id); return; }
                 if (e.ctrlKey || e.metaKey) { setEditing({ colId: col.id, field: 'reps', value: col.repsText }); return; }
-                const isRight = e.button === 2;
-                const delta = isRight ? -1 : 1;
-                const newParts = col.repsText.split('+').map(p => parseInt(p, 10) || 0);
-                newParts[partIdx] = Math.max(0, newParts[partIdx] + delta);
-                const newRepsText = newParts.join('+');
-                updateColumn(col.id, { repsText: newRepsText, reps: newParts.reduce((s, p) => s + p, 0) });
+                const delta = e.button === 2 ? -1 : 1;
+                hold.start(() => stepsRef.current.stepComboPart(col.id, partIdx, delta));
               }}
               onContextMenu={e => e.preventDefault()}
               tabIndex={-1}
@@ -940,7 +1025,7 @@ export function PrescriptionGrid({
    *  control, so the tooltip is where it is advertised. */
   const loadCellTitle = deleteHeld
     ? 'Click to delete column'
-    : `Click ±1 · Right-click −1 · Ctrl+click: type a value or a whole line (30,40,50) · Alt+click: unit (now ${getUnitLabel(unit)})`;
+    : `Click ±1 · Right-click −1 · hold to repeat · Ctrl+click: type a value or a whole line (30,40,50) · Alt+click: unit (now ${getUnitLabel(unit)})`;
 
   function renderLoadCell(col: GridColumn) {
     const isEditingThis = editing?.colId === col.id && editing.field === 'load';
@@ -971,19 +1056,12 @@ export function PrescriptionGrid({
           return;
         }
         const delta = e.button === 2 ? -1 : 1;
-        if (bound === 'min') {
-          const nextMin = Math.max(0, col.load + delta);
-          const adjustedMax = Math.max(nextMin, col.loadMax ?? nextMin);
-          updateColumn(col.id, { load: nextMin, loadMax: adjustedMax, loadText: `${nextMin}-${adjustedMax}` });
-        } else {
-          const nextMax = Math.max(col.load, (col.loadMax ?? 0) + delta);
-          updateColumn(col.id, { loadMax: nextMax, loadText: `${col.load}-${nextMax}` });
-        }
+        hold.start(() => stepsRef.current.stepLoadBound(col.id, bound, delta));
       };
       const boxTitle = (which: string) =>
         isDeleting
           ? 'Click to delete column'
-          : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit · Alt+click: unit (now ${getUnitLabel(unit)})`;
+          : `Adjust ${which} · Right-click: −1 · hold to repeat · Ctrl+click: edit · Alt+click: unit (now ${getUnitLabel(unit)})`;
       return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
           {renderCmpButton(col)}
@@ -1017,7 +1095,7 @@ export function PrescriptionGrid({
     if (!col.loadCmp) {
       return (
         <button
-          onMouseDown={e => { if (e.button === 0 || e.button === 2) handleCellClick(e, col.id, 'load'); }}
+          onMouseDown={e => { if (e.button === 0 || e.button === 2) hold.start(() => stepsRef.current.handleCellClick(e, col.id, 'load')); }}
           onContextMenu={e => e.preventDefault()}
           tabIndex={-1}
           disabled={disabled}
@@ -1032,7 +1110,7 @@ export function PrescriptionGrid({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
         {renderCmpButton(col)}
         <button
-          onMouseDown={e => { if (e.button === 0 || e.button === 2) handleCellClick(e, col.id, 'load'); }}
+          onMouseDown={e => { if (e.button === 0 || e.button === 2) hold.start(() => stepsRef.current.handleCellClick(e, col.id, 'load')); }}
           onContextMenu={e => e.preventDefault()}
           tabIndex={-1}
           disabled={disabled}
@@ -1052,12 +1130,7 @@ export function PrescriptionGrid({
    *  the range back to a fixed value. */
   function renderRangeCell(col: GridColumn, field: 'reps' | 'sets', rangeMax: number) {
     const isDeleting = deleteHeld;
-    const floor = field === 'sets' ? 1 : 0;
     const minVal = field === 'reps' ? col.reps : col.sets;
-    const patch = (min: number, max: number) => {
-      if (field === 'reps') updateColumn(col.id, { reps: min, repsMax: max, repsText: `${min}-${max}` });
-      else updateColumn(col.id, { sets: min, setsMax: max });
-    };
     const adjustBound = (bound: 'min' | 'max', e: React.MouseEvent) => {
       if (e.button !== 0 && e.button !== 2) return;
       e.preventDefault();
@@ -1068,15 +1141,10 @@ export function PrescriptionGrid({
         return;
       }
       const delta = e.button === 2 ? -1 : 1;
-      if (bound === 'min') {
-        const nextMin = Math.max(floor, minVal + delta);
-        patch(nextMin, Math.max(nextMin, rangeMax));
-      } else {
-        patch(minVal, Math.max(minVal, rangeMax + delta));
-      }
+      hold.start(() => stepsRef.current.stepRangeBound(col.id, field, bound, delta));
     };
     const boxTitle = (which: string) =>
-      isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit`;
+      isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · hold to repeat · Ctrl+click: edit`;
     const setsCls = field === 'sets' ? ' pgrid-btn-sets' : '';
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
@@ -1123,7 +1191,7 @@ export function PrescriptionGrid({
 
     return (
       <button
-        onMouseDown={e => { if (e.button === 0 || e.button === 2) handleCellClick(e, col.id, field); }}
+        onMouseDown={e => { if (e.button === 0 || e.button === 2) hold.start(() => stepsRef.current.handleCellClick(e, col.id, field)); }}
         onContextMenu={e => e.preventDefault()}
         tabIndex={-1}
         disabled={disabled}

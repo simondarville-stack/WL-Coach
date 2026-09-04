@@ -20,6 +20,7 @@ import type { AthleteHiddenKey, Exercise, PlannedExercise } from '../../lib/data
 import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
 import { formatSeconds, parseTimeInput, timeEditValue, parseTempoInput } from '../../lib/exerciseFeatures';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
+import { useRepeatOnHold } from '../../hooks/useRepeatOnHold';
 
 function fmtNum(v: number | null | undefined): string {
   if (v == null) return '—';
@@ -45,7 +46,9 @@ function GestureValue({
   editValue: string;
   title: string;
   accent: boolean;
-  onStep: (delta: number) => void;
+  /** Return false when the value cannot move (already at its floor) — the
+   *  hold-to-repeat ends there instead of spinning on a clamped number. */
+  onStep: (delta: number) => boolean | void;
   onCommit: (text: string) => void;
   onRemove: () => void;
   editOnClick?: boolean;
@@ -57,6 +60,14 @@ function GestureValue({
   const deleteHeld = useDeleteHeld();
   const [editing, setEditing] = useState<string | null>(initialEditing ?? null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // These step in whole minutes (⏱) and whole reps (Σ), so the repeat runs
+  // slower than the grid's — 11/s, not 20/s.
+  const hold = useRepeatOnHold({ interval: 160, minInterval: 90 });
+  // The repeat re-runs this on a timer; onStep closes over the CURRENT value,
+  // so it must be re-read each tick or every step of a hold would add 1 to the
+  // same starting number.
+  const onStepRef = useRef(onStep);
+  onStepRef.current = onStep;
   useEffect(() => {
     if (editing != null && inputRef.current) {
       inputRef.current.focus();
@@ -100,7 +111,8 @@ function GestureValue({
         e.stopPropagation();
         if (deleteHeld) { onRemove(); return; }
         if (editOnClick || e.ctrlKey || e.metaKey) { setEditing(editValue); return; }
-        onStep(e.button === 2 ? -1 : 1);
+        const delta = e.button === 2 ? -1 : 1;
+        hold.start(() => onStepRef.current(delta));
       }}
       onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}
       onClick={e => e.stopPropagation()}
@@ -109,7 +121,7 @@ function GestureValue({
         ? 'Click to remove this feature'
         : editOnClick
         ? `${title} · click to type · Del-held removes`
-        : `${title} · click +1 · right-click −1 · Ctrl+click type · Del-held removes`}
+        : `${title} · click +1 · right-click −1 · hold to repeat · Ctrl+click type · Del-held removes`}
       style={{
         border: 'none', background: 'none', cursor: 'pointer', padding: '0 2px',
         borderRadius: 3, fontSize: 10, lineHeight: 1.4, fontWeight: 600,
@@ -397,7 +409,11 @@ export function AnalysisColumn({
               accent
               initialEditing={autoEdit === row.key ? String(row.active) : undefined}
               onEditClosed={() => setAutoEdit(a => (a === row.key ? null : a))}
-              onStep={d => patchFeatures({ [row.key]: Math.max(0, row.active! + d * row.step) })}
+              onStep={d => {
+                const next = Math.max(0, row.active! + d * row.step);
+                if (next === row.active) return false;
+                patchFeatures({ [row.key]: next });
+              }}
               onCommit={t => { const n = row.parse(t); if (n != null) patchFeatures({ [row.key]: n }); }}
               onRemove={() => { setAutoEdit(a => (a === row.key ? null : a)); patchFeatures({ [row.key]: undefined }); }}
             />
@@ -465,7 +481,11 @@ export function FeatureChips({ features, onSaveFeatures }: FeatureChipsProps) {
               editValue={timeEditValue(sec)}
               title={c.title}
               accent={false}
-              onStep={d => save(c.key, Math.max(c.minSec, sec + d * step))}
+              onStep={d => {
+                const next = Math.max(c.minSec, sec + d * step);
+                if (next === sec) return false;
+                save(c.key, next);
+              }}
               onCommit={t => { const parsed = parseTimeInput(t); if (parsed != null) save(c.key, parsed); }}
               onRemove={() => save(c.key, undefined)}
             />

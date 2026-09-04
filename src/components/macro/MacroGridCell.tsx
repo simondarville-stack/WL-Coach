@@ -3,6 +3,7 @@ import {
   fmtNumber, inferUnitFromInput, parseTargetNumber, unitSuffix,
   type MacroTargetUnit,
 } from '../../lib/macroTargetUnit';
+import { useRepeatOnHold } from '../../hooks/useRepeatOnHold';
 
 interface MacroGridCellProps {
   load: number | null;
@@ -58,6 +59,7 @@ export function MacroGridCell({
   const isEmpty = load === null && reps === null && sets === null && !loadText?.trim();
   const hasPrev = prevLoad !== null && prevLoad !== undefined;
   const isDeleteMode = deleteMode && !isEmpty && !disabled;
+  const hold = useRepeatOnHold();
 
   function fillFromPrev(delta: number = 0) {
     const newLoad = (prevLoad ?? 0) + delta;
@@ -66,60 +68,82 @@ export function MacroGridCell({
     onUpdate({ load: Math.max(0, newLoad), reps: newReps, sets: newSets });
   }
 
-  function handleLoadClick(e: React.MouseEvent) {
+  // Each handler returns true only for a plain ±1 step — the one gesture worth
+  // repeating while the button is held. Clearing a cell, opening the editor and
+  // seeding an empty cell from last week are all one-shot, so they return false
+  // and the hold never arms.
+
+  function handleLoadClick(e: React.MouseEvent): boolean {
     e.preventDefault();
     e.stopPropagation();
-    if (disabled) return;
+    if (disabled) return false;
 
     if (isDeleteMode) {
       onDelete?.();
-      return;
+      return false;
     }
 
     // "Heavy" + 1 is meaningless, so a free-text cell always opens the editor
     // instead of stepping.
     if (e.ctrlKey || e.metaKey || isText) {
       setEditing('load');
-      return;
+      return false;
     }
 
     if (isEmpty) {
       fillFromPrev(0);
-      return;
+      return false;
     }
 
     const delta = e.button === 2 ? -1 : 1;
-    onUpdate({ load: Math.max(0, (load ?? 0) + delta) });
+    const next = Math.max(0, (load ?? 0) + delta);
+    if (next === (load ?? 0)) return false;
+    onUpdate({ load: next });
+    return true;
   }
 
-  function handleRepsClick(e: React.MouseEvent) {
+  function handleRepsClick(e: React.MouseEvent): boolean {
     e.preventDefault();
     e.stopPropagation();
-    if (disabled) return;
+    if (disabled) return false;
 
     if (isDeleteMode) {
       onDelete?.();
-      return;
+      return false;
     }
 
     if (e.ctrlKey || e.metaKey) {
       setEditing('reps');
-      return;
+      return false;
     }
 
     if (isEmpty) {
       fillFromPrev(0);
-      return;
+      return false;
     }
 
     const delta = e.button === 2 ? -1 : 1;
 
-    if (e.shiftKey) {
-      onUpdate({ sets: Math.max(1, (sets ?? 1) + delta) });
-    } else {
-      onUpdate({ reps: Math.max(1, (reps ?? 1) + delta) });
-    }
+    if (e.shiftKey) return stepSets(delta);
+    const next = Math.max(1, (reps ?? 1) + delta);
+    if (next === (reps ?? 1)) return false;
+    onUpdate({ reps: next });
+    return true;
   }
+
+  function stepSets(delta: number): boolean {
+    if (disabled) return false;
+    const next = Math.max(1, (sets ?? 1) + delta);
+    if (next === (sets ?? 1)) return false;
+    onUpdate({ sets: next });
+    return true;
+  }
+
+  // The repeat re-runs a step on a timer, and every one of them reads this
+  // render's load/reps/sets props — so it must call the LATEST handler, not the
+  // closure captured at mousedown, or a hold would step the same number once.
+  const stepsRef = useRef({ handleLoadClick, handleRepsClick, stepSets });
+  stepsRef.current = { handleLoadClick, handleRepsClick, stepSets };
 
   /**
    * Commit a typed load. What the coach types decides the COLUMN's unit, using
@@ -168,8 +192,8 @@ export function MacroGridCell({
             ? `Click to start from last week's value (${fmtNumber(prevLoad!)}) · Ctrl+click to type`
             : 'Click to start a max set · Ctrl+click to type. A % makes the column percentages; words make it free text.'
         }
-        onClick={handleLoadClick}
-        onContextMenu={handleLoadClick}
+        onMouseDown={e => { if (e.button === 0 || e.button === 2) hold.start(() => stepsRef.current.handleLoadClick(e)); }}
+        onContextMenu={e => e.preventDefault()}
       >
         <span className="text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>-</span>
       </div>
@@ -302,9 +326,9 @@ export function MacroGridCell({
             ? 'Click to clear'
             : isText
             ? 'Click to type. Type a number for kg, or add % for percentages.'
-            : `Load: click +1 · right-click −1 · Ctrl+click to type${unit === 'percentage' ? ' · this column is in %' : ''}`}
-          onClick={handleLoadClick}
-          onContextMenu={handleLoadClick}
+            : `Load: click +1 · right-click −1 · hold to repeat · Ctrl+click to type${unit === 'percentage' ? ' · this column is in %' : ''}`}
+          onMouseDown={e => { if (e.button === 0 || e.button === 2) hold.start(() => stepsRef.current.handleLoadClick(e)); }}
+          onContextMenu={e => e.preventDefault()}
         >
           {isText ? (loadText ?? '—') : `${fmtNumber(load ?? 0)}${unitSuffix(unit)}`}
         </div>
@@ -313,9 +337,9 @@ export function MacroGridCell({
           className={`text-[9px] font-mono cursor-pointer px-2 leading-tight ${
             isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)]'
           }`}
-          title={isDeleteMode ? 'Click to clear' : 'Reps: click +1 · right-click −1 · Ctrl+click to type'}
-          onClick={handleRepsClick}
-          onContextMenu={handleRepsClick}
+          title={isDeleteMode ? 'Click to clear' : 'Reps: click +1 · right-click −1 · hold to repeat · Shift for sets · Ctrl+click to type'}
+          onMouseDown={e => { if (e.button === 0 || e.button === 2) hold.start(() => stepsRef.current.handleRepsClick(e)); }}
+          onContextMenu={e => e.preventDefault()}
         >
           {reps ?? 1}
         </div>
@@ -328,19 +352,16 @@ export function MacroGridCell({
             ? 'opacity-0 group-hover:opacity-40'
             : (isDeleteMode ? 'opacity-80 text-[color:var(--color-danger-text)]' : 'opacity-80 text-[color:var(--color-text-tertiary)]')
         } ${isDeleteMode && !setsIsOne ? '' : 'text-[color:var(--color-text-tertiary)]'}`}
-        title={isDeleteMode ? 'Click to clear' : 'Sets: click +1 · right-click −1'}
-        onClick={(e) => {
+        title={isDeleteMode ? 'Click to clear' : 'Sets: click +1 · right-click −1 · hold to repeat'}
+        onMouseDown={(e) => {
+          if (e.button !== 0 && e.button !== 2) return;
           e.preventDefault();
           e.stopPropagation();
           if (isDeleteMode) { onDelete?.(); return; }
-          if (!disabled) onUpdate({ sets: Math.max(1, (sets ?? 1) + (e.button === 2 ? -1 : 1)) });
+          const delta = e.button === 2 ? -1 : 1;
+          hold.start(() => stepsRef.current.stepSets(delta));
         }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (isDeleteMode) { onDelete?.(); return; }
-          if (!disabled) onUpdate({ sets: Math.max(1, (sets ?? 1) - 1) });
-        }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
       >
         {sets ?? 1}
       </div>

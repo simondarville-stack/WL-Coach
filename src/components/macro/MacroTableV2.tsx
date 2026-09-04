@@ -9,6 +9,7 @@ import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import type { FillGuidePreview } from './fillGuidePlan';
 import { MacroGridCell } from './MacroGridCell';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
+import { useRepeatOnHold } from '../../hooks/useRepeatOnHold';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
 import { getWeekTypeColor, getMondayOfWeekISO } from '../../lib/weekUtils';
 import { getISOWeek as isoWeekOfDate, formatDateShort, addDaysToISO } from '../../lib/dateUtils';
@@ -187,6 +188,7 @@ export function MacroTableV2({
   weekMarkers,
 }: MacroTableV2Props) {
   const deleteMode = useDeleteHeld();
+  const hold = useRepeatOnHold();
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
@@ -414,30 +416,53 @@ export function MacroTableV2({
     await onUpdateTarget(weekId, teId, 'target_sets_at_max', '');
   }, [onUpdateTarget, onUpdateTargetCell]);
 
+  /**
+   * The repeatable half of an inline cell click. Reads the value from
+   * `getTarget` rather than taking it as an argument: a held button re-runs
+   * this on a timer, and a value captured at mousedown would have every tick
+   * add 1 to the same starting number. Returns false at the floor so the hold
+   * ends there.
+   */
+  const stepInline = useCallback((
+    weekId: string, teId: string, field: 'target_reps' | 'target_avg', delta: number,
+  ): boolean => {
+    const current = getTarget(weekId, teId)?.[field] as number | null | undefined;
+    if (current == null) return false;
+    const next = Math.max(0, current + delta);
+    if (next === current) return false;
+    void onUpdateTarget(weekId, teId, field, String(next));
+    return true;
+  }, [getTarget, onUpdateTarget]);
+
   // Fix phantom +1: when currentValue is null, initialize from prev without applying delta.
   // Fix bubble: in delete mode, clicking clears the value.
+  // Returns true only for a plain ±1 step — clearing, opening the editor and
+  // seeding an empty cell are one-shot, so a hold never arms on them.
   const handleInlineClick = useCallback((
     e: React.MouseEvent, weekId: string, teId: string, field: 'target_reps' | 'target_avg',
     currentValue: number | null, prevValue: number | null,
-  ) => {
+  ): boolean => {
     e.preventDefault();
 
     if (deleteMode && currentValue !== null) {
       onUpdateTarget(weekId, teId, field, '');
-      return;
+      return false;
     }
 
     if (e.ctrlKey || e.metaKey) {
       setEditingCell(`${weekId}_${teId}_${field}`);
-      return;
+      return false;
     }
     if (currentValue === null) {
       onUpdateTarget(weekId, teId, field, String(prevValue ?? 0));
-      return;
+      return false;
     }
-    const delta = e.button === 2 ? -1 : 1;
-    onUpdateTarget(weekId, teId, field, String(Math.max(0, currentValue + delta)));
-  }, [onUpdateTarget, deleteMode]);
+    return stepInline(weekId, teId, field, e.button === 2 ? -1 : 1);
+  }, [onUpdateTarget, deleteMode, stepInline]);
+
+  // Latest gate + step for the hold-to-repeat timer to call.
+  const inlineStepRef = useRef(handleInlineClick);
+  inlineStepRef.current = handleInlineClick;
 
   const cycleWeekType = useCallback((weekId: string, current: string) => {
     if (weekTypes.length === 0) return;
@@ -478,29 +503,51 @@ export function MacroTableV2({
     step: number,
     onUpdate: (weekId: string, value: string) => Promise<void>,
     setEditing: (id: string | null) => void,
-  ) => {
+  ): boolean => {
     e.preventDefault();
     const current = week[field];
     if (deleteMode && current != null) {
       void onUpdate(week.id, '');
-      return;
+      return false;
     }
     if (e.ctrlKey || e.metaKey) {
       setEditing(week.id);
-      return;
+      return false;
     }
     if (current == null) {
       const prevWeek = macroWeeks.find(w => w.week_number === week.week_number - 1);
       const seed = prevWeek?.[field];
       if (seed != null) void onUpdate(week.id, String(seed));
       else setEditing(week.id);
-      return;
+      return false;
     }
-    const delta = e.type === 'contextmenu' ? -step : step;
-    void onUpdate(week.id, String(Math.max(0, current + delta)));
+    return stepWeekField(week.id, field, e.button === 2 ? -step : step, onUpdate);
   };
 
-  const weekFieldTitle = 'Click +, right-click −, Ctrl+click to type';
+  /**
+   * The repeatable half. Re-reads the week from `macroWeeks` rather than
+   * trusting the row captured at mousedown: a held button re-runs this on a
+   * timer, and a stale snapshot would make every tick add `step` to the same
+   * starting number.
+   */
+  const stepWeekField = (
+    weekId: string,
+    field: 'total_reps_target' | 'tonnage_target' | 'avg_intensity_target',
+    delta: number,
+    onUpdate: (weekId: string, value: string) => Promise<void>,
+  ): boolean => {
+    const current = macroWeeks.find(w => w.id === weekId)?.[field];
+    if (current == null) return false;
+    const next = Math.max(0, current + delta);
+    if (next === current) return false;
+    void onUpdate(weekId, String(next));
+    return true;
+  };
+
+  const weekFieldStepRef = useRef(handleWeekFieldClick);
+  weekFieldStepRef.current = handleWeekFieldClick;
+
+  const weekFieldTitle = 'Click +, right-click −, hold to repeat, Ctrl+click to type';
 
   const weeksWithK = macroWeeks.filter(w => w.total_reps_target != null);
   const avgK = weeksWithK.length > 0
@@ -1048,8 +1095,8 @@ export function MacroTableV2({
                     <td
                       className={`bg-blue-50/10 border-l border-[color:var(--color-border-tertiary)] text-center font-mono font-medium text-[10px] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.total_reps_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 44, backgroundColor: srepsTint }}
-                      onClick={(e) => handleWeekFieldClick(e, week, 'total_reps_target', 1, onUpdateTotalReps, setEditingKWeekId)}
-                      onContextMenu={(e) => handleWeekFieldClick(e, week, 'total_reps_target', 1, onUpdateTotalReps, setEditingKWeekId)}
+                      onMouseDown={(e) => { if (e.button === 0 || e.button === 2) hold.start(() => weekFieldStepRef.current(e, week, 'total_reps_target', 1, onUpdateTotalReps, setEditingKWeekId)); }}
+                      onContextMenu={(e) => e.preventDefault()}
                       title={srepsTint
                         ? `Σ exercise reps ${weekK} vs general target ${week.total_reps_target} — ${weekFieldTitle}`
                         : `Σreps target — ${weekFieldTitle}`}
@@ -1088,8 +1135,8 @@ export function MacroTableV2({
                     <td
                       className={`bg-blue-50/10 text-center font-mono text-[10px] text-[color:var(--color-text-secondary)] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.tonnage_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 52 }}
-                      onClick={(e) => handleWeekFieldClick(e, week, 'tonnage_target', 100, onUpdateTonnageTarget, setEditingTonnageId)}
-                      onContextMenu={(e) => handleWeekFieldClick(e, week, 'tonnage_target', 100, onUpdateTonnageTarget, setEditingTonnageId)}
+                      onMouseDown={(e) => { if (e.button === 0 || e.button === 2) hold.start(() => weekFieldStepRef.current(e, week, 'tonnage_target', 100, onUpdateTonnageTarget, setEditingTonnageId)); }}
+                      onContextMenu={(e) => e.preventDefault()}
                       title={tonnageSkipped.length > 0
                         ? `Tonnage target (±100 kg) — ${weekFieldTitle}. Not counted: ${tonnageSkipped.join(', ')} (not in kg).`
                         : `Tonnage target (±100 kg) — ${weekFieldTitle}`}
@@ -1122,8 +1169,8 @@ export function MacroTableV2({
                     <td
                       className={`bg-blue-50/10 text-center font-mono text-[10px] text-[color:var(--color-text-secondary)] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.avg_intensity_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 40 }}
-                      onClick={(e) => handleWeekFieldClick(e, week, 'avg_intensity_target', 1, onUpdateAvgTarget, setEditingAvgTargetId)}
-                      onContextMenu={(e) => handleWeekFieldClick(e, week, 'avg_intensity_target', 1, onUpdateAvgTarget, setEditingAvgTargetId)}
+                      onMouseDown={(e) => { if (e.button === 0 || e.button === 2) hold.start(() => weekFieldStepRef.current(e, week, 'avg_intensity_target', 1, onUpdateAvgTarget, setEditingAvgTargetId)); }}
+                      onContextMenu={(e) => e.preventDefault()}
                       title={`Avg intensity target — ${weekFieldTitle}`}
                     >
                       {editingAvgTargetId === week.id ? (
@@ -1311,13 +1358,13 @@ export function MacroTableV2({
                                 ? 'bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)]'
                                 : 'hover:bg-[var(--color-accent-muted)]'
                             }`}
-                            onClick={(e) => handleInlineClick(e, week.id, te.id, 'target_avg', avgVal, prevAvg)}
-                            onContextMenu={(e) => handleInlineClick(e, week.id, te.id, 'target_avg', avgVal, prevAvg)}
+                            onMouseDown={(e) => { if (e.button === 0 || e.button === 2) hold.start(() => inlineStepRef.current(e, week.id, te.id, 'target_avg', avgVal, prevAvg)); }}
+                            onContextMenu={(e) => e.preventDefault()}
                             title={avgIsDeleteTarget ? 'Click to clear' : undefined}
                           >
                             {mark}
                             {avgEditing ? (
-                              <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
+                              <div onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
                                 <input
                                   type="number"
                                   defaultValue={avgVal ?? ''}
@@ -1350,13 +1397,13 @@ export function MacroTableV2({
                               ? 'bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)]'
                               : 'hover:bg-[var(--color-accent-muted)]'
                           }`}
-                          onClick={(e) => handleInlineClick(e, week.id, te.id, 'target_reps', repsVal, prevReps)}
-                          onContextMenu={(e) => handleInlineClick(e, week.id, te.id, 'target_reps', repsVal, prevReps)}
+                          onMouseDown={(e) => { if (e.button === 0 || e.button === 2) hold.start(() => inlineStepRef.current(e, week.id, te.id, 'target_reps', repsVal, prevReps)); }}
+                          onContextMenu={(e) => e.preventDefault()}
                           title={repsIsDeleteTarget ? 'Click to clear' : undefined}
                         >
                           {mark}
                           {repsEditing ? (
-                            <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
+                            <div onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
                               <input
                                 type="number"
                                 defaultValue={repsVal ?? ''}

@@ -1,5 +1,5 @@
 // TODO: Consider splitting into useMacroCycleData (read) and useMacroCycleMutations (write/phase ops)
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { addDaysToISO, isoMonday, isoSunday } from '../lib/dateUtils';
@@ -33,6 +33,14 @@ export function useMacroCycles() {
   const [macroWeeks, setMacroWeeks] = useState<MacroWeek[]>([]);
   const [trackedExercises, setTrackedExercises] = useState<MacroTrackedExerciseWithExercise[]>([]);
   const [targets, setTargets] = useState<MacroTarget[]>([]);
+  // Per-cell write chain + the one queued write per cell, keyed
+  // "<weekId>::<trackedExId>::<field>". See upsertTarget.
+  const targetWriteChainRef = useRef<Map<string, Promise<MacroTarget | null>>>(new Map());
+  const pendingTargetRef = useRef<Map<string, () => Promise<MacroTarget | null>>>(new Map());
+  // Same, per (week, field-set), for the week-level target cells. See
+  // updateMacroWeek.
+  const weekWriteChainRef = useRef<Map<string, Promise<void>>>(new Map());
+  const pendingWeekRef = useRef<Map<string, () => Promise<void>>>(new Map());
   const [phases, setPhases] = useState<MacroPhase[]>([]);
   const [competitions, setCompetitions] = useState<MacroCompetition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -184,18 +192,39 @@ export function useMacroCycles() {
     }
   };
 
+  /**
+   * Patch a macro week. Optimistic first, then serialized and coalesced per
+   * (week, field-set) — the Σreps / tonnage / avg-intensity cells step with
+   * click-and-hold, and bare concurrent UPDATEs on one row can land out of
+   * order and leave the wrong number stored. Different field-sets keep
+   * separate slots, so a notes write is never coalesced away by a target one.
+   */
   const updateMacroWeek = async (id: string, updates: Partial<MacroWeek>) => {
     // Optimistic: update UI immediately, rollback on error
     const original = macroWeeks.find(w => w.id === id);
     setMacroWeeks(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
-    try {
-      const { error } = await supabase.from('macro_weeks').update(updates).eq('id', id);
-      if (error) throw error;
-    } catch (err) {
-      if (original) setMacroWeeks(prev => prev.map(w => w.id === id ? original : w));
-      setError(errMsg(err, 'Couldn’t update week. Nothing was changed.'));
-      throw err;
-    }
+
+    const slot = `${id}::${Object.keys(updates).sort().join(',')}`;
+    pendingWeekRef.current.set(slot, async () => {
+      try {
+        const { error } = await supabase.from('macro_weeks').update(updates).eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        if (original) setMacroWeeks(prev => prev.map(w => w.id === id ? original : w));
+        setError(errMsg(err, 'Couldn’t update week. Nothing was changed.'));
+        throw err;
+      }
+    });
+    const run = () => {
+      const queued = pendingWeekRef.current.get(slot);
+      if (!queued) return Promise.resolve();
+      pendingWeekRef.current.delete(slot);
+      return queued();
+    };
+    const prev = weekWriteChainRef.current.get(slot) ?? Promise.resolve();
+    const next = prev.then(run, run);
+    weekWriteChainRef.current.set(slot, next);
+    await next;
   };
 
   const swapMacroWeeks = async (weekId1: string, weekId2: string) => {
@@ -453,7 +482,50 @@ export function useMacroCycles() {
     }
   };
 
+  /**
+   * Write ONE target cell field. Serialized and coalesced per (row, field):
+   * the macro grid steps these with click-and-hold, which fires a step every
+   * ~50 ms, and bare concurrent single-field UPDATEs can land out of order and
+   * leave the wrong number as the final state. Chaining fixes the order;
+   * dropping a queued write that a newer one has already superseded keeps a
+   * two-second hold from costing thirty round trips.
+   *
+   * Both callers ignore the return, which is what makes coalescing safe: a
+   * superseded call resolves null rather than with its own (now-skipped) row.
+   */
   const upsertTarget = async (
+    weekId: string,
+    trackedExId: string,
+    field: keyof MacroTarget,
+    numValue: number | null,
+    existingTarget?: MacroTarget,
+  ): Promise<MacroTarget | null> => {
+    // Optimistic FIRST, before the chain — the cell must move on the next
+    // paint, not when the queue ahead of it drains. Patch ONLY this field
+    // inside the functional updater: spreading the (possibly stale)
+    // existingTarget snapshot would make two concurrent single-field writes to
+    // the same row clobber each other in local state (e.g. Ctrl+drag in the
+    // chart writes max + avg). A row that does not exist yet has no id to
+    // patch, so that path stays pessimistic.
+    if (existingTarget) {
+      setTargets(prev => prev.map(t => t.id === existingTarget.id ? { ...t, [field]: numValue } : t));
+    }
+
+    const slot = `${weekId}::${trackedExId}::${String(field)}`;
+    pendingTargetRef.current.set(slot, () => writeTargetField(weekId, trackedExId, field, numValue, existingTarget));
+    const run = () => {
+      const queued = pendingTargetRef.current.get(slot);
+      if (!queued) return Promise.resolve(null);
+      pendingTargetRef.current.delete(slot);
+      return queued();
+    };
+    const prev = targetWriteChainRef.current.get(slot) ?? Promise.resolve(null);
+    const next = prev.then(run, run);
+    targetWriteChainRef.current.set(slot, next);
+    return next;
+  };
+
+  const writeTargetField = async (
     weekId: string,
     trackedExId: string,
     field: keyof MacroTarget,
@@ -462,11 +534,7 @@ export function useMacroCycles() {
   ): Promise<MacroTarget | null> => {
     try {
       if (existingTarget) {
-        // Optimistic: patch ONLY this field inside the functional updater.
-        // Spreading the (possibly stale) existingTarget snapshot instead would
-        // make two concurrent single-field writes to the same row clobber each
-        // other in local state (e.g. Ctrl+drag in the chart writes max + avg).
-        setTargets(prev => prev.map(t => t.id === existingTarget.id ? { ...t, [field]: numValue } : t));
+        // The optimistic patch already landed in upsertTarget.
         const { error } = await supabase
           .from('macro_targets')
           .update({ [field]: numValue })
