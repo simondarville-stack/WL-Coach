@@ -35,14 +35,26 @@
  *      a sticker with more contrast than the rim. The assumption was reasonable;
  *      it was just wrong, and it was cheap to find out.
  *
- *   2. **The template is never updated.** An adaptive template follows
- *      appearance changes and drifts — each frame's small error becomes the
- *      next frame's reference, and over 200 frames the track walks off the bar
- *      end onto a rack upright. Matching every frame against the coach's
- *      original anchor cannot drift; when the plate's appearance genuinely
- *      changes the confidence drops, which is a signal the coach can act on
- *      rather than a silent failure. A correction re-anchors, which is exactly
- *      when a new template is warranted.
+ *   2. **The anchor template is never discarded — and it is not enough on its
+ *      own.** A purely adaptive template drifts: each frame's small error
+ *      becomes the next frame's reference, and over 200 frames the track walks
+ *      off the bar end onto a rack upright. A purely fixed one dies: measured
+ *      on real footage (the KinEMOS testset, 04/09/2026) the anchor patch's
+ *      correlation decays steadily through every pull — 0,98 → 0,31 on a red
+ *      ZKC 25, 0,90 → 0,48 on a black Eleiko — with the track still on the
+ *      hub, until the threshold declares the bar lost at peak velocity, the
+ *      one moment the coach wanted. It is not rotation, scale or motion blur
+ *      alone (each was tried as a template variant and none recovered the
+ *      score); it is the plate's appearance changing cumulatively as it rises
+ *      half a metre past a camera two metres away.
+ *
+ *      So two templates. The coach's anchor is kept for the whole track and
+ *      re-scored on every frame at the current peak; a second, *current*
+ *      template is re-cut from the latest frame whenever a confident match has
+ *      nonetheless drifted in appearance. The anchor wins ties, so whenever the
+ *      plate looks the way it did when the coach clicked it, any drift the
+ *      current template accumulated is reset to zero. A correction re-anchors
+ *      both, which is exactly when a fresh reference is warranted.
  *
  *   3. **Sub-pixel refinement.** At ~2 mm/px a whole-pixel track cannot reach
  *      the accuracy tier the grade promises. Fitting a parabola through the
@@ -54,19 +66,47 @@
  * frame server, WebCodecs or canvases.
  */
 
-/** A greyscale frame. `data` is one value per pixel, row-major, any range. */
+/**
+ * A greyscale image. `data` is one value per pixel, row-major, any range.
+ *
+ * It need not be the whole frame: a source may serve only the region the
+ * tracker asked for, in which case `originX`/`originY` say where that region
+ * sits in frame coordinates. Every coordinate the tracker speaks is a FRAME
+ * coordinate; the origin is subtracted at the single point where a pixel is
+ * read. Absent, the image starts at 0,0 — a full frame.
+ */
 export interface GrayImage {
   width: number;
   height: number;
   data: Float32Array;
+  originX?: number;
+  originY?: number;
 }
 
-/** Where frames come from. The viewer adapts the frame server to this; the
- *  tests hand it synthetic images. */
+/** A rectangle in frame pixels, inclusive of its origin, exclusive of its far
+ *  edge. */
+export interface FrameRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Where frames come from. The viewer adapts the frame server to this; the
+ * tests hand it synthetic images.
+ *
+ * `region` is what the tracker will actually read on this frame — the search
+ * window plus the template's reach. It is a hint: a source may ignore it and
+ * return the full frame, or return any image that covers the region (clamped
+ * to the frame) with its origin set. Honouring it is what makes tracking on
+ * phone footage fast: reading back a whole 1080 × 1920 frame costs more than
+ * decoding it, and the tracker looks at about 2 % of it.
+ */
 export interface FrameSource {
   frameCount: number;
   timestamps: readonly number[];
-  getGray(index: number): Promise<GrayImage>;
+  getGray(index: number, region?: FrameRegion): Promise<GrayImage>;
 }
 
 export interface TrackAnchor {
@@ -96,9 +136,52 @@ export interface TrackOptions {
   /** Inner radius as a fraction of the outer. The hole excludes the hub, the
    *  lettering and the bar sleeve, all of which rotate or move independently. */
   innerRadiusFraction?: number;
-  /** How far from the prediction to look, px. Grown automatically after a poor
-   *  match, because a lost track is usually lost by more than the usual step. */
+  /**
+   * How far from the prediction to look, px — a FLOOR. The radius actually
+   * used is the larger of this and what the plate's size and the frame
+   * interval imply (see `searchRadiusFor`): a bar accelerating at 30 m/s²
+   * lands further from a constant-velocity guess on a 24 fps 8K clip than on
+   * a 60 fps 720p one, and a fixed pixel count cannot cover both. Grown
+   * automatically after a poor match, because a lost track is usually lost by
+   * more than the usual step.
+   */
   searchRadiusPx?: number;
+  /**
+   * Keep a second template current with the plate's changing appearance
+   * (header decision 2). Off, the anchor template alone is matched — the
+   * pre-testset behaviour, kept for measuring against.
+   */
+  adaptive?: boolean;
+  /**
+   * A match must score at least this to be trusted as a new reference. Below
+   * it the current template is left alone: re-cutting from a doubtful match —
+   * a hand across the plate, a half-lost peak — is how a track walks away.
+   */
+  refreshMinConfidence?: number;
+  /**
+   * Re-cut the current template when the match scores under this. Above it
+   * the plate still looks like the reference and there is nothing to learn;
+   * refreshing on every frame regardless would accumulate drift for no gain.
+   */
+  refreshBelowConfidence?: number;
+  /**
+   * How much of a refresh is the new frame, 0–1. The current template is
+   * blended toward the latest look rather than replaced by it: a straight
+   * replacement bakes the match's whole position error into the reference
+   * every time — measured on a synthetic morph, a tenth of a pixel per
+   * refresh, always the same way — while a blend bakes in only this
+   * fraction of it and follows the appearance just as surely over a few
+   * frames. (The classic template-update learning rate; MOSSE uses 0,125.)
+   */
+  refreshRate?: number;
+  /**
+   * Below this score a frame yields no point at all. A candidate can score
+   * 0,1 on a plate that is mostly off the frame, or on nothing in particular,
+   * and a point placed there is not "uncertain", it is invented — and it
+   * feeds the motion model. Such frames are skipped, the last point stands
+   * in, and they count toward giving up.
+   */
+  discardBelowConfidence?: number;
   /** Below this correlation the frame is reported but flagged; the caller
    *  decides whether to stop or to ask the coach. */
   minConfidence?: number;
@@ -128,7 +211,57 @@ export const DEFAULT_TRACK_OPTIONS: Required<Omit<TrackOptions, 'onProgress'>> =
   minConfidence: 0.55,
   giveUpAfter: 8,
   maxTemplateSamples: 2200,
+  adaptive: true,
+  // Measured on a synthetic plate whose anchor correlation decays to 0,43 —
+  // what the real clips did — and on a harsher one that inverts its
+  // contrast: 0,5 / 0,6 tracked both, 0,3 / 0,7 lost the harsh one (the
+  // template could not learn fast enough to stay above the refresh floor),
+  // and a full replacement (rate 1) drifted twice as far.
+  refreshMinConfidence: 0.6,
+  refreshBelowConfidence: 0.9,
+  refreshRate: 0.5,
+  discardBelowConfidence: 0.3,
 };
+
+/**
+ * Physical bounds the search radius is derived from. A 45 cm plate is the
+ * yardstick because the template radius is documented as reaching its rim, so
+ * `2 · templateRadiusPx` pixels ≈ 0,45 m and the clip's scale follows without
+ * a calibration. A smaller plate makes these conservative, never tight.
+ */
+const PLATE_DIAMETER_M = 0.45;
+/** Upper bound on the bar's acceleration, m/s². Second pulls peak near 20;
+ *  the bar being dropped onto the platform, or the catch impact, exceed it
+ *  briefly, which is what the extra covers. */
+const MAX_BAR_ACCELERATION_MS2 = 30;
+/** Upper bound on the bar's speed, m/s — a fast snatch is ~2,2. Used only on
+ *  the first step out of an anchor, where there is no velocity to predict
+ *  from and the whole per-frame displacement has to fit in the window. */
+const MAX_BAR_SPEED_MS = 2.8;
+
+/**
+ * Search radius for one step, in pixels.
+ *
+ * With two points to extrapolate from, the prediction is off by the
+ * acceleration term alone, ½·a·Δt², so that is what the window has to cover.
+ * With only the anchor, there is no velocity and the window must hold the
+ * full per-frame travel, v·Δt. Both are converted to pixels through the
+ * plate's on-screen size. `floorPx` (the option) is the least the window is
+ * ever allowed to be.
+ */
+export function searchRadiusFor(
+  templateRadiusPx: number,
+  dtS: number,
+  hasVelocity: boolean,
+  floorPx: number,
+): number {
+  const pxPerM = (2 * templateRadiusPx) / PLATE_DIAMETER_M;
+  const dt = Number.isFinite(dtS) && dtS > 0 ? dtS : 1 / 30;
+  const metres = hasVelocity
+    ? 0.5 * MAX_BAR_ACCELERATION_MS2 * dt * dt
+    : MAX_BAR_SPEED_MS * dt;
+  return Math.max(floorPx, Math.ceil(metres * pxPerM));
+}
 
 export interface TrackResult {
   points: TrackedPoint[];
@@ -210,8 +343,8 @@ export function extractTemplate(
 ): Template | null {
   const n = offsets.length / 2;
   const values = new Float32Array(n);
-  const ix = Math.round(cx);
-  const iy = Math.round(cy);
+  const ix = Math.round(cx) - (image.originX ?? 0);
+  const iy = Math.round(cy) - (image.originY ?? 0);
 
   let sum = 0;
   for (let i = 0; i < n; i++) {
@@ -231,8 +364,76 @@ export function extractTemplate(
   }
   const norm = Math.sqrt(sq);
   if (!(norm > 1e-6)) return null;
-  return { offsets, centred: values, norm, anchorOffset: { x: cx - ix, y: cy - iy } };
+  return {
+    offsets,
+    centred: values,
+    norm,
+    anchorOffset: { x: cx - Math.round(cx), y: cy - Math.round(cy) },
+  };
 }
+
+/** Bilinear read at a fractional frame coordinate. NaN off the image. */
+function sampleBilinear(image: GrayImage, x: number, y: number): number {
+  const lx = x - (image.originX ?? 0);
+  const ly = y - (image.originY ?? 0);
+  const x0 = Math.floor(lx);
+  const y0 = Math.floor(ly);
+  if (x0 < 0 || y0 < 0 || x0 + 1 >= image.width || y0 + 1 >= image.height) return Number.NaN;
+  const fx = lx - x0;
+  const fy = ly - y0;
+  const { data, width } = image;
+  const i = y0 * width + x0;
+  return (
+    data[i] * (1 - fx) * (1 - fy) +
+    data[i + 1] * fx * (1 - fy) +
+    data[i + width] * (1 - fx) * fy +
+    data[i + width + 1] * fx * fy
+  );
+}
+
+/**
+ * Cut a template centred on an exact, fractional point.
+ *
+ * Sampled bilinearly, so the template represents the point itself and carries
+ * no anchor offset. This is how the current template is refreshed mid-track
+ * (header decision 2): re-cutting on whole pixels would round the matched
+ * position on every refresh, and those roundings are precisely the drift the
+ * scheme is at pains to avoid.
+ */
+export function cutTemplateAt(
+  image: GrayImage,
+  cx: number,
+  cy: number,
+  offsets: Int32Array,
+): Template | null {
+  const n = offsets.length / 2;
+  const values = new Float32Array(n);
+
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const v = sampleBilinear(image, cx + offsets[i * 2], cy + offsets[i * 2 + 1]);
+    if (Number.isNaN(v)) return null;
+    values[i] = v;
+    sum += v;
+  }
+  const mean = sum / n;
+  let sq = 0;
+  for (let i = 0; i < n; i++) {
+    values[i] -= mean;
+    sq += values[i] * values[i];
+  }
+  const norm = Math.sqrt(sq);
+  if (!(norm > 1e-6)) return null;
+  return { offsets, centred: values, norm, anchorOffset: { x: 0, y: 0 } };
+}
+
+/**
+ * The least of the template that must be inside the frame for a match to be
+ * scored at all. A plate at the frame edge is matched on the part that is
+ * visible; below half of it, the visible part is an arc, which localises the
+ * disc along one axis only.
+ */
+const MIN_VISIBLE_FRACTION = 0.5;
 
 /**
  * Normalised cross-correlation of `template` against `image` centred at
@@ -240,45 +441,92 @@ export function extractTemplate(
  *
  * Normalised, so a lift filmed under a flickering gym light or a plate passing
  * through shadow still matches: NCC is invariant to any affine change in
- * brightness. Out-of-bounds candidates score −1 rather than being skipped, so
- * the search never walks off the frame edge.
+ * brightness.
+ *
+ * A template that overhangs the frame edge is scored on the samples that are
+ * inside it, against the corresponding subset of the template — both
+ * re-centred on that subset, so the statistic stays a true correlation. It
+ * costs one extra pass, paid only on frames where the edge is actually in
+ * play. Below `MIN_VISIBLE_FRACTION` the candidate scores −1, which is also
+ * what an image with no evaluable pixels scores: "not a match", never an
+ * error — the search then cannot walk off the frame.
+ *
+ * Why it matters: on the KinEMOS testset (04/09/2026) a clip whose bar ends
+ * a plate's width from the bottom edge lost its track a frame before the
+ * plate left the picture, and everything from lift-off to the catch was
+ * inside that margin on several others.
  */
 export function nccAt(image: GrayImage, template: Template, cx: number, cy: number): number {
   const { offsets, centred, norm } = template;
   const n = offsets.length / 2;
-  const ix = Math.round(cx);
-  const iy = Math.round(cy);
+  const ix = Math.round(cx) - (image.originX ?? 0);
+  const iy = Math.round(cy) - (image.originY ?? 0);
 
   let sum = 0;
+  let inside = 0;
   const values = scratchFor(n);
+  const visible = visibleFor(n);
   for (let i = 0; i < n; i++) {
     const x = ix + offsets[i * 2];
     const y = iy + offsets[i * 2 + 1];
-    if (x < 0 || y < 0 || x >= image.width || y >= image.height) return -1;
+    if (x < 0 || y < 0 || x >= image.width || y >= image.height) {
+      visible[i] = 0;
+      continue;
+    }
     const v = image.data[y * image.width + x];
     values[i] = v;
+    visible[i] = 1;
     sum += v;
+    inside++;
   }
 
-  const mean = sum / n;
+  if (inside === n) {
+    const mean = sum / n;
+    let dot = 0;
+    let sq = 0;
+    for (let i = 0; i < n; i++) {
+      const d = values[i] - mean;
+      dot += d * centred[i];
+      sq += d * d;
+    }
+    const denom = Math.sqrt(sq) * norm;
+    return denom > 1e-9 ? dot / denom : -1;
+  }
+
+  if (inside < n * MIN_VISIBLE_FRACTION) return -1;
+
+  // Partial: the template's own mean over the visible subset shifts too.
+  let tSum = 0;
+  for (let i = 0; i < n; i++) if (visible[i]) tSum += centred[i];
+  const mean = sum / inside;
+  const tMean = tSum / inside;
   let dot = 0;
   let sq = 0;
+  let tSq = 0;
   for (let i = 0; i < n; i++) {
+    if (!visible[i]) continue;
     const d = values[i] - mean;
-    dot += d * centred[i];
+    const t = centred[i] - tMean;
+    dot += d * t;
     sq += d * d;
+    tSq += t * t;
   }
-  const denom = Math.sqrt(sq) * norm;
+  const denom = Math.sqrt(sq) * Math.sqrt(tSq);
   return denom > 1e-9 ? dot / denom : -1;
 }
 
-/** One reusable buffer for the candidate gather. The search evaluates hundreds
+/** Reusable buffers for the candidate gather. The search evaluates hundreds
  *  of candidates per frame and allocating a Float32Array for each one is most
  *  of the time budget. */
 let scratch = new Float32Array(0);
+let visibleScratch = new Uint8Array(0);
 function scratchFor(n: number): Float32Array {
   if (scratch.length < n) scratch = new Float32Array(n);
   return scratch;
+}
+function visibleFor(n: number): Uint8Array {
+  if (visibleScratch.length < n) visibleScratch = new Uint8Array(n);
+  return visibleScratch;
 }
 
 /**
@@ -317,6 +565,22 @@ export function predictNext(
   return { x: last.x + (last.x - prev.x) * step, y: last.y + (last.y - prev.y) * step };
 }
 
+/**
+ * `(1 − rate) · a + rate · b`, sample by sample. Both inputs are zero-mean, so
+ * the blend is too; only the norm needs recomputing. The two must represent
+ * the same point (both cut with `cutTemplateAt`, so no anchor offset).
+ */
+export function blendTemplates(a: Template, b: Template, rate: number): Template {
+  const n = a.centred.length;
+  const values = new Float32Array(n);
+  let sq = 0;
+  for (let i = 0; i < n; i++) {
+    values[i] = (1 - rate) * a.centred[i] + rate * b.centred[i];
+    sq += values[i] * values[i];
+  }
+  return { offsets: a.offsets, centred: values, norm: Math.sqrt(sq), anchorOffset: { x: 0, y: 0 } };
+}
+
 // ── The tracker ─────────────────────────────────────────────────────────────
 
 /**
@@ -338,12 +602,27 @@ export async function trackDirection(
     opts.innerRadiusFraction,
     opts.maxTemplateSamples,
   );
+  /** How far the template reaches from its centre, whole pixels. */
+  const reach = Math.ceil(opts.templateRadiusPx) + 1;
+  /** The pixels a search of `radius` around (px, py) can touch. */
+  const regionFor = (px: number, py: number, radius: number): FrameRegion => {
+    const half = Math.ceil(radius) + reach + 2;
+    return {
+      x: Math.round(px) - half,
+      y: Math.round(py) - half,
+      width: 2 * half + 1,
+      height: 2 * half + 1,
+    };
+  };
 
-  const anchorImage = await source.getGray(anchor.index);
-  const template = extractTemplate(anchorImage, anchor.x, anchor.y, offsets);
-  if (!template) {
+  const anchorImage = await source.getGray(anchor.index, regionFor(anchor.x, anchor.y, 0));
+  const anchorTemplate = extractTemplate(anchorImage, anchor.x, anchor.y, offsets);
+  if (!anchorTemplate) {
     return { points: [], lowConfidenceIndices: [], gaveUp: true };
   }
+  /** The reference that follows the plate's appearance; the anchor until the
+   *  first confident refresh. */
+  let current: Template = anchorTemplate;
 
   const points: TrackedPoint[] = [
     {
@@ -367,16 +646,77 @@ export async function trackDirection(
     const index = anchor.index + direction * step;
     if (index < 0 || index >= source.frameCount) break;
 
-    const image = await source.getGray(index);
     // Prediction runs in tracking order, so the two most recent points are the
-    // last two entries whichever way we are walking.
-    const prediction = predictNext(points, 1);
+    // last two entries whichever way we are walking. Velocity is per frame of
+    // INDEX, so a gap of skipped frames (see below) is extrapolated across
+    // rather than treated as one step.
+    const last = points[points.length - 1];
+    const prev = points[points.length - 2];
+    const gap = Math.abs(index - last.index);
+    const prediction = prev
+      ? {
+          x: last.x + ((last.x - prev.x) / Math.max(1, Math.abs(last.index - prev.index))) * gap,
+          y: last.y + ((last.y - prev.y) / Math.max(1, Math.abs(last.index - prev.index))) * gap,
+        }
+      : { x: last.x, y: last.y };
+    const dt = Math.abs(
+      (source.timestamps[index] ?? 0) - (source.timestamps[index - direction] ?? 0),
+    );
+    const base = searchRadiusFor(opts.templateRadiusPx, dt, points.length >= 2, opts.searchRadiusPx);
     // A poor last match usually means the bar moved further than usual, or the
     // template was matched somewhere wrong — either way, look wider.
-    const radius = opts.searchRadiusPx * (consecutiveMisses > 0 ? 1 + consecutiveMisses * 0.5 : 1);
+    const radius = base * (consecutiveMisses > 0 ? 1 + consecutiveMisses * 0.5 : 1);
 
-    const match = searchAround(image, template, prediction.x, prediction.y, radius);
+    const image = await source.getGray(index, regionFor(prediction.x, prediction.y, radius));
+    let match = searchAround(image, current, prediction.x, prediction.y, radius);
+
+    if (current !== anchorTemplate) {
+      // The anchor gets its say at the same place. It wins a tie: the
+      // current template can only have drifted, the anchor cannot.
+      const byAnchor = searchAround(image, anchorTemplate, match.ix, match.iy, 3);
+      if (byAnchor.score >= match.score - 0.02) match = byAnchor;
+    }
     const predictionErrorPx = Math.hypot(match.x - prediction.x, match.y - prediction.y);
+
+    // Nothing worth calling a match — the plate has left the frame, the
+    // whole window is off it, or the best candidate is noise. Recording the
+    // best of nothing as a point would feed the prediction a jump, and the
+    // next prediction a bigger one: measured on the testset (04/09/2026),
+    // eight such frames ran a track 557 px off the bottom of the picture and
+    // the "peak velocity" to 15 m/s. So the frame yields no point: it is
+    // listed as uncertain, the motion model carries on from the last real
+    // match, and the miss counts toward giving up.
+    if (!(match.score >= opts.discardBelowConfidence)) {
+      lowConfidenceIndices.push(index);
+      consecutiveMisses++;
+      if (consecutiveMisses >= opts.giveUpAfter) {
+        gaveUp = true;
+        break;
+      }
+      options.onProgress?.(step, Math.max(1, total));
+      continue;
+    }
+
+    // Learn the plate's new look — only from a match good enough to trust,
+    // that landed where the motion said it would, and only when the look has
+    // actually moved on from the reference.
+    if (
+      opts.adaptive &&
+      match.score >= opts.refreshMinConfidence &&
+      match.score < opts.refreshBelowConfidence &&
+      predictionErrorPx <= Math.max(3, 0.5 * base)
+    ) {
+      const patch = cutTemplateAt(image, match.x, match.y, offsets);
+      if (patch) {
+        // The first refresh starts from the anchor's own look, resampled at
+        // its exact point so that it and every later patch share an origin.
+        const base =
+          current === anchorTemplate
+            ? (cutTemplateAt(anchorImage, anchor.x, anchor.y, offsets) ?? patch)
+            : current;
+        current = blendTemplates(base, patch, opts.refreshRate);
+      }
+    }
 
     points.push({
       index,
@@ -451,7 +791,7 @@ function searchAround(
   px: number,
   py: number,
   radius: number,
-): { x: number; y: number; score: number } {
+): { x: number; y: number; score: number; ix: number; iy: number } {
   const r = Math.max(2, Math.round(radius));
   const cx = Math.round(px);
   const cy = Math.round(py);
@@ -513,6 +853,10 @@ function searchAround(
     x: cx + peakDx + subX + template.anchorOffset.x,
     y: cy + peakDy + subY + template.anchorOffset.y,
     score: bestScore,
+    // The whole-pixel peak, for anyone who wants to score something else
+    // at the same place.
+    ix: cx + peakDx,
+    iy: cy + peakDy,
   };
 }
 

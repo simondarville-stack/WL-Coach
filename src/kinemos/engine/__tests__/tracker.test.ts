@@ -22,6 +22,7 @@ import {
   grayFromRgba,
   nccAt,
   predictNext,
+  searchRadiusFor,
   subPixelOffset,
   trackDirection,
   trackFromAnchor,
@@ -431,4 +432,192 @@ describe('DEFAULT_TRACK_OPTIONS', () => {
     // covers the bulk of that and the radius covers the residual.
     expect(DEFAULT_TRACK_OPTIONS.searchRadiusPx).toBeGreaterThanOrEqual(12);
   });
+});
+
+// ── Real-footage lessons (KinEMOS testset, 04/09/2026) ──────────────────────
+
+/** A frame whose plate looks progressively less like the anchor's: the
+ *  lettering band widens, the rim thickens and the face darkens — the kind of
+ *  cumulative change a close camera sees as the bar rises past it. */
+function renderMorphed(cx: number, cy: number, morph: number): GrayImage {
+  const data = new Float32Array(W * H);
+  // At morph 1 the face has darkened past its lettering and the rim has
+  // dimmed: the same disc, with its contrast turned inside out.
+  const band = PLATE_R * (0.26 + 0.4 * morph);
+  const rimFrom = PLATE_R * (0.82 - 0.22 * morph);
+  const face = 122 - 90 * morph;
+  const rim = 215 - 90 * morph;
+  const letters = 58 + 120 * morph;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let acc = 0;
+      const SS = 4;
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const px = x + (sx + 0.5) / SS;
+          const py = y + (sy + 0.5) / SS;
+          let value = 34 + (py / H) * 12;
+          if (Math.abs(px - 250) < 9) value = 190;
+          const dx = px - cx;
+          const dy = py - cy;
+          const d = Math.hypot(dx, dy);
+          if (d <= PLATE_R) {
+            value = d >= rimFrom ? rim : face;
+            if (Math.abs(dy) < band && Math.abs(dx) < PLATE_R * 0.72) value = letters;
+          }
+          acc += value;
+        }
+      }
+      data[y * W + x] = acc / (SS * SS);
+    }
+  }
+  return { width: W, height: H, data };
+}
+
+/**
+ * Frames whose plate morphs by `morphAt(u)` along the pull. Scaled so that at
+ * full morph the anchor template's correlation with the plate has fallen to
+ * ~0,4 — the decay the testset's real clips measured (0,98 → 0,31 and
+ * 0,90 → 0,48), not a caricature of it.
+ */
+function morphingSource(morphAt: (u: number) => number, count = 40) {
+  const truth = pullTrajectory(count);
+  const frames = truth.map((p, i) => renderMorphed(p.x, p.y, 0.6 * morphAt(i / (count - 1))));
+  const source: FrameSource = {
+    frameCount: frames.length,
+    timestamps: frames.map((_, i) => i / 60),
+    getGray: (i: number) => Promise.resolve(frames[i]),
+  };
+  return { truth, source };
+}
+
+describe('a plate whose look changes as it rises', () => {
+  it('the anchor template alone loses it — which is what real footage did', async () => {
+    const { source, truth } = morphingSource(u => u);
+    const result = await trackFromAnchor(
+      source,
+      { index: 0, x: truth[0].x, y: truth[0].y },
+      { adaptive: false },
+    );
+    expect(Math.min(...result.points.map(p => p.confidence))).toBeLessThan(
+      DEFAULT_TRACK_OPTIONS.minConfidence,
+    );
+  }, 20000);
+
+  it('a refreshed template follows it to the end', async () => {
+    const { source, truth } = morphingSource(u => u);
+    const result = await trackFromAnchor(source, { index: 0, x: truth[0].x, y: truth[0].y });
+    expect(result.gaveUp).toBe(false);
+    expect(result.lowConfidenceIndices).toHaveLength(0);
+    expect(result.points).toHaveLength(40);
+    expect(rmsError(result.points, truth)).toBeLessThan(0.5);
+  }, 20000);
+
+  it('snaps back to the anchor when the plate looks as it did — no drift survives', async () => {
+    // Out and back: the look drifts away over the first half and returns
+    // over the second, so the final frames match the anchor again.
+    const { source, truth } = morphingSource(u => Math.sin(u * Math.PI));
+    const result = await trackFromAnchor(source, { index: 0, x: truth[0].x, y: truth[0].y });
+    expect(result.gaveUp).toBe(false);
+    const tail = result.points.slice(-6);
+    expect(rmsError(tail, truth)).toBeLessThan(0.15);
+  }, 20000);
+});
+
+describe('a source that serves only the region asked for', () => {
+  it('yields the same track as one that serves whole frames', async () => {
+    const truth = pullTrajectory(40);
+    const scenes = truth.map((p, i) => ({ cx: p.x, cy: p.y, rotation: (i / 39) * Math.PI }));
+    const whole = sourceFrom(scenes);
+    let regionRequests = 0;
+    const cropped: FrameSource = {
+      frameCount: whole.frameCount,
+      timestamps: whole.timestamps,
+      async getGray(i, region) {
+        const full = await whole.getGray(i);
+        if (!region) return full;
+        regionRequests++;
+        const x0 = Math.max(0, region.x);
+        const y0 = Math.max(0, region.y);
+        const x1 = Math.min(full.width, region.x + region.width);
+        const y1 = Math.min(full.height, region.y + region.height);
+        const w = x1 - x0;
+        const h = y1 - y0;
+        const data = new Float32Array(w * h);
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) data[y * w + x] = full.data[(y0 + y) * full.width + (x0 + x)];
+        }
+        return { width: w, height: h, data, originX: x0, originY: y0 };
+      },
+    };
+    const anchor = { index: 0, x: truth[0].x, y: truth[0].y };
+    const a = await trackFromAnchor(whole, anchor);
+    const b = await trackFromAnchor(cropped, anchor);
+    expect(regionRequests).toBeGreaterThan(0);
+    expect(b.points).toHaveLength(a.points.length);
+    for (let i = 0; i < a.points.length; i++) {
+      expect(b.points[i].x).toBeCloseTo(a.points[i].x, 6);
+      expect(b.points[i].y).toBeCloseTo(a.points[i].y, 6);
+      expect(b.points[i].confidence).toBeCloseTo(a.points[i].confidence, 6);
+    }
+  }, 30000);
+});
+
+describe('searchRadiusFor', () => {
+  it('never goes below the floor', () => {
+    expect(searchRadiusFor(26, 1 / 60, true, 14)).toBe(14);
+  });
+
+  it('grows with the plate and with the frame interval', () => {
+    // ½·30 m/s²·(1/30 s)² = 1,67 cm, at 356 px per 45 cm ≈ 13 px — under the floor.
+    expect(searchRadiusFor(178, 1 / 30, true, 14)).toBe(14);
+    // The same bar on 8K at 24 fps: ½·30·(1/24)² = 2,6 cm at 1600 px per 45 cm ≈ 93 px.
+    expect(searchRadiusFor(800, 1 / 24, true, 14)).toBe(93);
+  });
+
+  it('covers a whole frame of travel on the first step out of an anchor', () => {
+    // 2,8 m/s · (1/24 s) = 11,7 cm at 791 px/m ≈ 93 px.
+    expect(searchRadiusFor(178, 1 / 24, false, 14)).toBe(93);
+  });
+});
+
+describe('a plate at the frame edge', () => {
+  it('is still matched on the part of it that is visible', () => {
+    const frame = renderFrame({ cx: 60, cy: 110 });
+    const offsets = annulusOffsets(PLATE_R, 0);
+    const template = extractTemplate(frame, 60, 110, offsets)!;
+    // Move the plate so a third of it is off the left edge.
+    const edge = renderFrame({ cx: 8, cy: 110 });
+    expect(nccAt(edge, template, 8, 110)).toBeGreaterThan(0.9);
+    // Off by a few pixels still scores lower — the partial match localises.
+    expect(nccAt(edge, template, 12, 110)).toBeLessThan(nccAt(edge, template, 8, 110));
+  });
+
+  it('scores no match once most of it is gone', () => {
+    const frame = renderFrame({ cx: 60, cy: 110 });
+    const template = extractTemplate(frame, 60, 110, annulusOffsets(PLATE_R, 0))!;
+    expect(nccAt(renderFrame({ cx: -8, cy: 110 }), template, -8, 110)).toBe(-1);
+  });
+});
+
+describe('a plate that leaves the frame', () => {
+  it('ends the track where the plate went, rather than running away', async () => {
+    // The plate exits through the bottom edge over the last third of the clip.
+    const count = 30;
+    const truth = Array.from({ length: count }, (_, i) => ({
+      x: 120.37,
+      y: 150.61 + Math.max(0, i - 12) * 9,
+    }));
+    const source = sourceFrom(truth.map(p => ({ cx: p.x, cy: p.y })));
+    const result = await trackFromAnchor(source, { index: 0, x: truth[0].x, y: truth[0].y });
+    expect(result.gaveUp).toBe(true);
+    // Every point that was matched sits on the truth; none was invented.
+    const matched = result.points.filter(p => p.confidence > 0);
+    expect(matched.length).toBeGreaterThan(14);
+    expect(rmsError(matched, truth)).toBeLessThan(0.6);
+    for (const p of result.points) {
+      expect(p.y).toBeLessThan(H + PLATE_R);
+      expect(Math.abs(p.x - 120.37)).toBeLessThan(3);
+    }
+  }, 20000);
 });

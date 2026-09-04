@@ -231,6 +231,10 @@ export function prefetchOrder(index: number, radius: number, frameCount: number)
 /** What `openFrameServer` accepts: a URL (range-read, the R2 case) or a Blob. */
 export type FrameSource = string | Blob;
 
+/** Upper bound on decoded frames held in memory, bytes. See the cache sizing
+ *  in `openFrameServer`. */
+export const CACHE_BUDGET_BYTES = 384 * 1024 * 1024;
+
 export async function openFrameServer(
   src: FrameSource,
   options: OpenFrameServerOptions = {},
@@ -333,13 +337,25 @@ export async function openFrameServer(
   const servedWidth = sinkOptions.width ?? track.displayWidth;
   const servedHeight = sinkOptions.height ?? track.displayHeight;
 
-  const cache = new FrameCache<ServedFrame>(cacheSize);
+  // The cache is sized in frames but bounded in bytes. Twenty-four 1080p
+  // frames are 200 MB of RGBA; twenty-four 8K frames would be 3,2 GB, and the
+  // testset's 7680 × 4320 clip (04/09/2026) is exactly that. Past the budget
+  // the count comes down — to two at 8K, which still covers a step in each
+  // direction from a frame the decoder has just produced.
+  const frameBytes = servedWidth * servedHeight * 4;
+  const boundedCacheSize = Math.max(2, Math.min(cacheSize, Math.floor(CACHE_BUDGET_BYTES / frameBytes)));
+  const cache = new FrameCache<ServedFrame>(boundedCacheSize);
   const inFlight = new Map<number, Promise<ServedFrame>>();
   let closed = false;
 
   async function decodeAt(index: number): Promise<ServedFrame> {
     const timestamp = timestamps[index];
-    const wrapped = await canvasSink.getCanvas(timestamp);
+    // One retry. A hardware decoder under memory pressure — the 8K clip
+    // again — can fail a single decode and be perfectly able to do the next;
+    // mediabunny recreates its decoder on the way back in. The second failure
+    // is the real answer.
+    let wrapped = await canvasSink.getCanvas(timestamp).catch(() => null);
+    if (!wrapped) wrapped = await canvasSink.getCanvas(timestamp);
     if (!wrapped) {
       throw new FrameServerUnavailableError(`Frame ${index + 1} could not be decoded.`);
     }

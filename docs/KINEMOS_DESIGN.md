@@ -251,6 +251,18 @@ Coach-visible quality/effort tiers:
      - The third assumption held: coarse-then-fine search is worth having, and
        is implemented as a stride-2 pass followed by a full-resolution sweep of
        the winner's neighbourhood.
+   - **Corrected by real footage (testset v2, 04/09/2026; 0.84.x).** "The
+     template is never updated" did not survive seven real clips: the anchor
+     patch's correlation decays through every pull as the plate's look changes
+     with height and the track was declared lost at peak velocity, on every
+     clip. The tracker now keeps the coach's anchor template for the whole
+     track *and* a current template blended toward the latest confident match;
+     the anchor wins ties, so drift resets whenever the plate looks as it did
+     when clicked. Also from the testset: partial matching at the frame edge,
+     no point at all under 0,3, a search radius derived from plate size and
+     frame interval, region reads from the frame server, and two phase rules
+     (lift-off searched backward from peak velocity; apex = first height
+     maximum after it). Details and numbers: `docs/KINEMOS_P2_PLAN.md` §4.
 2. **Marker mode:** high-contrast marker/sticker on the bar end cap for
    hardcore setups → tighter, more repeatable centres (the 0.02 m/s tier,
    §6.4).

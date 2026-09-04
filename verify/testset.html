@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KinEMOS — testset bench</title>
+    <style>
+      body { margin: 0; padding: 12px; font: 12px/1.4 ui-monospace, Menlo, monospace; background: #fafaf9; color: #1a1a18; }
+      h1 { font: 600 15px system-ui, sans-serif; margin: 0 0 6px; }
+      #row { display: flex; gap: 12px; align-items: flex-start; }
+      #stage { position: relative; border: 1px solid #ccc; background: #000; cursor: crosshair; }
+      #log { margin: 0; white-space: pre-wrap; max-width: 60ch; max-height: 720px; overflow: auto; background: #f0efe9; padding: 8px; }
+      #controls { margin: 6px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      input[type=number] { width: 70px; }
+      button { font: inherit; }
+      .hint { color: #5f5e5a; }
+    </style>
+  </head>
+  <body>
+    <h1>Testset bench</h1>
+    <div id="controls">
+      <label>frame <input id="frame" type="number" min="0" value="0" /></label>
+      <input id="slider" type="range" min="0" max="0" value="0" style="width: 320px" />
+      <label>radius px <input id="radius" type="number" min="4" value="0" /></label>
+      <label>mass kg <input id="mass" type="number" min="0" value="60" /></label>
+      <button id="track">Track from anchor</button>
+      <button id="analyse">Analyse</button>
+      <span class="hint">click = anchor (bar end); shift+click = plate rim (sets radius)</span>
+    </div>
+    <div id="row">
+      <canvas id="stage" width="640" height="360"></canvas>
+      <canvas id="mag" width="300" height="300" style="border: 1px solid #ccc; background: #000"></canvas>
+      <pre id="log">starting…</pre>
+    </div>
+
+    <script type="module">
+      import { openFrameServer } from '/src/kinemos/engine/frameServer.ts';
+      import { trackFromAnchor, DEFAULT_TRACK_OPTIONS } from '/src/kinemos/engine/tracker.ts';
+      import { trackerSourceFrom } from '/src/kinemos/lib/trackerSource.ts';
+      import { calibrateFromEllipse } from '/src/kinemos/engine/calibration.ts';
+      import { computeKinematics, summariseRep } from '/src/kinemos/engine/kinematics.ts';
+      import { proposePhases, spansFrom, computeLiftMetrics } from '/src/kinemos/engine/phases.ts';
+      import { gradeAnalysis } from '/src/kinemos/engine/grade.ts';
+      import { DEFAULT_FILTER } from '/src/kinemos/engine/signal.ts';
+
+      // Vite full-reloads every page when a file outside its module graph
+      // changes — another editor touching the planner would wipe a 60 s track.
+      // Throwing from this hook is the documented way to veto that reload.
+      if (import.meta.hot) {
+        import.meta.hot.on('vite:beforeFullReload', () => {
+          throw new Error('(bench) full reload suppressed — reload by hand');
+        });
+      }
+
+      const params = new URLSearchParams(location.search);
+      const clip = params.get('clip');
+      const MAX_W = Number(params.get('w') ?? 720);
+      const MAX_H = Number(params.get('h') ?? 720);
+      const maxEdge = params.get('maxEdge') ? Number(params.get('maxEdge')) : null;
+
+      const $ = id => document.getElementById(id);
+      const logEl = $('log');
+      const lines = [];
+      const log = (...parts) => {
+        const line = parts.map(p => (typeof p === 'string' ? p : JSON.stringify(p))).join(' ');
+        lines.push(line);
+        logEl.textContent = lines.join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log('[bench]', line);
+      };
+      const paint = () => new Promise(r => setTimeout(r, 20));
+      const fmt = (n, d = 3) => (n == null || Number.isNaN(n) ? '—' : Number(n).toFixed(d));
+
+      const B = (window.__BENCH__ = {
+        clip,
+        server: null,
+        anchor: null,
+        radiusPx: 0,
+        track: null,
+        analysis: null,
+        errors: [],
+        timings: {},
+      });
+
+      const stage = $('stage');
+      const sctx = stage.getContext('2d');
+      let server = null;
+      let scale = 1;
+      let shown = 0;
+
+      async function showFrame(i) {
+        if (!server) return;
+        shown = Math.max(0, Math.min(server.frameCount - 1, Math.round(i)));
+        $('frame').value = shown;
+        $('slider').value = shown;
+        const t0 = performance.now();
+        let frame;
+        try {
+          frame = await server.frameAt(shown);
+        } catch (err) {
+          log(`frameAt(${shown}) FAILED: ${err.message}`);
+          B.errors.push(`frameAt(${shown}): ${err.message}`);
+          return;
+        }
+        const ms = performance.now() - t0;
+        sctx.drawImage(frame.canvas, 0, 0, stage.width, stage.height);
+        drawOverlay();
+        $('frame').title = `${ms.toFixed(0)} ms`;
+        return ms;
+      }
+
+      function drawOverlay() {
+        sctx.save();
+        sctx.lineWidth = 1.5;
+        if (B.track) {
+          const pts = B.track.points;
+          sctx.strokeStyle = '#185FA5';
+          sctx.beginPath();
+          pts.forEach((p, i) => (i ? sctx.lineTo(p.x * scale, p.y * scale) : sctx.moveTo(p.x * scale, p.y * scale)));
+          sctx.stroke();
+          for (const p of pts) {
+            const low = p.confidence < DEFAULT_TRACK_OPTIONS.minConfidence;
+            sctx.fillStyle = low ? '#d33' : p.index === shown ? '#ff0' : 'rgba(24,95,165,0.6)';
+            sctx.beginPath();
+            sctx.arc(p.x * scale, p.y * scale, low ? 3 : 1.5, 0, Math.PI * 2);
+            sctx.fill();
+          }
+        }
+        if (B.anchor) {
+          sctx.strokeStyle = '#ff0';
+          sctx.beginPath();
+          sctx.arc(B.anchor.x * scale, B.anchor.y * scale, Math.max(3, B.radiusPx * scale), 0, Math.PI * 2);
+          sctx.stroke();
+          sctx.beginPath();
+          sctx.moveTo(B.anchor.x * scale - 6, B.anchor.y * scale);
+          sctx.lineTo(B.anchor.x * scale + 6, B.anchor.y * scale);
+          sctx.moveTo(B.anchor.x * scale, B.anchor.y * scale - 6);
+          sctx.lineTo(B.anchor.x * scale, B.anchor.y * scale + 6);
+          sctx.stroke();
+        }
+        sctx.restore();
+      }
+
+      stage.addEventListener('click', ev => {
+        const rect = stage.getBoundingClientRect();
+        const x = ((ev.clientX - rect.left) / rect.width) * stage.width / scale;
+        const y = ((ev.clientY - rect.top) / rect.height) * stage.height / scale;
+        if (ev.shiftKey && B.anchor) {
+          B.radiusPx = Math.hypot(x - B.anchor.x, y - B.anchor.y);
+          $('radius').value = B.radiusPx.toFixed(1);
+          log(`rim at ${fmt(x, 1)},${fmt(y, 1)} → radius ${fmt(B.radiusPx, 1)} px`);
+        } else {
+          B.anchor = { index: shown, x, y };
+          log(`anchor frame ${shown} at ${fmt(x, 1)},${fmt(y, 1)} (display px)`);
+        }
+        showFrame(shown);
+      });
+      $('frame').addEventListener('change', () => showFrame(Number($('frame').value)));
+      $('slider').addEventListener('input', () => showFrame(Number($('slider').value)));
+      $('radius').addEventListener('change', () => (B.radiusPx = Number($('radius').value)));
+      window.addEventListener('keydown', ev => {
+        if (ev.target.tagName === 'INPUT') return;
+        if (ev.key === 'ArrowRight') showFrame(shown + 1);
+        if (ev.key === 'ArrowLeft') showFrame(shown - 1);
+      });
+
+      /** 1:1-or-zoomed crop of the current frame around (x, y) display px, with
+       *  a crosshair and the anchor circle, so the anchor can be placed to the
+       *  pixel from a scaled screenshot. */
+      async function magnify(x, y, zoom = 2) {
+        if (!server) return;
+        const mag = $('mag');
+        const mctx = mag.getContext('2d');
+        const frame = await server.frameAt(shown);
+        const w = mag.width / zoom;
+        const h = mag.height / zoom;
+        const sx = x - w / 2;
+        const sy = y - h / 2;
+        mctx.imageSmoothingEnabled = false;
+        mctx.fillStyle = '#000';
+        mctx.fillRect(0, 0, mag.width, mag.height);
+        mctx.drawImage(frame.canvas, sx, sy, w, h, 0, 0, mag.width, mag.height);
+        mctx.strokeStyle = '#ff0';
+        mctx.lineWidth = 1;
+        mctx.beginPath();
+        mctx.moveTo(mag.width / 2, 0);
+        mctx.lineTo(mag.width / 2, mag.height);
+        mctx.moveTo(0, mag.height / 2);
+        mctx.lineTo(mag.width, mag.height / 2);
+        mctx.stroke();
+        if (B.anchor) {
+          mctx.strokeStyle = '#0f0';
+          mctx.beginPath();
+          mctx.arc((B.anchor.x - sx) * zoom, (B.anchor.y - sy) * zoom, Math.max(2, B.radiusPx * zoom), 0, Math.PI * 2);
+          mctx.stroke();
+        }
+        if (B.track) {
+          mctx.strokeStyle = '#185FA5';
+          mctx.beginPath();
+          B.track.points.forEach((p, i) => (i ? mctx.lineTo((p.x - sx) * zoom, (p.y - sy) * zoom) : mctx.moveTo((p.x - sx) * zoom, (p.y - sy) * zoom)));
+          mctx.stroke();
+        }
+        // Ticks every 10 display px, so a radius can be read off.
+        mctx.strokeStyle = 'rgba(255,255,0,0.5)';
+        for (let d = 10; d < w / 2; d += 10) {
+          const px = mag.width / 2 + d * zoom;
+          const nx = mag.width / 2 - d * zoom;
+          mctx.beginPath();
+          mctx.moveTo(px, mag.height / 2 - 3);
+          mctx.lineTo(px, mag.height / 2 + 3);
+          mctx.moveTo(nx, mag.height / 2 - 3);
+          mctx.lineTo(nx, mag.height / 2 + 3);
+          mctx.stroke();
+        }
+        mag.title = `${x},${y} ×${zoom}`;
+      }
+
+      /** A row of crops, one per index, each centred on the tracked point —
+       *  one screenshot verifies a whole track. */
+      async function strip(indices, half = 60, zoom = 2) {
+        if (!server || !B.track) return 'no track';
+        const mag = $('mag');
+        const cell = half * 2 * zoom;
+        mag.width = cell * indices.length;
+        mag.height = cell;
+        const c = mag.getContext('2d');
+        c.imageSmoothingEnabled = false;
+        c.fillStyle = '#000';
+        c.fillRect(0, 0, mag.width, mag.height);
+        const byIndex = new Map(B.track.points.map(p => [p.index, p]));
+        for (let k = 0; k < indices.length; k++) {
+          const i = indices[k];
+          const p = byIndex.get(i);
+          if (!p) continue;
+          const f = await server.frameAt(i);
+          const sx = p.x - half;
+          const sy = p.y - half;
+          c.drawImage(f.canvas, sx, sy, half * 2, half * 2, k * cell, 0, cell, cell);
+          c.strokeStyle = p.confidence < DEFAULT_TRACK_OPTIONS.minConfidence ? '#f33' : '#0f0';
+          c.lineWidth = 1;
+          c.beginPath();
+          c.arc(k * cell + cell / 2, cell / 2, B.radiusPx * zoom, 0, Math.PI * 2);
+          c.stroke();
+          c.beginPath();
+          c.moveTo(k * cell + cell / 2 - 8, cell / 2);
+          c.lineTo(k * cell + cell / 2 + 8, cell / 2);
+          c.moveTo(k * cell + cell / 2, cell / 2 - 8);
+          c.lineTo(k * cell + cell / 2, cell / 2 + 8);
+          c.stroke();
+          c.fillStyle = '#ff0';
+          c.font = '14px monospace';
+          c.fillText(`${i} c${p.confidence.toFixed(2)}`, k * cell + 4, 16);
+        }
+        return 'ok';
+      }
+
+      window.__bench = {
+        magnify,
+        strip,
+        setAnchor(index, x, y, r) {
+          B.anchor = { index, x, y };
+          if (r) {
+            B.radiusPx = r;
+            $('radius').value = r;
+          }
+          return showFrame(index);
+        },
+        show: showFrame,
+        track: runTrack,
+        analyse: runAnalyse,
+      };
+
+      async function runTrack(opts = {}) {
+        if (!server || !B.anchor) {
+          log('no anchor');
+          return null;
+        }
+        // Time the frame supply separately from the correlation, so "slow"
+        // has an address — and the decode separately from the readback.
+        let decodeMs = 0;
+        let decodeCalls = 0;
+        const timedServer = {
+          ...server,
+          async frameAt(i) {
+            const t = performance.now();
+            const f = await server.frameAt(i);
+            decodeMs += performance.now() - t;
+            decodeCalls++;
+            return f;
+          },
+        };
+        const inner = trackerSourceFrom(timedServer);
+        let grayMs = 0;
+        let grayCalls = 0;
+        const source = {
+          frameCount: inner.frameCount,
+          timestamps: inner.timestamps,
+          async getGray(i) {
+            const t = performance.now();
+            const g = await inner.getGray(i);
+            grayMs += performance.now() - t;
+            grayCalls++;
+            return g;
+          },
+          dispose: () => inner.dispose(),
+        };
+        const r = B.radiusPx > 0 ? B.radiusPx : undefined;
+        log(`→ tracking from frame ${B.anchor.index}, template radius ${r ?? DEFAULT_TRACK_OPTIONS.templateRadiusPx} …`);
+        await paint();
+        const t0 = performance.now();
+        let result;
+        try {
+          result = await trackFromAnchor(
+            source,
+            { index: B.anchor.index, x: B.anchor.x, y: B.anchor.y },
+            { templateRadiusPx: r, ...opts },
+          );
+        } catch (err) {
+          log(`track FAILED: ${err.message}`);
+          B.errors.push(`track: ${err.message}`);
+          source.dispose();
+          return null;
+        }
+        const ms = performance.now() - t0;
+        source.dispose();
+        B.track = result;
+        B.timings.trackMs = ms;
+        B.timings.trackMsPerFrame = ms / Math.max(1, result.points.length);
+        B.timings.grayMsPerCall = grayMs / Math.max(1, grayCalls);
+        B.timings.grayCalls = grayCalls;
+        B.timings.nccMsPerFrame = (ms - grayMs) / Math.max(1, result.points.length);
+        B.timings.decodeCalls = decodeCalls;
+        B.timings.decodeMsPerCall = decodeMs / Math.max(1, decodeCalls);
+        log(`  frames: ${grayCalls} getGray calls, ${fmt(B.timings.grayMsPerCall, 1)} ms each (${decodeCalls} decodes, ${fmt(B.timings.decodeMsPerCall, 1)} ms each); correlation ${fmt(B.timings.nccMsPerFrame, 1)} ms/frame`);
+
+        const conf = result.points.map(p => p.confidence);
+        const sortedConf = [...conf].sort((a, b) => a - b);
+        const q = f => sortedConf[Math.floor(f * (sortedConf.length - 1))];
+        const predErr = result.points.map(p => p.predictionErrorPx);
+        const maxPred = Math.max(...predErr);
+        const first = result.points[0]?.index;
+        const last = result.points[result.points.length - 1]?.index;
+        const summary = {
+          points: result.points.length,
+          of: server.frameCount,
+          range: `${first}–${last}`,
+          gaveUp: result.gaveUp,
+          lowConfidence: result.lowConfidenceIndices.length,
+          confMin: q(0),
+          confP10: q(0.1),
+          confMedian: q(0.5),
+          maxPredictionErrorPx: maxPred,
+          msPerFrame: ms / Math.max(1, result.points.length),
+          totalMs: ms,
+        };
+        B.trackSummary = summary;
+        log('track:', {
+          ...summary,
+          confMin: fmt(summary.confMin),
+          confP10: fmt(summary.confP10),
+          confMedian: fmt(summary.confMedian),
+          maxPredictionErrorPx: fmt(maxPred, 1),
+          msPerFrame: fmt(summary.msPerFrame, 1),
+          totalMs: fmt(ms, 0),
+        });
+        if (result.lowConfidenceIndices.length) {
+          log('  low-confidence frames:', result.lowConfidenceIndices.slice(0, 40).join(',') + (result.lowConfidenceIndices.length > 40 ? '…' : ''));
+        }
+        // Per-frame step sizes: where did the track jump?
+        const steps = [];
+        for (let i = 1; i < result.points.length; i++) {
+          const a = result.points[i - 1];
+          const b = result.points[i];
+          steps.push({ i: b.index, d: Math.hypot(b.x - a.x, b.y - a.y), c: b.confidence });
+        }
+        const bigSteps = steps.filter(s => s.d > (r ?? 26) * 0.6).slice(0, 12);
+        if (bigSteps.length) {
+          log('  big steps (>0,6 R):', bigSteps.map(s => `${s.i}:${fmt(s.d, 0)}px@${fmt(s.c, 2)}`).join(' '));
+        }
+        showFrame(shown);
+        persist();
+        return summary;
+      }
+
+      // Results survive a reload (the pane reloads heavy pages on its own),
+      // keyed by clip + anchor + radius so a different anchor re-tracks.
+      const storeKey = () =>
+        `bench:${clip}:${B.anchor?.index}:${Math.round(B.anchor?.x)}:${Math.round(B.anchor?.y)}:${Math.round(B.radiusPx)}`;
+      function persist() {
+        try {
+          localStorage.setItem(
+            storeKey(),
+            JSON.stringify({ track: B.track, summary: B.trackSummary, timings: B.timings, savedAt: Date.now() }),
+          );
+        } catch (err) {
+          log('persist failed', err.message);
+        }
+      }
+      function restore() {
+        try {
+          const raw = localStorage.getItem(storeKey());
+          if (!raw) return false;
+          const saved = JSON.parse(raw);
+          B.track = saved.track;
+          B.trackSummary = saved.summary;
+          Object.assign(B.timings, saved.timings);
+          log('restored track from storage:', saved.summary);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      function runAnalyse() {
+        if (!B.track || !server) {
+          log('no track');
+          return null;
+        }
+        const r = B.radiusPx > 0 ? B.radiusPx : DEFAULT_TRACK_OPTIONS.templateRadiusPx;
+        const cal = calibrateFromEllipse({ cx: B.anchor.x, cy: B.anchor.y, semiMajorPx: r, semiMinorPx: r, tiltDeg: 0 });
+        const mass = Number($('mass').value) || null;
+        const pts = B.track.points.map(p => ({ t: p.t, x: p.x, y: p.y }));
+        const series = computeKinematics(pts, cal, { massKg: mass });
+        if (!series) {
+          log('kinematics: null');
+          B.errors.push('kinematics null');
+          return null;
+        }
+        const rep = summariseRep(series);
+        const proposal = proposePhases(series);
+        const spans = spansFrom(proposal.boundaries);
+        const metrics = computeLiftMetrics(series, spans);
+        const grade = gradeAnalysis({
+          sampleRateHz: series.sampleRateHz,
+          vfr: server.isVfr,
+          calibration: cal,
+          filtered: series.filtered,
+          filter: DEFAULT_FILTER,
+          trackerTier: 'assisted',
+          correctionCount: 0,
+          trackedFrames: pts.length,
+          camera: 'unknown',
+          distortionSource: 'none',
+        });
+        B.analysis = { cal, series, rep, proposal, spans, metrics, grade };
+        log('calibration:', { mmPerPx: fmt(cal.cmPerPxV * 10, 2), confidence: cal.confidence });
+        log('rep:', {
+          durationS: fmt(rep.durationS, 2),
+          peakVyMs: fmt(rep.peakVerticalVelocityMs, 3),
+          atT: fmt(rep.peakVerticalVelocityT, 2),
+          peakHeightCm: fmt(rep.peakHeightCm, 1),
+          apexT: fmt(rep.apexT, 2),
+          loopWidthCm: fmt(rep.loopWidthCm, 1),
+          peakPowerW: fmt(rep.peakPowerW, 0),
+          filtered: series.filtered,
+          sampleRateHz: fmt(series.sampleRateHz, 2),
+        });
+        log('phases:', proposal.fullyDetected ? 'fully detected' : 'FALLBACKS', proposal.boundaries.map(b => `${b.phaseId ?? 'end'}@${fmt(b.t, 2)}(${b.source === 'detected' ? 'd' : 'F'})`).join(' '));
+        log('metrics:', metrics.phases.map(p => `${p.phaseId}: ${fmt(p.durationS, 2)}s mean ${fmt(p.meanVelocityMs, 2)} peak ${fmt(p.peakVelocityMs, 2)} +${fmt(p.heightGainedCm, 0)}cm`).join(' | '));
+        log('  transition loss', fmt(metrics.transitionVelocityLossMs, 3), 'turnover v', fmt(metrics.turnoverVelocityMs, 3));
+        log('grade:', grade.grade, fmt(grade.expectedVelocityErrorMs, 3), grade.summary);
+        // Velocity extremes for sanity (m/s): a bar cannot exceed ~3 m/s.
+        const vmax = Math.max(...series.vyMs);
+        const vmin = Math.min(...series.vyMs);
+        log('  vy range', fmt(vmin, 2), '…', fmt(vmax, 2), 'ay range', fmt(Math.min(...series.ayMs2), 1), '…', fmt(Math.max(...series.ayMs2), 1));
+        return B.analysis;
+      }
+
+      $('track').addEventListener('click', () => runTrack());
+      $('analyse').addEventListener('click', () => runAnalyse());
+
+      try {
+        if (!clip) throw new Error('pass ?clip=/verify/fixtures/…');
+        log('clip', clip);
+        const t0 = performance.now();
+        server = await openFrameServer(clip, maxEdge ? { maxEdge } : {});
+        B.server = server;
+        B.timings.openMs = performance.now() - t0;
+        log('opened in', fmt(B.timings.openMs, 0), 'ms');
+        const meta = {
+          codec: server.codec,
+          frames: server.frameCount,
+          durationS: fmt(server.durationS, 2),
+          fps: fmt(server.averageFps, 2),
+          vfr: server.isVfr,
+          display: `${server.displayWidth}×${server.displayHeight}`,
+          rotation: server.rotation,
+          keyframes: server.keyframeTimestamps.length,
+        };
+        B.meta = meta;
+        log('meta', meta);
+
+        scale = Math.min(MAX_W / server.displayWidth, MAX_H / server.displayHeight, 1);
+        stage.width = Math.round(server.displayWidth * scale);
+        stage.height = Math.round(server.displayHeight * scale);
+        $('slider').max = server.frameCount - 1;
+        $('frame').max = server.frameCount - 1;
+        log('stage scale', fmt(scale, 4), `${stage.width}×${stage.height}`);
+
+        const first = Number(params.get('frame') ?? 0);
+        const ms0 = await showFrame(first);
+        B.timings.firstDecodeMs = ms0;
+        log(`frame ${first} decoded in ${fmt(ms0, 0)} ms`);
+        // Sequential decode cost: ten consecutive frames.
+        const ts = performance.now();
+        for (let i = 1; i <= 10; i++) await server.frameAt(first + i);
+        B.timings.seqDecodeMsPerFrame = (performance.now() - ts) / 10;
+        log(`sequential decode ${fmt(B.timings.seqDecodeMsPerFrame, 1)} ms/frame`);
+        await showFrame(first);
+
+        const a = params.get('anchor');
+        if (a) {
+          const [x, y] = a.split(',').map(Number);
+          const r = Number(params.get('r') ?? 0);
+          await window.__bench.setAnchor(first, x, y, r);
+          if (params.get('auto')) {
+            if (params.get('force') || !restore()) await runTrack();
+            runAnalyse();
+            await showFrame(first);
+          }
+        }
+        B.ready = true;
+        log('READY');
+      } catch (err) {
+        log('ERROR', err instanceof Error ? err.stack ?? err.message : String(err));
+        B.errors.push(String(err?.message ?? err));
+        B.ready = true;
+      }
+    </script>
+  </body>
+</html>

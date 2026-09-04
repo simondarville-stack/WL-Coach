@@ -194,6 +194,83 @@ plate half out of frame. Carrying 0,09 into the grade would put every clip at A,
 which is exactly the over-claim the grade exists to prevent. The figure moves
 when somebody measures a real clip against a hand-labelled track.
 
+### Real footage: the testset (04/09/2026)
+
+Seven phone and camera clips — 1080p landscape and portrait, HEVC 60 fps, a
+1080 × 1440, a 1200 × 2136, an 8K 24 fps — run through the real frame server,
+the real adapter and the real engine via `verify/testset.html` (below). What the
+synthetic measurements had not covered, and what changed:
+
+**The anchor template alone dies mid-pull.** On every clip the anchor patch's
+correlation decayed steadily as the bar rose — 0,98 → 0,31 on a red ZKC 25,
+0,90 → 0,48 on a black Eleiko — with the track still on the hub, until the
+0,55 threshold declared the bar lost eight frames later. Always at peak
+velocity, the one number the coach wanted. Scored at the tracked position
+against the anchor patch rotated (36 angles), rescaled (0,85–1,15) and
+motion-blurred along the track, none of the variants recovered the score: the
+plate's look changes cumulatively (a camera two metres away sees the face at a
+different angle at 1,6 m than at 0,2 m), and a rotation-averaged template
+correlated at ~0,3 even when perfectly placed. The remedy is a second, *current*
+template blended toward the latest confident match (rate 0,5, only from a
+match ≥ 0,6 that has drifted under 0,9) while the coach's anchor is kept and
+re-scored at every peak, winning ties — so drift resets whenever the plate looks
+as it did when clicked. Measured on a synthetic morph calibrated to the real
+decay (anchor correlation → 0,43): 0,23 px worst error, 0,08 px RMS once the
+anchor has snapped the track back.
+
+| clip | before | after |
+| --- | --- | --- |
+| Snatch, HEVC 60 fps portrait | lost at frame 126 of 561 | 561/561, min confidence 0,77 |
+| Pull, HEVC 60 fps portrait, close camera | lost at frame 189 of 532 | 532/532, min 0,59, grade A |
+| Competition snatch, H.264 30 fps | 284/314 (dropped bar) | 314/314, min 0,76 |
+| Snatch, HEVC 30 fps 1080 × 1440 | — | 431/457, stops cleanly where the bar is dropped |
+| Training hall, H.264 30 fps portrait, 18 s | — | 535/545, min 0,59; ends where the camera pans away |
+
+(The 1200 × 2136 clip could not be verified: without the viewer to place the
+anchor, the numeric plate finder used for the bench landed on a racked plate,
+which tracked at 0,97 for 658 frames and, correctly, never moved.)
+
+**A plate leaving the frame ran the track away.** With every template pixel
+required inside the frame, the first partly-visible frame scored −1 on every
+candidate, the "best" of those was recorded as a point, and the constant-
+velocity prediction compounded it: eight frames later the track was 557 px off
+the bottom of the picture and the analysis reported a 15 m/s peak at grade A.
+Now a candidate is scored on the visible part of the template (both halves
+re-centred on that subset, down to half the plate), and a frame whose best score
+is under 0,3 yields no point at all — listed as uncertain, prediction carried on
+from the last real match, counted toward giving up.
+
+**The search radius was a pixel count.** Fourteen pixels covers the
+acceleration term of a constant-velocity guess at 60 fps and 1080p; on the 8K
+24 fps clip the same term is 93 px, and the first step out of a mid-lift anchor
+(no velocity yet) needs the whole per-frame travel. `searchRadiusFor` derives
+both from the plate's on-screen size and the frame interval, with the option as
+a floor.
+
+**Frame supply, not correlation, is the cost.** Reading back a full
+1080 × 1920 frame cost ~170 ms — more than decoding it — while the tracker
+looks at ~2 % of it. The adapter now reads the region the tracker names
+(`FrameSource.getGray(index, region)`), and decodes a backward walk in forward
+runs so each keyframe seek pays for sixteen frames rather than one. Correlation
+is 6–15 ms/frame; what remains is the frame server's own ~50–100 ms decode-to-
+canvas, which a luma-plane region copy (`VideoFrame.copyTo` with a rect) would
+cut further — not built.
+
+**Phases read the clip, not the lift.** Lift-off was the first upward wiggle,
+so a competition clip's five seconds of set-up (rolling the bar in, lifting it
+a centimetre to set the back) declared lift-off at 0,0 s and a 5 s "transition";
+the apex was the clip's highest point, so a clip that ran through the recovery
+put the turnover at 1,7 s and the catch at zero. Lift-off is now the start of
+the rise that ends at peak velocity (searched backward from the peak, with the
+hold applied to the pause), and the apex is the first height maximum after the
+peak. On the competition clip: lift-off 6,87 s, catch 7,90 s.
+
+**The 8K clip.** Decodes (hardware HEVC, ~100–240 ms/frame served at
+7680 × 4320) but a single decode failed mid-run and the frame server had no
+retry; twenty-four cached frames would also have been 3,2 GB. The server now
+retries a failed decode once and bounds the cache in bytes (384 MB: two frames
+at 8K, twenty-four at 1080p).
+
 ## 5. The verification harnesses
 
 Three, each closing a gap the layer above it cannot:

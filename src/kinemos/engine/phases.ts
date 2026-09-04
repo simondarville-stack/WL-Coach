@@ -153,22 +153,47 @@ export interface PhaseProposal {
 // ── Signature finders ───────────────────────────────────────────────────────
 
 /**
- * First time the bar is genuinely moving up: velocity above the threshold and
- * still above it `holdS` later. The hold is what stops a single noisy frame
- * near the floor from declaring lift-off half a second early.
+ * Where the pull that reaches peak velocity began.
+ *
+ * Not "the first time the bar moves up". A competition clip has five seconds
+ * of set-up in front of the lift — the lifter rolls the bar in, lifts it a
+ * centimetre to set the back, puts it down — and the first upward wiggle
+ * declares lift-off at 0,0 s, after which "transition" is five seconds long
+ * and the real pull is measured as nothing (KinEMOS testset, 04/09/2026).
+ *
+ * So the search runs BACKWARD from peak velocity: the bar was rising all the
+ * way up to the peak, and lift-off is where that rise began — the last moment
+ * before it that the bar was still. "Still" is velocity under the threshold
+ * for `liftoffHoldS`, so a single frame's dip inside the pull (a noisy sample,
+ * or a deep double knee bend) does not end the walk early. A lift from the
+ * hang gets the hang as its lift-off, which is the right answer for that lift.
+ *
+ * Null when the bar was never below the threshold before the peak — a clip
+ * that starts mid-pull.
  */
-function findLiftoff(series: KinematicSeries, th: PhaseThresholds): number | null {
+function findLiftoff(series: KinematicSeries, th: PhaseThresholds, peakIdx: number): number | null {
   const holdSamples = Math.max(1, Math.round(th.liftoffHoldS / series.dt));
-  for (let i = 0; i < series.vyMs.length - holdSamples; i++) {
-    if (series.vyMs[i] < th.liftoffMs) continue;
-    let held = true;
-    for (let k = 1; k <= holdSamples; k++) {
-      if (series.vyMs[i + k] < th.liftoffMs) {
-        held = false;
+  // Walk back from the peak until `holdSamples` consecutive samples sit under
+  // the threshold; the sample after that run is the first of the rise.
+  let below = 0;
+  let riseStart: number | null = null;
+  for (let i = peakIdx; i >= 0; i--) {
+    if (series.vyMs[i] < th.liftoffMs) {
+      below++;
+      if (below >= holdSamples) {
+        riseStart = i + holdSamples;
         break;
       }
+    } else {
+      below = 0;
     }
-    if (held) return series.t[i];
+  }
+  if (riseStart === null) return null;
+  // The rise may have begun a frame or two before the run ended (the hold
+  // spans several samples) — step forward to the first sample over the
+  // threshold, which is the lift-off itself.
+  for (let i = riseStart - holdSamples; i <= peakIdx; i++) {
+    if (series.vyMs[i] >= th.liftoffMs) return series.t[i];
   }
   return null;
 }
@@ -180,10 +205,24 @@ function peakVelocityIndex(series: KinematicSeries): number {
   return best;
 }
 
-/** Index of the highest the bar got. */
-function apexIndex(series: KinematicSeries): number {
-  let best = 0;
-  for (let i = 1; i < series.yCm.length; i++) if (series.yCm[i] > series.yCm[best]) best = i;
+/**
+ * Index of the top of the bar's flight: the first height maximum after peak
+ * velocity — where the bar stops rising and the lifter is already under it.
+ *
+ * Not the highest point in the clip. A clip that runs on through the
+ * recovery has its global maximum at the end, with the lifter standing and
+ * the bar locked out overhead; using that put the "turnover" at 1,7 s and the
+ * catch at zero on every snatch in the testset (04/09/2026). The flight's apex
+ * is where upward velocity first runs out after the peak. When it never does
+ * — footage cut before the bar stops rising — the highest point on record is
+ * the best available answer.
+ */
+function apexIndex(series: KinematicSeries, peakIdx: number): number {
+  for (let i = peakIdx + 1; i < series.vyMs.length; i++) {
+    if (series.vyMs[i] <= 0) return i;
+  }
+  let best = peakIdx;
+  for (let i = peakIdx + 1; i < series.yCm.length; i++) if (series.yCm[i] > series.yCm[best]) best = i;
   return best;
 }
 
@@ -286,9 +325,9 @@ export function proposePhases(
   const firstT = series.t[0];
   const lastT = series.t[n - 1];
 
-  const liftoffT = findLiftoff(series, thresholds);
   const peakIdx = peakVelocityIndex(series);
-  const apexIdx = apexIndex(series);
+  const liftoffT = findLiftoff(series, thresholds, peakIdx);
+  const apexIdx = apexIndex(series, peakIdx);
   const peakT = series.t[peakIdx];
   const apexT = series.t[Math.max(apexIdx, peakIdx)];
 

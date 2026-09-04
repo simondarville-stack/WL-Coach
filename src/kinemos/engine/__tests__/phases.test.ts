@@ -312,3 +312,79 @@ describe('valueAt', () => {
     expect(valueAt([], [], 1)).toBeNull();
   });
 });
+
+// ── Real-footage lessons (KinEMOS testset, 04/09/2026) ──────────────────────
+
+/** A track integrated from an arbitrary velocity profile over `duration`. */
+function liftFrom(velocity: (t: number) => number, duration: number, fps = FPS): TrackPoint[] {
+  const points: TrackPoint[] = [];
+  const fine = 2400;
+  let y = 0;
+  let nextSample = 0;
+  for (let i = 0; i <= duration * fine; i++) {
+    const t = i / fine;
+    if (t >= nextSample) {
+      points.push({ t, x: 500 + 4 * Math.sin(2 * Math.PI * t * 0.7), y: 700 - y * 100 });
+      nextSample += 1 / fps;
+    }
+    y += velocity(t) / fine;
+  }
+  return points;
+}
+
+describe('proposePhases — a competition clip with five seconds of set-up', () => {
+  // The lifter rolls the bar in and lifts it a centimetre to set the back at
+  // 0,5 s, then stands still until the real pull begins at 1,6 s.
+  const FIDGET_END = 1.2;
+  const fidget = (t: number): number => {
+    if (t < 0.4 || t > 0.7) return 0;
+    return t < 0.5 ? 0.2 * smoothstep((t - 0.4) / 0.1) : 0.2 * (1 - smoothstep((t - 0.5) / 0.2));
+  };
+  const profile = (t: number) => (t < FIDGET_END ? fidget(t) : velocityAt(t - FIDGET_END));
+  const fidgety = computeKinematics(liftFrom(profile, FIDGET_END + 2.3), cal, { massKg: 100 })!;
+  const { boundaries, fullyDetected } = proposePhases(fidgety);
+  const at = (rule: string) => boundaries.find(b => b.rule === rule)!.t;
+
+  it('does not mistake the fidget for lift-off', () => {
+    expect(at('liftoff')).toBeGreaterThan(FIDGET_END + 0.4);
+    expect(at('liftoff')).toBeLessThan(FIDGET_END + 0.62);
+  });
+
+  it('still finds the double knee bend inside the real pull', () => {
+    expect(fullyDetected).toBe(true);
+    expect(at('first-velocity-peak')).toBeCloseTo(FIDGET_END + 0.8, 1);
+    expect(at('velocity-trough')).toBeCloseTo(FIDGET_END + 1.0, 1);
+  });
+});
+
+describe('proposePhases — a clip that runs on through the recovery', () => {
+  // After the catch the lifter stands up with the bar, which takes it higher
+  // than the top of the flight ever was.
+  const RECOVER: Array<[t: number, v: number]> = [
+    [2.3, 0],
+    [2.6, 0.5],
+    [2.9, 0],
+    [3.3, 0],
+  ];
+  const profile = (t: number): number => {
+    if (t <= 2.3) return velocityAt(t);
+    for (let i = 1; i < RECOVER.length; i++) {
+      const [t0, v0] = RECOVER[i - 1];
+      const [t1, v1] = RECOVER[i];
+      if (t <= t1) return v0 + (v1 - v0) * smoothstep((t - t0) / (t1 - t0));
+    }
+    return 0;
+  };
+  const withRecovery = computeKinematics(liftFrom(profile, 3.3), cal, { massKg: 100 })!;
+  const { boundaries } = proposePhases(withRecovery);
+  const at = (rule: string) => boundaries.find(b => b.rule === rule)!.t;
+
+  it('puts the apex at the top of the flight, not at the lock-out', () => {
+    expect(at('apex')).toBeCloseTo(1.5, 1);
+  });
+
+  it('and so gives the catch its real span', () => {
+    expect(at('settle')).toBeCloseTo(1.9, 0);
+    expect(at('settle') - at('apex')).toBeGreaterThan(0.2);
+  });
+});

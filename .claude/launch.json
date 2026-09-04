@@ -40,6 +40,12 @@
       "port": 5244
     },
     {
+      "name": "kinemos-bench",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5299", "--strictPort", "--config", "verify/vite.bench.config.ts"],
+      "port": 5299
+    },
+    {
       "name": "kinemos-worker",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["wrangler", "dev", "--port", "8787"],
