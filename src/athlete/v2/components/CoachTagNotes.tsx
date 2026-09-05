@@ -1,7 +1,7 @@
 /**
  * CoachTagNotes — the coach's comments about ONE exercise, under its card.
  *
- * A coach reviewing the session tags a comment to a row (`@Snatch keep the
+ * A coach reviewing the session tags a comment to a row (`#Snatch keep the
  * bar closer`). The full thread still shows it under "Session messages" at
  * the bottom of the day; this puts the same comment where the athlete is
  * looking — right beneath the exercise it names — so the note is read

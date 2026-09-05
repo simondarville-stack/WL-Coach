@@ -66,7 +66,7 @@ export function LogExerciseRow({
 }: LogExerciseRowProps) {
   const videos = logged?.videos ?? [];
   // Legacy exercise-scoped rows (exercise_id) plus session comments tagged
-  // to this row from the review reel (`@Snatch …`) — both are "about" it.
+  // to this row from the review reel (`#Snatch …`) — both are "about" it.
   const exerciseMessages = logged
     ? (messages ?? []).filter(
         m => m.exercise_id === logged.log.id || isTaggedToExercise(m, logged.log.id),

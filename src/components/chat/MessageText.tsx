@@ -1,12 +1,12 @@
 /**
  * MessageText — a message body with its tags drawn as chips.
  *
- * The text is stored plain, `@Snatch looked slow on set 3`, and the row
- * carries the structure behind each `@Label` token (src/lib/messageTags.ts).
- * This draws the tokens as chips where they sit in the sentence, and a tag
- * whose token is not in the text (a legacy `📹 Snatch:` clip comment, an
- * edited message) as a chip row in front of it. Untagged messages render as
- * the bare string — no wrapper, no cost.
+ * The text is stored plain, `#Snatch/3 bar drifted`, and the row carries the
+ * structure behind each `#Label` token (src/lib/messageTags.ts). This draws
+ * the tokens as chips where they sit in the sentence, and a tag whose token
+ * is not in the text (an edited message, a row tagged some other way) as a
+ * chip row in front of it. Untagged messages render as the bare string — no
+ * wrapper, no cost.
  *
  * One renderer for every thread surface — the athlete app, the coach inbox,
  * the field app, log mode, the review reel — so a tag looks the same
@@ -16,7 +16,7 @@
  */
 import { Fragment } from 'react';
 import type { MessageTag } from '../../lib/database.types';
-import { splitMessageByTags, tagId, tagsInText } from '../../lib/messageTags';
+import { splitMessageByTags, tagId, tagToken, tagsInText } from '../../lib/messageTags';
 
 export type MessageTextVariant =
   /** Sitting on the accent-coloured "own message" bubble. */
@@ -38,20 +38,21 @@ const CHIP_VALUE: Record<MessageTextVariant, string> = {
   light: 'text-[color:var(--color-accent-hover)] opacity-75',
 };
 
+function chipTitle(tag: MessageTag): string {
+  if (tag.kind === 'exercise') {
+    return tag.setNumber != null ? `About ${tag.label}, set ${tag.setNumber}` : `About ${tag.label}`;
+  }
+  return tag.value ? `${tag.label} was ${tag.value} when this was written` : `About ${tag.label}`;
+}
+
 export function TagChip({ tag, variant }: { tag: MessageTag; variant: MessageTextVariant }) {
   const value = tag.kind === 'metric' ? tag.value : null;
   return (
     <span
       className={`inline-flex items-baseline gap-1 rounded px-1 py-px font-medium leading-tight align-baseline whitespace-nowrap ${CHIP[variant]}`}
-      title={
-        tag.kind === 'exercise'
-          ? `About ${tag.label}`
-          : value
-            ? `${tag.label} was ${value} when this was written`
-            : `About ${tag.label}`
-      }
+      title={chipTitle(tag)}
     >
-      @{tag.label}
+      {tagToken(tag)}
       {value && <span className={`font-normal ${CHIP_VALUE[variant]}`}>{value}</span>}
     </span>
   );

@@ -1516,7 +1516,7 @@ export interface AddCommentArgs {
    *  it, multi-coach threads collapse to "Coach" with no disambiguation. */
   senderCoachId?: string | null;
   /** What the comment is about — the exercises / metrics the sender tagged
-   *  (see MessageTag). The text already carries them as `@Label` tokens;
+   *  (see MessageTag). The text already carries them as `#Label` tokens;
    *  this is the structure behind those tokens. Omit for an untagged send. */
   tags?: MessageTag[];
 }
@@ -1553,7 +1553,7 @@ export async function addComment(args: AddCommentArgs): Promise<TrainingLogMessa
     .single();
   if (error && tags.length > 0 && isMissingColumnError(error, 'tags')) {
     // Migration 20260905090000 not applied yet: the comment still lands,
-    // readable, because the text carries the `@Label` tokens — only the
+    // readable, because the text carries the `#Label` tokens — only the
     // structured tag is lost. Loud in the console so it gets applied.
     console.warn(
       '[trainingLogService] training_log_messages.tags is missing — apply migration 20260905090000_training_log_message_tags.sql. Sent the comment untagged.',

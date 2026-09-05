@@ -1,22 +1,28 @@
 /**
- * TagComposer — the review card's comment box, with `@` tagging.
+ * TagComposer — the review card's comment box, with `#` tagging.
  *
  * A coach reading a training log wants to say "the snatch was slow, the
  * bodyweight is fine" without writing the words "the snatch" and hoping the
- * athlete reads them against the right row. So: type `@` and the card's
- * exercises and metrics come up; pick one and `@Snatch ` lands in the text.
- * Tapping an exercise row or a metric chip on the card does the same through
- * `insertTarget`, which is the one-thumb path on the coach mobile app.
+ * athlete reads them against the right row. So: type `#` and the card's
+ * exercises and metrics come up; pick one and `#Snatch ` lands in the text.
+ * Tapping an exercise row, a set column or a metric chip on the card does
+ * the same through `insertTag`, which is the one-thumb path on the coach
+ * mobile app.
+ *
+ * A set is a path under its exercise: `#Snatch/` lists the logged sets,
+ * `#Snatch/3` names one. In the picker, → on an exercise row (or its ›)
+ * drills into its sets and ← comes back out; the whole exercise stays the
+ * first row, so the set is optional.
  *
  * The text is the source of truth. The chips above the box mirror the
  * tokens in it (src/lib/messageTags.ts owns the grammar); delete a token and
  * its chip goes, tap a chip's × and its token goes. What is sent is the text
  * plus the tags whose tokens are still in it.
  *
- * Keys: ↑/↓ walk the picker, Enter/Tab pick, Esc closes it; with the picker
- * closed Enter sends and Shift+Enter breaks a line — the same as the input it
- * replaces. The reel's own ↑/↓ and 1–9 shortcuts ignore keystrokes in a
- * textarea, so nothing here fights them.
+ * Keys: ↑/↓ walk the picker, Enter/Tab pick, → / ← drill in and out, Esc
+ * closes it; with the picker closed Enter sends and Shift+Enter breaks a
+ * line — the same as the input it replaces. The reel's own ↑/↓ and 1–9
+ * shortcuts ignore keystrokes in a textarea, so nothing here fights them.
  */
 import {
   forwardRef,
@@ -29,35 +35,47 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { Activity, AtSign, Dumbbell, X } from 'lucide-react';
+import { Activity, ChevronRight, Dumbbell, Hash, Layers, X } from 'lucide-react';
 import type { MessageTag } from '../../lib/database.types';
 import {
-  filterTagTargets,
+  TAG_PREFIX,
+  expandTagCandidates,
   insertMention,
   mentionQueryAt,
+  parseMentionPath,
+  pickerRows,
   removeMention,
+  replaceRange,
   tagId,
+  tagToken,
   tagsInText,
+  type PickerRow,
   type TagTarget,
 } from '../../lib/messageTags';
 import { AutoGrowTextarea } from '../ui';
 
 export interface TagComposerHandle {
-  /** Put a target's token into the draft at the caret (or the end) and focus. */
-  insertTarget: (target: TagTarget) => void;
+  /** Put a tag's token into the draft at the caret (or the end) and focus. */
+  insertTag: (tag: MessageTag) => void;
   focus: () => void;
 }
 
 interface TagComposerProps {
   value: string;
   onChange: (text: string) => void;
-  /** What `@` can resolve to on this card. Empty = a plain textarea. */
+  /** What `#` can resolve to on this card. Empty = a plain textarea. */
   targets: TagTarget[];
   placeholder: string;
   disabled?: boolean;
   /** Enter (without Shift) — the caller decides whether the draft sends. */
   onSubmit: () => void;
 }
+
+const ROW_ICON = {
+  exercise: Dumbbell,
+  set: Layers,
+  metric: Activity,
+} as const;
 
 export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(function TagComposer(
   { value, onChange, targets, placeholder, disabled = false, onSubmit },
@@ -67,20 +85,20 @@ export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(funct
   const listRef = useRef<HTMLDivElement | null>(null);
   /** Caret to place once the controlled value has been re-rendered. */
   const pendingCaret = useRef<number | null>(null);
-  /** The `@` position of a mention the coach picked or dismissed — the
+  /** The `#` position of a mention the coach picked or dismissed — the
    *  picker stays shut for that mention until the caret leaves it. */
   const dismissedStart = useRef<number | null>(null);
 
   const [query, setQuery] = useState<{ start: number; text: string } | null>(null);
   const [index, setIndex] = useState(0);
 
-  const allTags = useMemo(() => targets.map(t => t.tag), [targets]);
+  const allTags = useMemo(() => expandTagCandidates(targets), [targets]);
   const armed = useMemo(() => tagsInText(value, allTags), [value, allTags]);
-  const matches = useMemo(
-    () => (query ? filterTagTargets(targets, query.text) : []),
+  const rows = useMemo<PickerRow[]>(
+    () => (query ? pickerRows(targets, query.text) : []),
     [targets, query],
   );
-  const open = query != null && matches.length > 0;
+  const open = query != null && rows.length > 0;
 
   useLayoutEffect(() => {
     const caret = pendingCaret.current;
@@ -121,8 +139,8 @@ export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(funct
   );
 
   const applyInsert = useCallback(
-    (start: number, end: number, target: TagTarget) => {
-      const next = insertMention(value, start, end, target.tag);
+    (start: number, end: number, tag: MessageTag) => {
+      const next = insertMention(value, start, end, tag);
       pendingCaret.current = next.caret;
       dismissedStart.current = start;
       setQuery(null);
@@ -132,22 +150,42 @@ export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(funct
     [value, onChange],
   );
 
+  const caretNow = () => textareaRef.current?.selectionStart ?? value.length;
+
   const pick = useCallback(
-    (target: TagTarget) => {
+    (row: PickerRow) => {
       if (!query) return;
-      const caret = textareaRef.current?.selectionStart ?? value.length;
-      applyInsert(query.start, caret, target);
+      applyInsert(query.start, caretNow(), row.tag);
     },
-    [query, value.length, applyInsert],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- caretNow reads a ref
+    [query, applyInsert],
   );
+
+  /** Rewrite the mention being typed to `#Label/` so the sets list, or back
+   *  to `#Label` to leave it. The query re-derives from the new text. */
+  const rewriteMention = useCallback(
+    (raw: string) => {
+      if (!query) return;
+      const next = replaceRange(value, query.start, caretNow(), raw);
+      pendingCaret.current = next.caret;
+      dismissedStart.current = null;
+      onChange(next.text);
+      setQuery({ start: query.start, text: raw.slice(1) });
+      setIndex(0);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- caretNow reads a ref
+    [query, value, onChange],
+  );
+
+  const drillInto = (row: PickerRow) => rewriteMention(`${TAG_PREFIX}${row.tag.label}/`);
 
   useImperativeHandle(
     ref,
     () => ({
-      insertTarget: target => {
+      insertTag: tag => {
         const el = textareaRef.current;
         const caret = el && document.activeElement === el ? el.selectionStart : value.length;
-        applyInsert(caret, caret, target);
+        applyInsert(caret, caret, tag);
       },
       focus: () => textareaRef.current?.focus(),
     }),
@@ -156,19 +194,31 @@ export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(funct
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (open) {
+      const active = rows[Math.min(index, rows.length - 1)];
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setIndex(i => (i + 1) % matches.length);
+        setIndex(i => (i + 1) % rows.length);
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setIndex(i => (i - 1 + matches.length) % matches.length);
+        setIndex(i => (i - 1 + rows.length) % rows.length);
+        return;
+      }
+      if (e.key === 'ArrowRight' && active.drillable) {
+        e.preventDefault();
+        drillInto(active);
+        return;
+      }
+      if (e.key === 'ArrowLeft' && query && parseMentionPath(query.text).set === '') {
+        // Right after the `/`: back out to the exercise list.
+        e.preventDefault();
+        rewriteMention(`${TAG_PREFIX}${parseMentionPath(query.text).exercise}`);
         return;
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        pick(matches[Math.min(index, matches.length - 1)]);
+        pick(active);
         return;
       }
       if (e.key === 'Escape') {
@@ -185,17 +235,17 @@ export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(funct
   };
 
   const remove = (tag: MessageTag) => {
-    onChange(removeMention(value, tag));
+    onChange(removeMention(value, tag, allTags));
     textareaRef.current?.focus();
   };
 
-  /** The `@` button: start a mention at the caret so the whole list shows. */
+  /** The `#` button: start a mention at the caret so the whole list shows. */
   const openPicker = () => {
     const el = textareaRef.current;
     const caret = el && document.activeElement === el ? el.selectionStart : value.length;
     const before = value.slice(0, caret);
     const lead = before !== '' && !/\s$/.test(before) ? ' ' : '';
-    const next = `${before}${lead}@${value.slice(caret)}`;
+    const next = `${before}${lead}${TAG_PREFIX}${value.slice(caret)}`;
     const at = before.length + lead.length + 1;
     pendingCaret.current = at;
     dismissedStart.current = null;
@@ -214,12 +264,12 @@ export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(funct
               key={tagId(tag)}
               className="inline-flex items-center gap-0.5 rounded-full bg-sky-400/20 text-sky-100 text-[11px] font-medium pl-2 pr-1 py-0.5"
             >
-              @{tag.label}
+              {tagToken(tag)}
               <button
                 type="button"
                 onClick={() => remove(tag)}
-                title={`Remove @${tag.label}`}
-                aria-label={`Remove @${tag.label}`}
+                title={`Remove ${tagToken(tag)}`}
+                aria-label={`Remove ${tagToken(tag)}`}
                 className="rounded-full p-0.5 hover:bg-white/20"
               >
                 <X size={10} />
@@ -232,37 +282,50 @@ export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(funct
         <div
           ref={listRef}
           role="listbox"
-          aria-label="Tag an exercise or metric"
+          aria-label="Tag an exercise, a set or a metric"
           className="absolute bottom-full left-0 right-0 mb-1 z-20 max-h-48 overflow-y-auto rounded-xl bg-neutral-900 border border-white/15 shadow-xl py-1"
         >
-          {matches.map((t, i) => (
-            <button
-              key={tagId(t.tag)}
-              type="button"
-              role="option"
-              aria-selected={i === index}
-              // mousedown would blur the textarea and close the picker before
-              // the click landed.
-              onMouseDown={e => e.preventDefault()}
-              onMouseEnter={() => setIndex(i)}
-              onClick={() => pick(t)}
-              className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs ${
-                i === index ? 'bg-white/15 text-white' : 'text-white/85 hover:bg-white/10'
-              }`}
-            >
-              {t.tag.kind === 'exercise' ? (
-                <Dumbbell size={12} className="shrink-0 text-white/50" aria-hidden />
-              ) : (
-                <Activity size={12} className="shrink-0 text-white/50" aria-hidden />
-              )}
-              <span className="truncate font-medium">{t.tag.label}</span>
-              {t.hint && (
-                <span className="ml-auto shrink-0 text-[11px] text-white/45 tabular-nums truncate max-w-[45%]">
-                  {t.hint}
-                </span>
-              )}
-            </button>
-          ))}
+          {rows.map((row, i) => {
+            const Icon = ROW_ICON[row.icon];
+            return (
+              <div
+                key={tagId(row.tag)}
+                role="option"
+                aria-selected={i === index}
+                // mousedown would blur the textarea and close the picker
+                // before the click landed.
+                onMouseDown={e => e.preventDefault()}
+                onMouseEnter={() => setIndex(i)}
+                onClick={() => pick(row)}
+                className={`flex items-center gap-2 px-2.5 py-1.5 text-left text-xs cursor-pointer ${
+                  i === index ? 'bg-white/15 text-white' : 'text-white/85 hover:bg-white/10'
+                }`}
+              >
+                <Icon size={12} className="shrink-0 text-white/50" aria-hidden />
+                <span className="truncate font-medium">{row.label}</span>
+                {row.hint && (
+                  <span className="ml-auto shrink-0 text-[11px] text-white/45 tabular-nums truncate max-w-[45%]">
+                    {row.hint}
+                  </span>
+                )}
+                {row.drillable && (
+                  <button
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={e => {
+                      e.stopPropagation();
+                      drillInto(row);
+                    }}
+                    title={`Sets of ${row.label} (→)`}
+                    aria-label={`Sets of ${row.label}`}
+                    className={`shrink-0 rounded p-0.5 text-white/60 hover:bg-white/20 hover:text-white ${row.hint ? '' : 'ml-auto'}`}
+                  >
+                    <ChevronRight size={12} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="flex items-end gap-1">
@@ -288,11 +351,11 @@ export const TagComposer = forwardRef<TagComposerHandle, TagComposerProps>(funct
             type="button"
             onClick={openPicker}
             disabled={disabled}
-            title="Tag an exercise or metric (or type @)"
-            aria-label="Tag an exercise or metric"
+            title="Tag an exercise, a set or a metric (or type #)"
+            aria-label="Tag an exercise, a set or a metric"
             className="h-9 w-9 shrink-0 rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white flex items-center justify-center disabled:opacity-40"
           >
-            <AtSign size={15} />
+            <Hash size={15} />
           </button>
         )}
       </div>

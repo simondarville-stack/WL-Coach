@@ -15,7 +15,7 @@ import { forwardRef, useLayoutEffect, useRef, type TextareaHTMLAttributes } from
  * past the cap is still reachable.
  *
  * Forwards its ref: a caller that needs the caret (the review composer's
- * `@` picker) or wants to focus the box gets the element itself.
+ * `#` picker) or wants to focus the box gets the element itself.
  */
 export const AutoGrowTextarea = forwardRef<
   HTMLTextAreaElement,

@@ -778,14 +778,16 @@ export interface CoachThreadRead {
 
 /**
  * What a message is *about*, when the sender tagged something on the
- * session it hangs off — one exercise the athlete logged, or one metric
- * they entered (bodyweight, RAW, VAS, a custom metric, session RPE…).
+ * session it hangs off — one exercise the athlete logged (optionally one
+ * set of it), or one metric they entered (bodyweight, RAW, VAS, a custom
+ * metric, session RPE…).
  *
- * The message text stays plain and carries the same tag as an `@Label`
- * token (`@Snatch looked slow on set 3`), so a surface that knows nothing
- * about tags still reads correctly; tag-aware surfaces highlight the token
- * and file the comment under the thing it names. `label` is frozen at send
- * time: renaming the exercise later must not orphan the token in the text.
+ * The message text stays plain and carries the same tag as a `#Label`
+ * token — a set as a path, `#Snatch/3 bar drifted` — so a surface that
+ * knows nothing about tags still reads correctly; tag-aware surfaces
+ * highlight the token and file the comment under the thing it names.
+ * `label` is frozen at send time: renaming the exercise later must not
+ * orphan the token in the text. The grammar lives in src/lib/messageTags.ts.
  */
 export type MessageTag =
   | {
@@ -793,6 +795,8 @@ export type MessageTag =
       /** training_log_exercises.id — the logged row, not the catalogue id. */
       logExerciseId: string;
       label: string;
+      /** training_log_sets.set_number when the comment is about one set. */
+      setNumber?: number;
     }
   | {
       kind: 'metric';

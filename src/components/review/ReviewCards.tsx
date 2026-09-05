@@ -8,9 +8,11 @@
  *
  * Every card carries a ComposeBar: quick-reaction chips + a comment box that
  * posts into the existing athlete-visible message thread. On a session card
- * the box tags: `@` lists the session's exercises and metrics, and tapping a
- * row or a metric chip on the card puts its tag into the draft, so one
- * comment per aspect of the session costs a tap and a few words.
+ * the box tags: `#` lists the session's exercises (and, under each, its
+ * sets) and metrics, and tapping a row, a set column or a metric chip on
+ * the card puts its tag into the draft, so one comment per aspect of the
+ * session costs a tap and a few words. A session-bound thread card offers
+ * the same picker for its reply.
  */
 import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import {
@@ -32,9 +34,11 @@ import type {
   ReviewVideoItem,
 } from '../../lib/reviewFeedService';
 import {
+  expandTagCandidates,
   isOnlyTags,
   sessionTagTargets,
   tagId,
+  tagToken,
   tagsInText,
   type TagTarget,
 } from '../../lib/messageTags';
@@ -114,7 +118,7 @@ function SeenDot({ seen }: { seen: boolean }) {
 
 interface ComposeBarProps {
   placeholder: string;
-  /** The text as typed plus the tags whose `@Label` tokens are in it. */
+  /** The text as typed plus the tags whose `#Label` tokens are in it. */
   onSend: (text: string, tags: MessageTag[]) => Promise<void>;
   /** The coach's quick-reaction chips (Settings → Review). Empty = no chip
    *  row — a coach may deliberately run without reactions. */
@@ -124,7 +128,7 @@ interface ComposeBarProps {
   /** Sends made outside this bar (keyboard quick reactions) — shown in the
    *  same "Sent:" confirmation list so the feedback lands on the card. */
   externalSent?: string[];
-  /** What `@` resolves to on this card — the session's exercises and
+  /** What `#` resolves to on this card — the session's exercises and
    *  metrics. Omit for a plain comment box. */
   targets?: TagTarget[];
   /** Lets the card itself put a tag into the draft (tap an exercise row). */
@@ -144,7 +148,8 @@ function ComposeBar({
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const allTags = useMemo(() => targets.map(t => t.tag), [targets]);
+  // Every token the draft can hold: each exercise whole and per set, each metric.
+  const allTags = useMemo(() => expandTagCandidates(targets), [targets]);
 
   /** `consumesDraft`: the send used the typed text, so clear the box. A
    *  bare reaction leaves whatever the coach was writing alone. */
@@ -165,7 +170,7 @@ function ComposeBar({
   };
 
   // A reaction carries whatever the coach has armed and not written about
-  // yet: tap the snatch row, tap 👍, and "@Snatch 👍" goes out. Once there
+  // yet: tap the snatch row, tap 👍, and "#Snatch 👍" goes out. Once there
   // are words in the box a reaction is its own one-tap send, as before.
   const react = (reaction: string) => {
     const armed = isOnlyTags(text, allTags);
@@ -474,7 +479,9 @@ interface ThreadCardProps {
   item: ReviewThreadItem;
   athlete: Athlete | undefined;
   seen: boolean;
-  onReply: (text: string) => Promise<void>;
+  /** The reply plus the tags it carries (exercises / sets / metrics of the
+   *  session behind the thread; always empty on the general thread). */
+  onReply: (text: string, tags: MessageTag[]) => Promise<void>;
   /** Open the session this thread hangs off. Null for the general
    *  (no-session) athlete↔coach thread. */
   onOpenSession?: (() => void) | null;
@@ -484,6 +491,14 @@ export function ThreadCard({ item, athlete, seen, onReply, onOpenSession }: Thre
   const context = item.sessionId
     ? `Session ${item.sessionDate ? formatDateShort(item.sessionDate) : ''}`.trim()
     : 'Direct message';
+  // A session-bound thread offers the same picker as the session card: the
+  // athlete asked "was the snatch meant to be 80%?", the reply tags the row.
+  // The card has no rows to tap, so a strip of chips stands in for them.
+  const targets = useMemo(
+    () => (item.tagSource ? sessionTagTargets(item.tagSource) : []),
+    [item],
+  );
+  const composerRef = useRef<TagComposerHandle>(null);
   return (
     <CardFrame
       athlete={athlete}
@@ -491,7 +506,34 @@ export function ThreadCard({ item, athlete, seen, onReply, onOpenSession }: Thre
       seen={seen}
       onOpenSession={onOpenSession}
       kindIcon={<MessageCircle size={16} />}
-      composer={{ placeholder: 'Reply…', onSend: text => onReply(text), showReactions: false }}
+      composer={{
+        placeholder: targets.length > 0 ? 'Reply… # tags an exercise, set or metric' : 'Reply…',
+        onSend: onReply,
+        showReactions: false,
+        targets,
+        composerRef,
+      }}
+      accessory={
+        targets.length > 0 ? (
+          <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-0.5">
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-white/40 mr-0.5">Tag</span>
+            {targets.map(t => (
+              <button
+                key={tagId(t.tag)}
+                type="button"
+                onClick={() => composerRef.current?.insertTag(t.tag)}
+                title={`Tag ${tagToken(t.tag)} in your reply${t.sets ? ' — type / after it for a set' : ''}`}
+                className="shrink-0 rounded-full bg-white/10 hover:bg-white/20 text-white/85 text-[11px] px-2 py-0.5 whitespace-nowrap"
+              >
+                {t.tag.label}
+                {t.tag.kind === 'metric' && t.tag.value && (
+                  <span className="text-white/50 tabular-nums"> {t.tag.value}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : null
+      }
     >
       <div className="h-full rounded-2xl bg-white/[0.06] border border-white/10 p-3 overflow-y-auto">
         <div className="text-[11px] uppercase tracking-wide text-white/40 mb-2">
@@ -575,18 +617,30 @@ export function SessionCard({
   const s = item.session;
 
   // Everything on this card the coach can tag — one list, the same one the
-  // composer's `@` picker shows, so a tap on the card and a pick from the
+  // composer's `#` picker shows, so a tap on the card and a pick from the
   // list produce the identical token.
   const targets = useMemo(() => sessionTagTargets(item), [item]);
   const targetById = useMemo(() => new Map(targets.map(t => [tagId(t.tag), t])), [targets]);
   const composerRef = useRef<TagComposerHandle>(null);
   const tagIt = (id: string) => {
     const target = targetById.get(id);
-    if (target) composerRef.current?.insertTarget(target);
+    if (target) composerRef.current?.insertTag(target.tag);
   };
-  const tagTitle = (id: string) => {
-    const label = targetById.get(id)?.tag.label;
-    return label ? `Tag @${label} in your comment` : undefined;
+  /** One set of an exercise: `#Snatch/3`. */
+  const tagSet = (logExerciseId: string, setNumber: number) => {
+    const target = targetById.get(`exercise:${logExerciseId}`);
+    if (target?.tag.kind === 'exercise') {
+      composerRef.current?.insertTag({ ...target.tag, setNumber });
+    }
+  };
+  const tagTitle = (id: string, setNumber?: number) => {
+    const target = targetById.get(id);
+    if (!target) return undefined;
+    const token =
+      setNumber != null && target.tag.kind === 'exercise'
+        ? tagToken({ ...target.tag, setNumber })
+        : tagToken(target.tag);
+    return `Tag ${token} in your comment`;
   };
 
   return (
@@ -597,7 +651,7 @@ export function SessionCard({
       onOpenSession={onOpenSession}
       kindIcon={<ClipboardList size={16} />}
       composer={{
-        placeholder: targets.length > 0 ? 'Comment… @ tags an exercise or metric' : 'Comment on this session…',
+        placeholder: targets.length > 0 ? 'Comment… # tags an exercise, set or metric' : 'Comment on this session…',
         onSend: onComment,
         reactions,
         externalSent,
@@ -674,7 +728,7 @@ export function SessionCard({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    {/* The name IS the tag: tap it and `@Snatch ` lands in
+                    {/* The name IS the tag: tap it and `#Snatch ` lands in
                         the comment box below. */}
                     <button
                       type="button"
@@ -717,8 +771,19 @@ export function SessionCard({
                   {ex.gpp ? (
                     <GppStack gpp={ex.gpp} />
                   ) : performedSets.length > 0 ? (
+                    // Each set column is a tap away from `#Snatch/3`.
                     <div className="mt-0.5">
-                      <LoggedStackedNotation sets={ex.sets} />
+                      <LoggedStackedNotation
+                        sets={ex.sets}
+                        onSetTap={s => {
+                          const full = ex.sets.find(x => x.id === s.id);
+                          if (full) tagSet(ex.id, full.set_number);
+                        }}
+                        setTapTitle={s => {
+                          const full = ex.sets.find(x => x.id === s.id);
+                          return (full && tagTitle(`exercise:${ex.id}`, full.set_number)) ?? s.status;
+                        }}
+                      />
                     </div>
                   ) : ex.performedRaw.trim() !== '' ? (
                     <div className="mt-0.5">

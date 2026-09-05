@@ -6,9 +6,12 @@
 -- The tag rides on the message row as a jsonb array (`tags`), shape
 -- `MessageTag` in src/lib/database.types.ts:
 --   {"kind":"exercise","logExerciseId":"<training_log_exercises.id>","label":"Snatch"}
+--   {"kind":"exercise","logExerciseId":"<...>","label":"Snatch","setNumber":3}
 --   {"kind":"metric","key":"bw","label":"BW","value":"82,5 kg"}
--- The message text carries the same tag as a plain `@Snatch` token, so the
--- row reads correctly on any surface that ignores this column.
+-- The message text carries the same tag as a plain `#Snatch` token (a set
+-- as a path, `#Snatch/3`), so the row reads correctly on any surface that
+-- ignores this column. The Analysis module joins coach comments to
+-- exercises through this column (the `coachComments` measure).
 --
 -- Why not the existing `exercise_id` column: several surfaces (the athlete
 -- Today screen, coach Log mode's session thread) hide messages whose

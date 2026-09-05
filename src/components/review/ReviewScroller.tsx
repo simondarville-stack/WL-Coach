@@ -38,7 +38,7 @@ import {
   type ReviewVideoItem,
 } from '../../lib/reviewFeedService';
 import type { MessageTag } from '../../lib/database.types';
-import { sanitizeLabel } from '../../lib/messageTags';
+import { sanitizeLabel, tagToken } from '../../lib/messageTags';
 import {
   addComment,
   markLogVideoReviewed,
@@ -412,8 +412,9 @@ export function ReviewScroller() {
     [activeCoachId, markSeen],
   );
 
-  // A clip comment is always about the clip's exercise: the text keeps the
-  // `📹 @Snatch:` prefix it always had (now as a tag token) and the row
+  // A clip comment is always about the clip's exercise — and the set it was
+  // filmed on, when the athlete attached it to one: the text keeps the
+  // `📹 #Snatch/3:` prefix it always had (now as a tag token) and the row
   // carries the tag, so the athlete finds it under that exercise too.
   const commentOnVideo = useCallback(
     (item: ReviewVideoItem, text: string) => {
@@ -421,20 +422,27 @@ export function ReviewScroller() {
         kind: 'exercise',
         logExerciseId: item.logExerciseId,
         label: sanitizeLabel(item.exerciseName) || 'Exercise',
+        ...(item.video.set_number != null && item.video.set_number > 0
+          ? { setNumber: item.video.set_number }
+          : {}),
       };
-      return commentOnSession(item, item.sessionId, `📹 @${tag.label}: ${text}`, [tag]);
+      return commentOnSession(item, item.sessionId, `📹 ${tagToken(tag)}: ${text}`, [tag]);
     },
     [commentOnSession],
   );
 
   const replyToThread = useCallback(
-    async (item: Extract<ReviewFeedItem, { kind: 'thread' }>, text: string) => {
+    async (
+      item: Extract<ReviewFeedItem, { kind: 'thread' }>,
+      text: string,
+      tags: MessageTag[] = [],
+    ) => {
       if (item.key.startsWith(DEMO_KEY_PREFIX)) {
         await new Promise(r => setTimeout(r, 250));
         return;
       }
       if (item.sessionId) {
-        await commentOnSession(item, item.sessionId, text);
+        await commentOnSession(item, item.sessionId, text, tags);
         return;
       }
       const athlete = athleteById.get(item.athleteId);
@@ -613,7 +621,7 @@ export function ReviewScroller() {
           item={item}
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
-          onReply={text => replyToThread(item, text)}
+          onReply={(text, tags) => replyToThread(item, text, tags)}
           onOpenSession={openSessionFor(item)}
         />
       )}
