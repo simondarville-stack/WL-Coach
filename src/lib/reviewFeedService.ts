@@ -24,6 +24,7 @@ import { emitInboxChanged } from './inboxEvents';
 import { fetchByIds } from './queryPaging';
 import { METRIC_TRACKING_DEFAULTS } from './trainingLogModel';
 import { plannedRowLabel } from './plannedRowLabel';
+import { toLocalISO } from './dateUtils';
 import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
@@ -40,8 +41,18 @@ import type {
  *  disagree. COACH-CONFIG candidate. */
 export const REVIEW_SESSION_LOOKBACK_DAYS = 7;
 
+/**
+ * The training date (local YYYY-MM-DD) an instant falls on. Session windows
+ * compare against `training_log_sessions.date`, which the planner writes as
+ * a local date — slicing the UTC ISO string instead would open the window a
+ * day early for the first hours after local midnight in a UTC+ timezone.
+ */
+export function localDateOf(iso: string | number): string {
+  return toLocalISO(new Date(iso));
+}
+
 function lookbackSinceDate(lookbackDays: number): string {
-  return new Date(Date.now() - lookbackDays * 86_400_000).toISOString().slice(0, 10);
+  return localDateOf(Date.now() - lookbackDays * 86_400_000);
 }
 
 // ─── Feed item types ───────────────────────────────────────────────────────
@@ -229,36 +240,108 @@ interface SessionStub {
   day_index: number;
 }
 
-/** Keys this coach has already reviewed, as `${item_type}:${item_key}`.
- *  seen_at >= since is a safe bound: an item can't be seen before it exists,
- *  so rows older than the window can only belong to out-of-window items. */
-async function fetchSeenKeySet(ownerId: string, sinceIso: string): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('review_feed_seen')
-    .select('item_type, item_key')
-    .eq('owner_id', ownerId)
-    .gte('seen_at', sinceIso);
-  if (error) throw error;
+/** Candidate item keys per type, for the seen lookup. */
+export type SeenCandidates = Partial<Record<ReviewItemType, string[]>>;
+
+/** `.in()` list length per request — keeps the URL well under limits. */
+const SEEN_KEY_CHUNK = 150;
+
+/**
+ * Which of the candidate items THIS coach has reviewed, as
+ * `${item_type}:${item_key}`.
+ *
+ * Looked up by the candidates' own keys, never by a seen_at bound. The
+ * earlier `seen_at >= window start` shortcut assumed "an item cannot be seen
+ * before it exists", but a session's window is its training DATE (a whole
+ * day) while seen_at is an instant: a session on the boundary day, reviewed
+ * earlier in the day than the current clock time, fell out of the seen set
+ * while staying in the window and resurfaced as unseen — a fresh batch every
+ * day. Keying on the ids has no such edge, and sidesteps the 1000-row cap a
+ * wide history page could hit. Each key holds at most one row per coach
+ * (unique on owner/type/key), so chunking alone is enough — no paging.
+ */
+async function fetchSeenKeySet(
+  ownerId: string,
+  candidates: SeenCandidates,
+): Promise<Set<string>> {
   const set = new Set<string>();
-  for (const r of (data ?? []) as { item_type: string; item_key: string }[]) {
-    set.add(`${r.item_type}:${r.item_key}`);
+  const lookups: Promise<void>[] = [];
+  for (const type of Object.keys(candidates) as ReviewItemType[]) {
+    const keys = [...new Set(candidates[type] ?? [])];
+    for (let i = 0; i < keys.length; i += SEEN_KEY_CHUNK) {
+      const chunk = keys.slice(i, i + SEEN_KEY_CHUNK);
+      lookups.push(
+        (async () => {
+          const { data, error } = await supabase
+            .from('review_feed_seen')
+            .select('item_key')
+            .eq('owner_id', ownerId)
+            .eq('item_type', type)
+            .in('item_key', chunk);
+          if (error) throw error;
+          for (const r of (data ?? []) as { item_key: string }[]) {
+            set.add(`${type}:${r.item_key}`);
+          }
+        })(),
+      );
+    }
   }
+  await Promise.all(lookups);
   return set;
+}
+
+/**
+ * Group a window's athlete messages per thread. The latest message id is
+ * the thread's seen key, so a thread reappears the moment the athlete
+ * writes again. Rows must arrive ordered by created_at ascending.
+ */
+export interface ThreadCandidate {
+  threadKey: string;
+  athleteId: string;
+  sessionId: string | null;
+  latestId: string;
+  firstAt: string;
+  newCount: number;
+}
+
+export function groupThreadCandidates(
+  rows: Pick<TrainingLogMessage, 'id' | 'athlete_id' | 'session_id' | 'created_at'>[],
+): ThreadCandidate[] {
+  const byThread = new Map<string, ThreadCandidate>();
+  for (const m of rows) {
+    if (!m.athlete_id) continue;
+    const threadKey = m.session_id ? `session:${m.session_id}` : `general:${m.athlete_id}`;
+    let c = byThread.get(threadKey);
+    if (!c) {
+      c = {
+        threadKey,
+        athleteId: m.athlete_id,
+        sessionId: m.session_id,
+        latestId: m.id,
+        firstAt: m.created_at,
+        newCount: 0,
+      };
+      byThread.set(threadKey, c);
+    }
+    c.latestId = m.id; // ascending order → last write wins
+    c.newCount += 1;
+  }
+  return [...byThread.values()];
 }
 
 export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<ReviewFeedItem[]> {
   const { ownerId, athleteIds, lookbackDays, mode = 'queue' } = args;
   if (athleteIds.length === 0) return [];
-  // An item cannot be seen before it exists, so bounding the seen lookup by
-  // the window start is safe for every page — including deep history pages.
   const sinceIso =
     args.windowFromIso ?? new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
-  const sinceDate = sinceIso.slice(0, 10);
+  // Sessions window on their local training date; both edges are derived the
+  // same way so history pages keep tiling without gap or overlap.
+  const sinceDate = localDateOf(sinceIso);
   const untilIso = args.windowToIso ?? null;
-  const untilDate = untilIso?.slice(0, 10) ?? null;
+  const untilDate = untilIso ? localDateOf(untilIso) : null;
 
-  // The three sources + this coach's seen set are independent — concurrent.
-  const [videoRowsAll, messageRows, sessionRowsAll, seen] = await Promise.all([
+  // The three sources are independent — concurrent.
+  const [videoRowsAll, messageRows, sessionRowsAll] = await Promise.all([
     (async () => {
       let q = supabase
         .from('training_log_videos')
@@ -295,8 +378,17 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       if (error) throw error;
       return (data ?? []) as TrainingLogSession[];
     })(),
-    fetchSeenKeySet(ownerId, sinceIso),
   ]);
+
+  // Threads are keyed by their latest athlete message in the window.
+  const allThreadCandidates = groupThreadCandidates(messageRows);
+
+  // This coach's seen rows for exactly these candidates.
+  const seen = await fetchSeenKeySet(ownerId, {
+    video: videoRowsAll.map(v => v.id),
+    session: sessionRowsAll.map(s => s.id),
+    thread: allThreadCandidates.map(c => c.latestId),
+  });
 
   // Per-coach filtering: the queue drops what THIS coach has reviewed
   // (another coach's review never removes an item — that is the whole
@@ -304,6 +396,9 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
   const keep = (isSeen: boolean) => (mode === 'history' ? isSeen : !isSeen);
   const videoRows = videoRowsAll.filter(v => keep(seen.has(`video:${v.id}`)));
   const sessionRows = sessionRowsAll.filter(s => keep(seen.has(`session:${s.id}`)));
+  const threadCandidates = allThreadCandidates.filter(c =>
+    keep(seen.has(`thread:${c.latestId}`)),
+  );
 
   // ── Secondary lookups ────────────────────────────────────────────────────
 
@@ -459,40 +554,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     for (const row of rows) exerciseNameById.set(row.id, row.name);
   }
 
-  // ── Threads: candidates, per-coach filtering, context ────────────────────
-
-  // Group the window's athlete messages per thread; the latest message id is
-  // the seen key, so a thread reappears the moment the athlete writes again.
-  interface ThreadCandidate {
-    threadKey: string;
-    athleteId: string;
-    sessionId: string | null;
-    latestId: string;
-    firstAt: string;
-    newCount: number;
-  }
-  const candidateByThread = new Map<string, ThreadCandidate>();
-  for (const m of messageRows) {
-    if (!m.athlete_id) continue;
-    const threadKey = m.session_id ? `session:${m.session_id}` : `general:${m.athlete_id}`;
-    let c = candidateByThread.get(threadKey);
-    if (!c) {
-      c = {
-        threadKey,
-        athleteId: m.athlete_id,
-        sessionId: m.session_id,
-        latestId: m.id,
-        firstAt: m.created_at,
-        newCount: 0,
-      };
-      candidateByThread.set(threadKey, c);
-    }
-    c.latestId = m.id; // messageRows are ordered ascending
-    c.newCount += 1;
-  }
-  const threadCandidates = [...candidateByThread.values()].filter(c =>
-    keep(seen.has(`thread:${c.latestId}`)),
-  );
+  // ── Threads: context for the surviving candidates ────────────────────────
 
   // Thread context (both parties, every coach) for the surviving threads,
   // and existing coach comments for the surviving session cards.
@@ -1017,7 +1079,7 @@ export async function fetchReviewFeedCounts(
   const sinceDate = lookbackSinceDate(lookbackDays);
   const sinceIso = new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
 
-  const [videoIds, threadRows, sessionIds, seen] = await Promise.all([
+  const [videoIds, threadRows, sessionIds] = await Promise.all([
     (async () => {
       const { data, error } = await supabase
         .from('training_log_videos')
@@ -1037,7 +1099,10 @@ export async function fetchReviewFeedCounts(
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as { id: string; session_id: string | null; athlete_id: string | null }[];
+      return (data ?? []) as Pick<
+        TrainingLogMessage,
+        'id' | 'session_id' | 'athlete_id' | 'created_at'
+      >[];
     })(),
     (async () => {
       const { data, error } = await supabase
@@ -1049,20 +1114,19 @@ export async function fetchReviewFeedCounts(
       if (error) throw error;
       return ((data ?? []) as { id: string }[]).map(r => r.id);
     })(),
-    fetchSeenKeySet(ownerId, sinceIso),
   ]);
 
   // Threads count by their latest athlete message id — same rule as the feed.
-  const latestByThread = new Map<string, string>();
-  for (const r of threadRows) {
-    if (!r.athlete_id) continue;
-    const key = r.session_id ? `session:${r.session_id}` : `general:${r.athlete_id}`;
-    latestByThread.set(key, r.id); // ascending order → last write wins
-  }
+  const threadIds = groupThreadCandidates(threadRows).map(c => c.latestId);
+  const seen = await fetchSeenKeySet(ownerId, {
+    video: videoIds,
+    session: sessionIds,
+    thread: threadIds,
+  });
 
   const videos = videoIds.filter(id => !seen.has(`video:${id}`)).length;
   const sessions = sessionIds.filter(id => !seen.has(`session:${id}`)).length;
-  const threads = [...latestByThread.values()].filter(id => !seen.has(`thread:${id}`)).length;
+  const threads = threadIds.filter(id => !seen.has(`thread:${id}`)).length;
   return { videos, threads, sessions, total: videos + threads + sessions };
 }
 
@@ -1087,20 +1151,15 @@ export async function fetchReviewStatusByAthlete(
   lookbackDays: number = REVIEW_SESSION_LOOKBACK_DAYS,
 ): Promise<AthleteReviewStatus[]> {
   if (athleteIds.length === 0) return [];
-  const sinceIso = new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
-  const [rows, seen] = await Promise.all([
-    (async () => {
-      const { data, error } = await supabase
-        .from('training_log_sessions')
-        .select('id, athlete_id')
-        .eq('status', 'completed')
-        .in('athlete_id', athleteIds)
-        .gte('date', lookbackSinceDate(lookbackDays));
-      if (error) throw error;
-      return (data ?? []) as { id: string; athlete_id: string }[];
-    })(),
-    fetchSeenKeySet(ownerId, sinceIso),
-  ]);
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .select('id, athlete_id')
+    .eq('status', 'completed')
+    .in('athlete_id', athleteIds)
+    .gte('date', lookbackSinceDate(lookbackDays));
+  if (error) throw error;
+  const rows = (data ?? []) as { id: string; athlete_id: string }[];
+  const seen = await fetchSeenKeySet(ownerId, { session: rows.map(r => r.id) });
 
   const byAthlete = new Map<string, AthleteReviewStatus>();
   for (const r of rows) {
