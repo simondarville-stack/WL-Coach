@@ -74,7 +74,17 @@ All modules are **active** — nothing is currently disabled or hidden:
   entry. (It was hidden for a while; any old "hide Analysis" instruction is
   obsolete — re-disabling it would be a regression.)
 - Coach/athlete **Inbox & messaging** (`/inbox`, coach + athlete inboxes) —
-  added in 0.6.0.
+  added in 0.6.0. From 0.91.0 a comment can be **tagged** to what it is
+  about — a logged exercise or a session metric — from the review reel's
+  composer (`@` picker, or tap the row/chip on the session card;
+  `src/components/review/TagComposer.tsx`). The text stays plain
+  (`@Snatch looked slow`); the structure rides in
+  `training_log_messages.tags` (migration 20260905090000) and the grammar
+  lives in `src/lib/messageTags.ts` — every thread surface renders tags
+  through `src/components/chat/MessageText.tsx`, and the athlete's Today
+  screen files a tagged comment under its exercise card. `exercise_id` on
+  the message row is a separate, older per-exercise scope that several
+  surfaces hide; tagged comments leave it null on purpose.
 - **KinEMOS** (`src/kinemos/*`) — the kinematic-analysis module: video library
   at `/kinemos` (0.78.0) and the manual analysis viewer at
   `/kinemos/analysis/:kind/:id` (0.79.0), plus the measurement pipeline —

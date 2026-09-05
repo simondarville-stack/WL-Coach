@@ -17,6 +17,7 @@ import type {
 } from '../../../lib/database.types';
 import type { LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { Trash2, Pencil, MessageSquare, Video } from 'lucide-react';
+import { isTaggedToExercise } from '../../../lib/messageTags';
 import { LogVideoStrip } from '../LogVideoStrip';
 import type { TrainingLogVideo } from '../../../lib/database.types';
 import { Button } from '../../ui';
@@ -64,8 +65,12 @@ export function LogExerciseRow({
   onVideoOpened,
 }: LogExerciseRowProps) {
   const videos = logged?.videos ?? [];
+  // Legacy exercise-scoped rows (exercise_id) plus session comments tagged
+  // to this row from the review reel (`@Snatch …`) — both are "about" it.
   const exerciseMessages = logged
-    ? (messages ?? []).filter(m => m.exercise_id === logged.log.id)
+    ? (messages ?? []).filter(
+        m => m.exercise_id === logged.log.id || isTaggedToExercise(m, logged.log.id),
+      )
     : [];
 
   // Athlete-authored off-plan combination: members + name + colour live on

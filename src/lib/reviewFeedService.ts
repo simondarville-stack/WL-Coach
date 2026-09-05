@@ -24,10 +24,12 @@ import { emitInboxChanged } from './inboxEvents';
 import { fetchByIds } from './queryPaging';
 import { METRIC_TRACKING_DEFAULTS } from './trainingLogModel';
 import { plannedRowLabel } from './plannedRowLabel';
+import { messageTags } from './messageTags';
 import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
   GppSection,
+  MessageTag,
   TrainingLogExercise,
   TrainingLogMessage,
   TrainingLogSession,
@@ -79,6 +81,8 @@ export interface ThreadMessage {
    *  (and for legacy coach rows without sender_coach_id). */
   coachName: string | null;
   message: string;
+  /** What the message is tagged to (exercises / metrics), for the chips. */
+  tags: MessageTag[];
   createdAt: string;
   /** Coach messages only: the athlete has read it. One-way receipt — this
    *  feed is coach-facing; the athlete app never shows coach read state. */
@@ -111,6 +115,8 @@ export interface CoachComment {
   id: string;
   coachName: string | null;
   message: string;
+  /** What the comment is tagged to (exercises / metrics), for the chips. */
+  tags: MessageTag[];
   createdAt: string;
 }
 
@@ -564,6 +570,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
         ? (m.sender_coach_id && coachNameById.get(m.sender_coach_id)) || 'Coach'
         : null,
     message: m.message,
+    tags: messageTags(m),
     createdAt: m.created_at,
     seenByAthlete: m.sender_type === 'coach' && m.athlete_read_at != null,
   });
@@ -582,6 +589,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       id: m.id,
       coachName: (m.sender_coach_id && coachNameById.get(m.sender_coach_id)) || 'Coach',
       message: m.message,
+      tags: messageTags(m),
       createdAt: m.created_at,
     });
     coachCommentsBySession.set(m.session_id, list);
@@ -916,6 +924,7 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
           senderType: m.sender_type,
           coachName: m.sender_type === 'coach' ? 'Coach' : null,
           message: m.message,
+          tags: messageTags(m),
           createdAt: m.created_at,
           seenByAthlete: m.sender_type === 'coach' && m.athlete_read_at != null,
         })),

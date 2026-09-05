@@ -75,6 +75,8 @@ import { useAthleteStore } from '../store/athleteStore';
 import { useCoachStore } from '../store/coachStore';
 import { AdaptiveDialog } from './ui/AdaptiveDialog';
 import type { TrainingLogMessage, TrainingLogVideo } from '../lib/database.types';
+import { messageTags } from '../lib/messageTags';
+import { MessageText } from './chat/MessageText';
 
 /** A unit-thread target from the attach flow. sessionId stays null
  *  until the first message creates the log session row. */
@@ -1388,7 +1390,11 @@ function MessageBubble({ message, senderLabel }: { message: TrainingLogMessage; 
             {senderLabel}
           </div>
         )}
-        {message.message}
+        <MessageText
+          text={message.message}
+          tags={messageTags(message)}
+          variant={fromCoach ? 'on-accent' : 'light'}
+        />
         <div
           style={{
             fontSize: 9,

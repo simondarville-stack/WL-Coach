@@ -7,9 +7,12 @@
  *   SessionCard — completed-session summary (performed work via StackedNotation)
  *
  * Every card carries a ComposeBar: quick-reaction chips + a comment box that
- * posts into the existing athlete-visible message thread.
+ * posts into the existing athlete-visible message thread. On a session card
+ * the box tags: `@` lists the session's exercises and metrics, and tapping a
+ * row or a metric chip on the card puts its tag into the draft, so one
+ * comment per aspect of the session costs a tap and a few words.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import {
   ArrowUpRight,
   Check,
@@ -22,15 +25,24 @@ import {
   Send,
   Video,
 } from 'lucide-react';
-import type { Athlete, GppSection } from '../../lib/database.types';
+import type { Athlete, GppSection, MessageTag } from '../../lib/database.types';
 import type {
   ReviewSessionItem,
   ReviewThreadItem,
   ReviewVideoItem,
 } from '../../lib/reviewFeedService';
+import {
+  isOnlyTags,
+  sessionTagTargets,
+  tagId,
+  tagsInText,
+  type TagTarget,
+} from '../../lib/messageTags';
 import { LoggedStackedNotation, StackedNotation } from '../planner/StackedNotation';
 import { ScrubPlayer } from '../planner/ScrubPlayer';
 import { VideoThumb } from '../planner/VideoThumb';
+import { MessageText } from '../chat/MessageText';
+import { TagComposer, type TagComposerHandle } from './TagComposer';
 import { formatDateShort } from '../../lib/dateUtils';
 import { isStreamPlaybackUrl } from '../../lib/streamUploads';
 
@@ -102,7 +114,8 @@ function SeenDot({ seen }: { seen: boolean }) {
 
 interface ComposeBarProps {
   placeholder: string;
-  onSend: (text: string) => Promise<void>;
+  /** The text as typed plus the tags whose `@Label` tokens are in it. */
+  onSend: (text: string, tags: MessageTag[]) => Promise<void>;
   /** The coach's quick-reaction chips (Settings → Review). Empty = no chip
    *  row — a coach may deliberately run without reactions. */
   reactions?: string[];
@@ -111,28 +124,52 @@ interface ComposeBarProps {
   /** Sends made outside this bar (keyboard quick reactions) — shown in the
    *  same "Sent:" confirmation list so the feedback lands on the card. */
   externalSent?: string[];
+  /** What `@` resolves to on this card — the session's exercises and
+   *  metrics. Omit for a plain comment box. */
+  targets?: TagTarget[];
+  /** Lets the card itself put a tag into the draft (tap an exercise row). */
+  composerRef?: Ref<TagComposerHandle>;
 }
 
-function ComposeBar({ placeholder, onSend, reactions = [], showReactions = true, externalSent }: ComposeBarProps) {
+function ComposeBar({
+  placeholder,
+  onSend,
+  reactions = [],
+  showReactions = true,
+  externalSent,
+  targets = [],
+  composerRef,
+}: ComposeBarProps) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const allTags = useMemo(() => targets.map(t => t.tag), [targets]);
 
-  const send = async (body: string) => {
+  /** `consumesDraft`: the send used the typed text, so clear the box. A
+   *  bare reaction leaves whatever the coach was writing alone. */
+  const send = async (body: string, consumesDraft: boolean) => {
     const trimmed = body.trim();
     if (trimmed === '' || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await onSend(trimmed);
+      await onSend(trimmed, tagsInText(trimmed, allTags));
       setSent(prev => [...prev, trimmed]);
-      setText('');
+      if (consumesDraft) setText('');
     } catch {
       setError('Send failed — try again.');
     } finally {
       setBusy(false);
     }
+  };
+
+  // A reaction carries whatever the coach has armed and not written about
+  // yet: tap the snatch row, tap 👍, and "@Snatch 👍" goes out. Once there
+  // are words in the box a reaction is its own one-tap send, as before.
+  const react = (reaction: string) => {
+    const armed = isOnlyTags(text, allTags);
+    void send(armed ? `${text.trim()} ${reaction}` : reaction, armed);
   };
 
   return (
@@ -150,7 +187,12 @@ function ComposeBar({ placeholder, onSend, reactions = [], showReactions = true,
               key={r}
               type="button"
               disabled={busy}
-              onClick={() => void send(r)}
+              onClick={() => react(r)}
+              title={
+                targets.length > 0
+                  ? 'Send this reaction — tag an exercise first to react to just that'
+                  : undefined
+              }
               className="px-2 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-xs transition-colors disabled:opacity-50"
             >
               {r}
@@ -158,28 +200,26 @@ function ComposeBar({ placeholder, onSend, reactions = [], showReactions = true,
           ))}
         </div>
       )}
-      <form
-        className="flex items-center gap-1.5"
-        onSubmit={e => {
-          e.preventDefault();
-          void send(text);
-        }}
-      >
-        <input
+      <div className="flex items-end gap-1.5">
+        <TagComposer
+          ref={composerRef}
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={setText}
+          targets={targets}
           placeholder={placeholder}
-          className="flex-1 min-w-0 bg-white/10 text-white placeholder-white/40 text-sm rounded-full px-3.5 py-2 outline-none focus:bg-white/15 focus:ring-1 focus:ring-white/30"
+          disabled={busy}
+          onSubmit={() => void send(text, true)}
         />
         <button
-          type="submit"
+          type="button"
+          onClick={() => void send(text, true)}
           disabled={busy || text.trim() === ''}
           title="Send comment"
           className="w-9 h-9 shrink-0 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center disabled:opacity-40"
         >
           <Send size={15} />
         </button>
-      </form>
+      </div>
       {error && <div className="text-[11px] text-red-300 px-1">{error}</div>}
     </div>
   );
@@ -356,7 +396,8 @@ export function VideoCard({
       kindIcon={<Video size={16} />}
       composer={{
         placeholder: `Comment on ${item.exerciseName}…`,
-        onSend: onComment,
+        // The clip's exercise is the tag; the scroller attaches it.
+        onSend: text => onComment(text),
         reactions,
         externalSent,
       }}
@@ -450,7 +491,7 @@ export function ThreadCard({ item, athlete, seen, onReply, onOpenSession }: Thre
       seen={seen}
       onOpenSession={onOpenSession}
       kindIcon={<MessageCircle size={16} />}
-      composer={{ placeholder: 'Reply…', onSend: onReply, showReactions: false }}
+      composer={{ placeholder: 'Reply…', onSend: text => onReply(text), showReactions: false }}
     >
       <div className="h-full rounded-2xl bg-white/[0.06] border border-white/10 p-3 overflow-y-auto">
         <div className="text-[11px] uppercase tracking-wide text-white/40 mb-2">
@@ -463,7 +504,7 @@ export function ThreadCard({ item, athlete, seen, onReply, onOpenSession }: Thre
             m.senderType === 'athlete' ? (
               <div key={m.id} className="max-w-[90%]">
                 <div className="bg-white text-gray-900 text-sm rounded-2xl rounded-tl-sm px-3 py-2 whitespace-pre-wrap">
-                  {m.message}
+                  <MessageText text={m.message} tags={m.tags} variant="light" />
                 </div>
                 <div className="text-[10px] text-white/40 mt-0.5 px-1">
                   {formatDateShort(m.createdAt)}{' '}
@@ -476,7 +517,7 @@ export function ThreadCard({ item, athlete, seen, onReply, onOpenSession }: Thre
             ) : (
               <div key={m.id} className="max-w-[90%] ml-auto flex flex-col items-end">
                 <div className="bg-[var(--color-accent)] text-white text-sm rounded-2xl rounded-tr-sm px-3 py-2 whitespace-pre-wrap">
-                  {m.message}
+                  <MessageText text={m.message} tags={m.tags} variant="on-accent" />
                 </div>
                 <div className="text-[10px] text-white/40 mt-0.5 px-1">
                   {m.coachName ?? 'Coach'} · {formatDateShort(m.createdAt)}{' '}
@@ -508,7 +549,8 @@ interface SessionCardProps {
   item: ReviewSessionItem;
   athlete: Athlete | undefined;
   seen: boolean;
-  onComment: (text: string) => Promise<void>;
+  /** The comment plus the tags it carries (exercises / metrics named in it). */
+  onComment: (text: string, tags: MessageTag[]) => Promise<void>;
   /** The coach's quick-reaction chips. */
   reactions?: string[];
   /** Keyboard quick reactions already sent for this card. */
@@ -516,6 +558,10 @@ interface SessionCardProps {
   /** Open this session in the training log. Routing lives with the caller. */
   onOpenSession?: (() => void) | null;
 }
+
+/** Hover/tap affordance shared by every taggable thing on the card. */
+const TAPPABLE =
+  'cursor-pointer rounded-sm hover:text-[color:var(--color-accent)] hover:underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-accent)]';
 
 export function SessionCard({
   item,
@@ -527,9 +573,21 @@ export function SessionCard({
   onOpenSession,
 }: SessionCardProps) {
   const s = item.session;
-  const headerBits: string[] = [];
-  if (s.session_rpe != null) headerBits.push(`RPE ${String(s.session_rpe).replace('.', ',')}`);
-  if (s.duration_minutes != null) headerBits.push(`${s.duration_minutes} min`);
+
+  // Everything on this card the coach can tag — one list, the same one the
+  // composer's `@` picker shows, so a tap on the card and a pick from the
+  // list produce the identical token.
+  const targets = useMemo(() => sessionTagTargets(item), [item]);
+  const targetById = useMemo(() => new Map(targets.map(t => [tagId(t.tag), t])), [targets]);
+  const composerRef = useRef<TagComposerHandle>(null);
+  const tagIt = (id: string) => {
+    const target = targetById.get(id);
+    if (target) composerRef.current?.insertTarget(target);
+  };
+  const tagTitle = (id: string) => {
+    const label = targetById.get(id)?.tag.label;
+    return label ? `Tag @${label} in your comment` : undefined;
+  };
 
   return (
     <CardFrame
@@ -538,7 +596,14 @@ export function SessionCard({
       seen={seen}
       onOpenSession={onOpenSession}
       kindIcon={<ClipboardList size={16} />}
-      composer={{ placeholder: 'Comment on this session…', onSend: onComment, reactions, externalSent }}
+      composer={{
+        placeholder: targets.length > 0 ? 'Comment… @ tags an exercise or metric' : 'Comment on this session…',
+        onSend: onComment,
+        reactions,
+        externalSent,
+        targets,
+        composerRef,
+      }}
     >
       {/* Light panel so StackedNotation's token colours render as designed.
           data-theme="light" re-scopes the CSS tokens to their light values —
@@ -547,18 +612,44 @@ export function SessionCard({
       <div data-theme="light" className="h-full rounded-2xl bg-white overflow-y-auto">
         <div className="px-3.5 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2">
           <div className="text-sm font-medium text-gray-900">Completed session</div>
-          {headerBits.length > 0 && (
-            <div className="text-[11px] text-gray-500">{headerBits.join(' · ')}</div>
+          {(s.session_rpe != null || s.duration_minutes != null) && (
+            <div className="text-[11px] text-gray-500 flex items-center gap-1.5">
+              {s.session_rpe != null && (
+                <button
+                  type="button"
+                  onClick={() => tagIt('metric:rpe')}
+                  title={tagTitle('metric:rpe')}
+                  className={TAPPABLE}
+                >
+                  RPE {String(s.session_rpe).replace('.', ',')}
+                </button>
+              )}
+              {s.session_rpe != null && s.duration_minutes != null && <span>·</span>}
+              {s.duration_minutes != null && (
+                <button
+                  type="button"
+                  onClick={() => tagIt('metric:duration')}
+                  title={tagTitle('metric:duration')}
+                  className={TAPPABLE}
+                >
+                  {s.duration_minutes} min
+                </button>
+              )}
+            </div>
           )}
         </div>
         {/* Metrics activated for this athlete/week — value or a quiet "—"
-            when the athlete skipped the entry (that gap is itself signal). */}
+            when the athlete skipped the entry (that gap is itself signal).
+            Each chip is a tap away from being tagged in the comment. */}
         {item.metrics.length > 0 && (
           <div className="px-3.5 py-2 border-b border-gray-100 flex flex-wrap gap-1.5">
             {item.metrics.map(m => (
-              <span
+              <button
                 key={m.key}
-                className="inline-flex items-baseline gap-1 px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[11px]"
+                type="button"
+                onClick={() => tagIt(`metric:${m.key}`)}
+                title={tagTitle(`metric:${m.key}`)}
+                className="inline-flex items-baseline gap-1 px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[11px] hover:border-[color:var(--color-accent)] hover:bg-[var(--color-accent-subtle)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-accent)]"
               >
                 <span className="text-gray-400">{m.label}</span>
                 {m.value != null ? (
@@ -566,7 +657,7 @@ export function SessionCard({
                 ) : (
                   <span className="text-gray-300">—</span>
                 )}
-              </span>
+              </button>
             ))}
           </div>
         )}
@@ -583,9 +674,16 @@ export function SessionCard({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[13px] font-medium text-gray-800 truncate">
+                    {/* The name IS the tag: tap it and `@Snatch ` lands in
+                        the comment box below. */}
+                    <button
+                      type="button"
+                      onClick={() => tagIt(`exercise:${ex.id}`)}
+                      title={tagTitle(`exercise:${ex.id}`)}
+                      className={`text-[13px] font-medium text-gray-800 truncate text-left ${TAPPABLE}`}
+                    >
                       {ex.name}
-                    </span>
+                    </button>
                     {ex.isCombo && (
                       <span
                         className="text-[10px] px-1 rounded bg-sky-50 text-sky-700 border border-sky-200"
@@ -649,7 +747,15 @@ export function SessionCard({
         </div>
         {s.session_notes.trim() !== '' && (
           <div className="px-3.5 py-2 border-t border-gray-100 text-xs text-gray-600">
-            <span className="text-gray-400">Athlete notes:</span> {s.session_notes}
+            <button
+              type="button"
+              onClick={() => tagIt('metric:notes')}
+              title={tagTitle('metric:notes')}
+              className={`text-gray-400 ${TAPPABLE}`}
+            >
+              Athlete notes:
+            </button>{' '}
+            {s.session_notes}
           </div>
         )}
         {/* Feedback already given — by ANY coach, so co-coaches on a shared
@@ -663,7 +769,8 @@ export function SessionCard({
                   {(c.coachName ?? 'C').charAt(0).toUpperCase()}
                 </span>
                 <span className="text-gray-700 whitespace-pre-wrap min-w-0">
-                  <span className="text-gray-400">{c.coachName ?? 'Coach'}:</span> {c.message}
+                  <span className="text-gray-400">{c.coachName ?? 'Coach'}:</span>{' '}
+                  <MessageText text={c.message} tags={c.tags} variant="light" />
                 </span>
                 <span className="ml-auto shrink-0 text-[10px] text-gray-400 tabular-nums">
                   {formatDateShort(c.createdAt)}
