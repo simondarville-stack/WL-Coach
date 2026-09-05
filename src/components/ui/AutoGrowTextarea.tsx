@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type TextareaHTMLAttributes } from 'react';
+import { forwardRef, useLayoutEffect, useRef, type TextareaHTMLAttributes } from 'react';
 
 /**
  * A textarea that grows to fit its content instead of scrolling inside a
@@ -13,12 +13,14 @@ import { useLayoutEffect, useRef, type TextareaHTMLAttributes } from 'react';
  * since an inner scrollbar is exactly what this exists to avoid; a caller that
  * caps the growth with `style.maxHeight` gets `overflow: auto` instead, so text
  * past the cap is still reachable.
+ *
+ * Forwards its ref: a caller that needs the caret (the review composer's
+ * `#` picker) or wants to focus the box gets the element itself.
  */
-export function AutoGrowTextarea({
-  onInput,
-  style,
-  ...rest
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export const AutoGrowTextarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement>
+>(function AutoGrowTextarea({ onInput, style, ...rest }, forwardedRef) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
   const fit = (el: HTMLTextAreaElement) => {
@@ -41,7 +43,11 @@ export function AutoGrowTextarea({
 
   return (
     <textarea
-      ref={ref}
+      ref={el => {
+        ref.current = el;
+        if (typeof forwardedRef === 'function') forwardedRef(el);
+        else if (forwardedRef) forwardedRef.current = el;
+      }}
       onInput={e => {
         fit(e.currentTarget);
         onInput?.(e);
@@ -50,4 +56,4 @@ export function AutoGrowTextarea({
       {...rest}
     />
   );
-}
+});

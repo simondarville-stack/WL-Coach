@@ -23,6 +23,8 @@ import { AutoGrowTextarea } from '../ui';
 import { formatTime24, formatDateTimeShort } from '../../lib/dateUtils';
 import type { KinemosShare, TrainingLogMessage, TrainingLogVideo } from '../../lib/database.types';
 import type { SessionVideoItem } from '../../lib/trainingLogService';
+import { messageTags } from '../../lib/messageTags';
+import { MessageText } from './MessageText';
 import { ShareMessageBubble } from './ShareMessageBubble';
 import { VideoMessageBubble } from './VideoMessageBubble';
 
@@ -263,7 +265,11 @@ function MessageBubble({
             {senderLabel}
           </div>
         )}
-        {message.message}
+        <MessageText
+          text={message.message}
+          tags={messageTags(message)}
+          variant={isOwn ? 'on-accent' : 'dark'}
+        />
         <div className="text-[9px] mt-1 opacity-60 text-right">
           {formatStamp(message.created_at)}
           {showSeen && ' · Seen'}

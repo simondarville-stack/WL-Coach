@@ -43,6 +43,20 @@ export const PRESETS: Preset[] = [
     patch: { rows: ['category'], cols: [], metrics: [{ id: 'volume' }], compare: 'both', vizType: 'bar' },
   },
   {
+    id: 'coach-feedback-by-lift',
+    name: 'Coach feedback by lift',
+    description:
+      'Which exercises draw the most coach comments — counted through the #tags on review comments; untagged ones sit under "(session)".',
+    patch: {
+      rows: ['exercise'],
+      cols: [],
+      metrics: [{ id: 'coachComments' }],
+      compare: 'performed',
+      vizType: 'bar',
+      sort: { key: 'coachComments::performed', dir: 'desc' },
+    },
+  },
+  {
     id: 'bodyweight-vs-performance',
     name: 'Bodyweight vs performance',
     description: 'Weekly bodyweight beside tonnage, reps and intensity — read off how output tracks a cut or bulk.',
