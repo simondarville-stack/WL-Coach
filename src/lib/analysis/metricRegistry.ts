@@ -43,6 +43,10 @@ function isNlLift(row: FactRow): boolean {
   return row.isCompetitionLift || row.movement != null;
 }
 
+/** The measure that counts coach comments through their tags. factFetch
+ *  reads the messages only when a query asks for it. */
+export const COACH_COMMENTS_METRIC_ID = 'coachComments';
+
 export const BASE_METRICS: BaseMetricDef[] = [
   {
     id: 'reps',
@@ -162,6 +166,22 @@ export const BASE_METRICS: BaseMetricDef[] = [
     // (i.e. per-session, repeated across its sets) bodyweight. Exact for a single
     // day; a set-weighted mean of the daily weigh-ins for a multi-day week.
     extract: (r) => (r.bodyweight != null && r.bodyweight > 0 ? { value: r.bodyweight, weight: 0 } : null),
+  },
+  {
+    id: COACH_COMMENTS_METRIC_ID,
+    label: 'Coach comments',
+    shortLabel: 'Cmt',
+    unit: 'count',
+    kind: 'base',
+    // Feedback is written about logged work; there is no planned facet.
+    appliesToState: ['performed'],
+    defaultAgg: 'sum',
+    combine: 'sum',
+    isBuiltin: true,
+    description:
+      'Coach comments on logged sessions, joined to the exercise each was tagged to (#Snatch); comments tagged to no exercise count under "(session)".',
+    extract: (r) =>
+      r.coachComments != null && r.coachComments > 0 ? { value: r.coachComments, weight: 0 } : null,
   },
   {
     id: 'stress',

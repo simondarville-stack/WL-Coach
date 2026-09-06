@@ -25,10 +25,12 @@ import { fetchByIds } from './queryPaging';
 import { METRIC_TRACKING_DEFAULTS } from './trainingLogModel';
 import { plannedRowLabel } from './plannedRowLabel';
 import { toLocalISO } from './dateUtils';
+import { messageTags } from './messageTags';
 import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
   GppSection,
+  MessageTag,
   TrainingLogExercise,
   TrainingLogMessage,
   TrainingLogSession,
@@ -90,6 +92,8 @@ export interface ThreadMessage {
    *  (and for legacy coach rows without sender_coach_id). */
   coachName: string | null;
   message: string;
+  /** What the message is tagged to (exercises / metrics), for the chips. */
+  tags: MessageTag[];
   createdAt: string;
   /** Coach messages only: the athlete has read it. One-way receipt — this
    *  feed is coach-facing; the athlete app never shows coach read state. */
@@ -114,6 +118,11 @@ export interface ReviewThreadItem {
   messages: ThreadMessage[];
   /** Athlete messages inside the window behind this card. */
   newCount: number;
+  /** The session behind the thread in the shape the tag picker reads — its
+   *  logged exercises (with sets) and metric chips — so a reply can be
+   *  tagged the way a session-card comment can. Null for the general
+   *  thread, and for a session row that could not be loaded. */
+  tagSource: Pick<ReviewSessionItem, 'session' | 'metrics' | 'exercises'> | null;
 }
 
 /** A coach comment shown on a session card — from any coach with access,
@@ -122,6 +131,8 @@ export interface CoachComment {
   id: string;
   coachName: string | null;
   message: string;
+  /** What the comment is tagged to (exercises / metrics), for the chips. */
+  tags: MessageTag[];
   createdAt: string;
 }
 
@@ -400,6 +411,33 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     keep(seen.has(`thread:${c.latestId}`)),
   );
 
+  // The sessions behind thread cards that are not review sessions themselves,
+  // as full rows: their exercises, sets and metrics feed the reply
+  // composer's tag picker exactly as a session card's do.
+  const reviewSessionIdSet = new Set(sessionRows.map(s => s.id));
+  const threadOnlySessionIds = [
+    ...new Set(
+      threadCandidates
+        .map(c => c.sessionId)
+        .filter((id): id is string => id != null && !reviewSessionIdSet.has(id)),
+    ),
+  ];
+  const threadSessions: TrainingLogSession[] =
+    threadOnlySessionIds.length === 0
+      ? []
+      : await (async () => {
+          const { data, error } = await supabase
+            .from('training_log_sessions')
+            .select('*')
+            .in('id', threadOnlySessionIds);
+          if (error) throw error;
+          return (data ?? []) as TrainingLogSession[];
+        })();
+  /** Every session whose exercises, sets and metrics get loaded: the
+   *  review cards' and the thread cards'. */
+  const tagSessions = [...sessionRows, ...threadSessions];
+  const tagSessionById = new Map(tagSessions.map(s => [s.id, s]));
+
   // ── Secondary lookups ────────────────────────────────────────────────────
 
   // Videos hang off log exercises; resolve exercise name + session.
@@ -417,16 +455,17 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
         })();
   const logExById = new Map(videoLogExs.map(le => [le.id, le]));
 
-  // Session cards need their exercises for the summary.
-  const reviewSessionIds = sessionRows.map(s => s.id);
+  // Session cards need their exercises for the summary; thread cards need
+  // them for the picker.
+  const tagSessionIds = tagSessions.map(s => s.id);
   const sessionExs: TrainingLogExercise[] =
-    reviewSessionIds.length === 0
+    tagSessionIds.length === 0
       ? []
       : await (async () => {
           const { data, error } = await supabase
             .from('training_log_exercises')
             .select('*')
-            .in('session_id', reviewSessionIds)
+            .in('session_id', tagSessionIds)
             .order('position', { ascending: true });
           if (error) throw error;
           return (data ?? []) as TrainingLogExercise[];
@@ -435,7 +474,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
   // The performed sets behind those exercises (paged: 40 sessions of set
   // rows can exceed the 1000-row PostgREST cap), plus the metric config
   // and custom-metric definitions that decide which metrics to surface.
-  const sessionAthleteIds = [...new Set(sessionRows.map(s => s.athlete_id))];
+  const sessionAthleteIds = [...new Set(tagSessions.map(s => s.athlete_id))];
   const [setRows, metricConfigs, metricDefs] = await Promise.all([
     fetchByIds<TrainingLogSet>(sessionExs.map(ex => ex.id), (chunk, from, to) =>
       supabase
@@ -451,7 +490,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
         .from('athlete_week_metrics_config')
         .select('*')
         .in('athlete_id', sessionAthleteIds)
-        .in('week_start', [...new Set(sessionRows.map(s => s.week_start))]);
+        .in('week_start', [...new Set(tagSessions.map(s => s.week_start))]);
       if (error) throw error;
       return (data ?? []) as AthleteWeekMetricsConfig[];
     })(),
@@ -516,7 +555,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
   const extraSessionIds = new Set<string>();
   for (const le of videoLogExs) extraSessionIds.add(le.session_id);
   for (const m of messageRows) if (m.session_id) extraSessionIds.add(m.session_id);
-  for (const id of reviewSessionIds) extraSessionIds.delete(id);
+  for (const id of tagSessionIds) extraSessionIds.delete(id);
   const extraSessions: SessionStub[] =
     extraSessionIds.size === 0
       ? []
@@ -529,7 +568,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
           return (data ?? []) as SessionStub[];
         })();
   const sessionStubById = new Map<string, SessionStub>();
-  for (const s of sessionRows) sessionStubById.set(s.id, s);
+  for (const s of tagSessions) sessionStubById.set(s.id, s);
   for (const s of extraSessions) sessionStubById.set(s.id, s);
 
   // Exercise names (catalogue), for video cards and session summaries —
@@ -626,6 +665,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
         ? (m.sender_coach_id && coachNameById.get(m.sender_coach_id)) || 'Coach'
         : null,
     message: m.message,
+    tags: messageTags(m),
     createdAt: m.created_at,
     seenByAthlete: m.sender_type === 'coach' && m.athlete_read_at != null,
   });
@@ -644,6 +684,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       id: m.id,
       coachName: (m.sender_coach_id && coachNameById.get(m.sender_coach_id)) || 'Coach',
       message: m.message,
+      tags: messageTags(m),
       createdAt: m.created_at,
     });
     coachCommentsBySession.set(m.session_id, list);
@@ -674,9 +715,37 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     });
   }
 
+  const exsBySession = new Map<string, TrainingLogExercise[]>();
+  for (const ex of sessionExs) {
+    const list = exsBySession.get(ex.session_id) ?? [];
+    list.push(ex);
+    exsBySession.set(ex.session_id, list);
+  }
+  /** A session in the shape both card kinds read: its metric chips and its
+   *  logged exercises resolved for display (and for the tag picker). */
+  const sessionCardShape = (s: TrainingLogSession) => ({
+    session: s,
+    metrics: buildSessionMetricChips(
+      s,
+      configByAthleteWeek.get(`${s.athlete_id}|${s.week_start}`) ?? null,
+      defById,
+    ),
+    exercises: (exsBySession.get(s.id) ?? []).map(ex =>
+      buildSessionReviewExercise(ex, {
+        planned: ex.planned_exercise_id
+          ? plannedById.get(ex.planned_exercise_id) ?? null
+          : null,
+        comboMembersByPlanned,
+        exerciseNameById,
+        sets: setsByLogEx.get(ex.id) ?? [],
+      }),
+    ),
+  });
+
   const THREAD_CONTEXT_LIMIT = 8;
   for (const c of threadCandidates) {
     const context = (contextByThread.get(c.threadKey) ?? []).slice(-THREAD_CONTEXT_LIMIT);
+    const tagSession = c.sessionId ? tagSessionById.get(c.sessionId) : undefined;
     items.push({
       kind: 'thread',
       key: `thread:${c.threadKey}`,
@@ -689,15 +758,10 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       sessionDayIndex: c.sessionId ? sessionStubById.get(c.sessionId)?.day_index ?? null : null,
       messages: context.map(toThreadMessage),
       newCount: c.newCount,
+      tagSource: tagSession ? sessionCardShape(tagSession) : null,
     });
   }
 
-  const exsBySession = new Map<string, TrainingLogExercise[]>();
-  for (const ex of sessionExs) {
-    const list = exsBySession.get(ex.session_id) ?? [];
-    list.push(ex);
-    exsBySession.set(ex.session_id, list);
-  }
   for (const s of sessionRows) {
     items.push({
       kind: 'session',
@@ -705,22 +769,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       seenKey: s.id,
       timestamp: s.completed_at ?? `${s.date}T23:59:59Z`,
       athleteId: s.athlete_id,
-      session: s,
-      metrics: buildSessionMetricChips(
-        s,
-        configByAthleteWeek.get(`${s.athlete_id}|${s.week_start}`) ?? null,
-        defById,
-      ),
-      exercises: (exsBySession.get(s.id) ?? []).map(ex =>
-        buildSessionReviewExercise(ex, {
-          planned: ex.planned_exercise_id
-            ? plannedById.get(ex.planned_exercise_id) ?? null
-            : null,
-          comboMembersByPlanned,
-          exerciseNameById,
-          sets: setsByLogEx.get(ex.id) ?? [],
-        }),
-      ),
+      ...sessionCardShape(s),
       coachComments: coachCommentsBySession.get(s.id) ?? [],
     });
   }
@@ -978,10 +1027,12 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
           senderType: m.sender_type,
           coachName: m.sender_type === 'coach' ? 'Coach' : null,
           message: m.message,
+          tags: messageTags(m),
           createdAt: m.created_at,
           seenByAthlete: m.sender_type === 'coach' && m.athlete_read_at != null,
         })),
         newCount: messages.filter(m => m.sender_type === 'athlete').length,
+        tagSource: null,
       });
     }
   }

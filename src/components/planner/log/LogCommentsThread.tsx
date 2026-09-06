@@ -10,6 +10,8 @@ import { useState } from 'react';
 import { Send } from 'lucide-react';
 import type { TrainingLogMessage } from '../../../lib/database.types';
 import { formatTimestamp } from '../../../lib/logFormatUtils';
+import { messageTags } from '../../../lib/messageTags';
+import { MessageText } from '../../chat/MessageText';
 import { Button } from '../../ui';
 
 interface LogCommentsThreadProps {
@@ -74,7 +76,7 @@ export function LogCommentsThread({ messages, compact, onPost }: LogCommentsThre
               <p
                 className={`${textSize} text-gray-800 whitespace-pre-wrap leading-snug`}
               >
-                {m.message}
+                <MessageText text={m.message} tags={messageTags(m)} variant="light" />
               </p>
             </li>
           ))}

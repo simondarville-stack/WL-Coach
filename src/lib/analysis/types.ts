@@ -201,6 +201,13 @@ export interface FactRow {
 
   // ── athlete day-card custom metrics (custom:<defId> dimensions/measures) ──
   custom?: Record<string, number>;
+
+  // ── coach feedback (the `coachComments` measure) ──
+  /** 1 on a comment fact: one coach comment tagged to this exercise (or,
+   *  with `exerciseId` null and `exerciseName` '(session)', to the session
+   *  as a whole). Such a fact carries no sets, reps or load — it is feedback
+   *  about the work, not work. Joined through training_log_messages.tags. */
+  coachComments?: number;
 }
 
 // ── Result ───────────────────────────────────────────────────────────────────

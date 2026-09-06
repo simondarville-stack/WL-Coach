@@ -30,6 +30,7 @@ import type {
   TrainingLogSet,
   TrainingLogMessage,
   TrainingLogVideo,
+  MessageTag,
   Exercise,
   PlannedExercise,
   PlannedSetLine,
@@ -1514,9 +1515,26 @@ export interface AddCommentArgs {
    *  Lets a shared inbox label which coach wrote each bubble — without
    *  it, multi-coach threads collapse to "Coach" with no disambiguation. */
   senderCoachId?: string | null;
+  /** What the comment is about — the exercises / metrics the sender tagged
+   *  (see MessageTag). The text already carries them as `#Label` tokens;
+   *  this is the structure behind those tokens. Omit for an untagged send. */
+  tags?: MessageTag[];
+}
+
+/** PostgREST's "no such column" — the tags migration has not been applied
+ *  to this project yet. */
+function isMissingColumnError(error: unknown, column: string): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  return (
+    !!e &&
+    e.code === 'PGRST204' &&
+    typeof e.message === 'string' &&
+    e.message.includes(`'${column}'`)
+  );
 }
 
 export async function addComment(args: AddCommentArgs): Promise<TrainingLogMessage> {
+  const tags = args.tags ?? [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
   const insertRow: any = {
     session_id: args.sessionId,
@@ -1524,12 +1542,29 @@ export async function addComment(args: AddCommentArgs): Promise<TrainingLogMessa
     message: args.message,
     sender_type: args.senderType,
     sender_coach_id: args.senderType === 'coach' ? args.senderCoachId ?? null : null,
+    // Only carried when there is something to carry, so an untagged send is
+    // byte-for-byte what it was before the column existed.
+    ...(tags.length > 0 ? { tags } : {}),
   };
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('training_log_messages')
     .insert(insertRow)
     .select()
     .single();
+  if (error && tags.length > 0 && isMissingColumnError(error, 'tags')) {
+    // Migration 20260905090000 not applied yet: the comment still lands,
+    // readable, because the text carries the `#Label` tokens — only the
+    // structured tag is lost. Loud in the console so it gets applied.
+    console.warn(
+      '[trainingLogService] training_log_messages.tags is missing — apply migration 20260905090000_training_log_message_tags.sql. Sent the comment untagged.',
+    );
+    delete insertRow.tags;
+    ({ data, error } = await supabase
+      .from('training_log_messages')
+      .insert(insertRow)
+      .select()
+      .single());
+  }
   if (error) throw error;
   return data as TrainingLogMessage;
 }

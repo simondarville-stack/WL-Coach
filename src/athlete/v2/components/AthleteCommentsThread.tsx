@@ -8,7 +8,9 @@ import { useState } from 'react';
 import { Send, MessageSquare } from 'lucide-react';
 import type { TrainingLogMessage } from '../../../lib/database.types';
 import { AutoGrowTextarea } from '../../../components/ui';
+import { MessageText } from '../../../components/chat/MessageText';
 import { formatTimestamp } from '../../../lib/logFormatUtils';
+import { messageTags } from '../../../lib/messageTags';
 
 interface AthleteCommentsThreadProps {
   messages: TrainingLogMessage[];
@@ -70,7 +72,7 @@ export function AthleteCommentsThread({ messages, onPost, compact }: AthleteComm
                 <span className="text-[length:var(--text-micro)] text-[color:var(--color-text-secondary)]">{formatTimestamp(m.created_at)}</span>
               </div>
               <p className={`${textSize} text-[color:var(--color-text-primary)] whitespace-pre-wrap leading-snug`}>
-                {m.message}
+                <MessageText text={m.message} tags={messageTags(m)} variant="dark" />
               </p>
             </li>
           ))}

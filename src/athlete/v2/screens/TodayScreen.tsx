@@ -9,7 +9,7 @@
  *   - "Performed on" date: stored as session.date, editable, defaults to
  *     today on first log
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2, Plus, CheckCircle, Eye, Trash2, Ban, RotateCcw } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
@@ -66,6 +66,7 @@ import { ExercisePicker } from '../components/ExercisePicker';
 import { AddTrainingSheet } from '../components/AddTrainingSheet';
 import { NotDoneSheet } from '../components/NotDoneSheet';
 import { AthleteCommentsThread } from '../components/AthleteCommentsThread';
+import { CoachTagNotes } from '../components/CoachTagNotes';
 import type { RawScores } from '../components/RawScoreDial';
 import type { SetRowInput } from '../components/SetEntryRow';
 import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
@@ -1334,25 +1335,32 @@ export function TodayScreen() {
                   const loggedExercise = le?.log ?? null;
                   const performed = le?.exercise ?? null;
                   return (
-                    <ExerciseLogCard
-                      key={p.exercise.id}
-                      planned={p}
-                      loggedExercise={loggedExercise}
-                      loggedSets={le?.sets ?? []}
-                      onSaveSet={handleSaveSet(p)}
-                      onLogAsPrescribed={handleLogAsPrescribed(p)}
-                      onUpdateNotes={handleUpdateExerciseNotes(p)}
-                      onMarkComplete={handleMarkComplete(p)}
-                      onDeleteSet={handleDeleteSet}
-                      onRemovePlannedSet={handleRemovePlannedSet(p)}
-                      onSaveGppSection={handleSaveGppSection(p)}
-                      onRequestSubstitute={() => setSubstituting(p)}
-                      performedExercise={performed}
-                      videos={le?.videos ?? []}
-                      onAddVideo={handleAddVideo(p)}
-                      onDeleteVideo={handleDeleteVideo}
-                      globalSaving={saving}
-                    />
+                    // Card plus the coach's comments tagged to this row,
+                    // kept together so the note hugs the exercise it names.
+                    <div key={p.exercise.id}>
+                      <ExerciseLogCard
+                        planned={p}
+                        loggedExercise={loggedExercise}
+                        loggedSets={le?.sets ?? []}
+                        onSaveSet={handleSaveSet(p)}
+                        onLogAsPrescribed={handleLogAsPrescribed(p)}
+                        onUpdateNotes={handleUpdateExerciseNotes(p)}
+                        onMarkComplete={handleMarkComplete(p)}
+                        onDeleteSet={handleDeleteSet}
+                        onRemovePlannedSet={handleRemovePlannedSet(p)}
+                        onSaveGppSection={handleSaveGppSection(p)}
+                        onRequestSubstitute={() => setSubstituting(p)}
+                        performedExercise={performed}
+                        videos={le?.videos ?? []}
+                        onAddVideo={handleAddVideo(p)}
+                        onDeleteVideo={handleDeleteVideo}
+                        globalSaving={saving}
+                      />
+                      <CoachTagNotes
+                        messages={data.log?.messages ?? []}
+                        logExerciseId={loggedExercise?.id ?? null}
+                      />
+                    </div>
                   );
                 })
               )}
@@ -1363,20 +1371,18 @@ export function TodayScreen() {
                 // else (plain exercise or combo) uses OffPlanExerciseCard,
                 // which reads metadata.combo to show a combination.
                 const sentinel = getSentinelType(le.exercise?.exercise_code ?? null);
+                let card: ReactNode;
                 if (sentinel === 'text') {
-                  return (
+                  card = (
                     <OffPlanNoteCard
-                      key={le.log.id}
                       logExercise={le.log}
                       onUpdateText={handleUpdateOffPlanText(le.log.id)}
                       onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
                     />
                   );
-                }
-                if (sentinel === 'gpp') {
-                  return (
+                } else if (sentinel === 'gpp') {
+                  card = (
                     <GppLogCard
-                      key={le.log.id}
                       planned={null}
                       authored
                       loggedExercise={le.log}
@@ -1385,21 +1391,27 @@ export function TodayScreen() {
                       onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
                     />
                   );
+                } else {
+                  card = (
+                    <OffPlanExerciseCard
+                      logExercise={le.log}
+                      exercise={le.exercise}
+                      loggedSets={le.sets}
+                      onSaveSet={handleSaveOffPlanSet(le.log.id)}
+                      onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
+                      onDeleteSet={handleDeleteSet}
+                      onUpdateNotes={handleUpdateOffPlanNotes(le.log.id)}
+                      videos={le.videos}
+                      onAddVideo={handleAddVideoToLogExercise(le.log.id)}
+                      onDeleteVideo={handleDeleteVideo}
+                    />
+                  );
                 }
                 return (
-                  <OffPlanExerciseCard
-                    key={le.log.id}
-                    logExercise={le.log}
-                    exercise={le.exercise}
-                    loggedSets={le.sets}
-                    onSaveSet={handleSaveOffPlanSet(le.log.id)}
-                    onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
-                    onDeleteSet={handleDeleteSet}
-                    onUpdateNotes={handleUpdateOffPlanNotes(le.log.id)}
-                    videos={le.videos}
-                    onAddVideo={handleAddVideoToLogExercise(le.log.id)}
-                    onDeleteVideo={handleDeleteVideo}
-                  />
+                  <div key={le.log.id}>
+                    {card}
+                    <CoachTagNotes messages={data.log?.messages ?? []} logExerciseId={le.log.id} />
+                  </div>
                 );
               })}
 

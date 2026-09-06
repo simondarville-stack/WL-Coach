@@ -776,6 +776,39 @@ export interface CoachThreadRead {
   last_read_at: string;
 }
 
+/**
+ * What a message is *about*, when the sender tagged something on the
+ * session it hangs off — one exercise the athlete logged (optionally one
+ * set of it), or one metric they entered (bodyweight, RAW, VAS, a custom
+ * metric, session RPE…).
+ *
+ * The message text stays plain and carries the same tag as a `#Label`
+ * token — a set as a path, `#Snatch/3 bar drifted` — so a surface that
+ * knows nothing about tags still reads correctly; tag-aware surfaces
+ * highlight the token and file the comment under the thing it names.
+ * `label` is frozen at send time: renaming the exercise later must not
+ * orphan the token in the text. The grammar lives in src/lib/messageTags.ts.
+ */
+export type MessageTag =
+  | {
+      kind: 'exercise';
+      /** training_log_exercises.id — the logged row, not the catalogue id. */
+      logExerciseId: string;
+      label: string;
+      /** training_log_sets.set_number when the comment is about one set. */
+      setNumber?: number;
+    }
+  | {
+      kind: 'metric';
+      /** Same keys as the session card's metric chips: `bw`, `raw`,
+       *  `raw:Sleep`, `vas`, `custom:<definition id>`, plus `rpe`,
+       *  `duration` and `notes` for the session-level fields. */
+      key: string;
+      label: string;
+      /** The value as it read when tagged (formatted, unit included). */
+      value: string | null;
+    };
+
 export interface TrainingLogMessage {
   id: string;
   owner_id: string | null;
@@ -802,6 +835,10 @@ export interface TrainingLogMessage {
   /** Timestamp when the athlete last read this message. Null = unread by athlete.
    *  Set by the service when the athlete views the session. See UF-10 / A5. */
   athlete_read_at: string | null;
+  /** What the message is about (see MessageTag). Optional because rows
+   *  written before migration 20260905090000 have no column at all; read it
+   *  through `messageTags()` in src/lib/messageTags.ts, never directly. */
+  tags?: MessageTag[] | null;
   created_at: string;
 }
 

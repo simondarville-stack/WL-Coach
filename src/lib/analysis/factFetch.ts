@@ -32,6 +32,8 @@ import {
 } from '../../kinemos/lib/analysisMetrics';
 import { getOwnerId } from '../ownerContext';
 import { catalogueOrFilter } from '../libraryScope';
+import { messageTags } from '../messageTags';
+import { COACH_COMMENTS_METRIC_ID } from './metricRegistry';
 import { isoMonday, isoAddDays, snapToMonday } from '../dateUtils';
 import { parsePrescription, parseComboPrescription, rangeMid } from '../prescriptionParser';
 import { expandForCounting } from '../comboExpansion';
@@ -137,6 +139,16 @@ export interface RawLogSet {
   performed_text?: string | null;
 }
 
+/** A coach message on a logged session, with what it was tagged to. `tags`
+ *  is the raw jsonb (read through `messageTags`); `exercise_id` is the
+ *  older per-exercise scope some rows carry instead. */
+export interface RawCoachComment {
+  id: string;
+  session_id: string | null;
+  exercise_id: string | null;
+  tags: unknown;
+}
+
 export interface MacroContext {
   relativeWeek: number | null;
   weekType: string | null;
@@ -178,6 +190,11 @@ export interface BuildFactsInput {
    * module simply leave it out.
    */
   kinemos?: KinemosLiftRecord[];
+  /**
+   * Coach comments on the sessions in `sessions`, for the `coachComments`
+   * measure. Optional and fetched only when a query asks for that measure.
+   */
+  coachComments?: RawCoachComment[];
 }
 
 // ── load resolution ───────────────────────────────────────────────────────────
@@ -664,6 +681,91 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
     }
   }
 
+  // ── COACH COMMENTS stream ──
+  //
+  // One fact per coach comment and exercise it names, joined through the
+  // tags on the message row (`#Snatch`, `#Snatch/3` — a set tag counts for
+  // its exercise, once per comment) plus the older per-exercise scope in
+  // `exercise_id`. A comment naming no exercise still counts, under
+  // "(session)", so a per-athlete or per-week total is the whole of the
+  // coach's feedback and only the per-exercise split leaves it aside.
+  //
+  // Like a KinEMOS rep, a comment fact carries NOTHING the training metrics
+  // count: it is feedback about the work, not work. A skipped exercise the
+  // athlete was asked about still gets its fact — that question is exactly
+  // the kind of feedback this measure is for.
+  if (input.coachComments && input.coachComments.length > 0) {
+    const logExById = new Map(input.logExercises.map((le) => [le.id, le]));
+    const noExercise = {
+      exerciseId: null,
+      exerciseName: '(session)',
+      familyRootId: null,
+      familyRootName: '(session)',
+      category: '(session)',
+      movement: null,
+      isCompetitionLift: false,
+    };
+    for (const m of input.coachComments) {
+      const session = m.session_id ? sessionById.get(m.session_id) : undefined;
+      if (!session) continue;
+      const weekStart = snapToMonday(session.week_start ?? isoMonday(session.date));
+      const common = {
+        ...baseRow(session.athlete_id, weekStart),
+        state: 'performed' as const,
+        countsTowardsTotals: false,
+        unit: null,
+        date: session.date,
+        dayIndex: session.day_index,
+        dayOfWeek: weekdayOf(session.date),
+        pairKey: null,
+        sets: 0,
+        reps: 0,
+        tonnage: 0,
+        maxLoad: 0,
+        load: 0,
+        loadIsKg: false,
+        loadIsPct: false,
+        pct1rm: null,
+        coachComments: 1,
+      };
+
+      const named = new Set<string>();
+      for (const t of messageTags({ tags: m.tags as never })) {
+        if (t.kind === 'exercise') named.add(t.logExerciseId);
+      }
+      if (m.exercise_id) named.add(m.exercise_id);
+
+      if (named.size === 0) {
+        facts.push({ ...common, ...noExercise });
+        continue;
+      }
+      for (const leId of named) {
+        const le = logExById.get(leId);
+        if (!le) {
+          // The row is gone (or outside the window): still a comment on
+          // this session, just not on a nameable exercise.
+          facts.push({ ...common, ...noExercise });
+          continue;
+        }
+        // An off-plan combo names itself by its lead member.
+        const lead = le.metadata?.combo?.members?.slice().sort((a, b) => a.position - b.position)[0];
+        const exId = le.exercise_id ?? lead?.exerciseId ?? null;
+        const e = exId ? input.exercisesById[exId] : undefined;
+        const fam = e ? familyOf(e.id) : { familyRootId: null, familyRootName: lead?.name ?? '(deleted exercise)' };
+        facts.push({
+          ...common,
+          exerciseId: e?.id ?? exId,
+          exerciseName: e?.name ?? lead?.name ?? '(deleted exercise)',
+          familyRootId: fam.familyRootId,
+          familyRootName: fam.familyRootName,
+          category: e?.category ?? '(uncategorised)',
+          movement: e?.lift_slot ?? null,
+          isCompetitionLift: e?.is_competition_lift ?? false,
+        });
+      }
+    }
+  }
+
   return facts;
 }
 
@@ -1027,6 +1129,21 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     }
   }
 
+  // Coach comments on the window's sessions — only when the coachComments
+  // measure is asked for, for the same reason as KinEMOS above. Read with
+  // their tags; before migration 20260905090000 the column is missing and
+  // the read fails, in which case the measure simply comes up empty.
+  let coachComments: RawCoachComment[] = [];
+  if (sessionIds.length > 0 && query.measures.some((m) => m.metricId === COACH_COMMENTS_METRIC_ID)) {
+    const { data, error } = await supabase
+      .from('training_log_messages')
+      .select('id, session_id, exercise_id, tags')
+      .eq('sender_type', 'coach')
+      .in('session_id', sessionIds);
+    if (error) console.warn('[analysis] coach comments unavailable', error);
+    coachComments = (data ?? []) as RawCoachComment[];
+  }
+
   const facts = buildFacts({
     athleteIds,
     hostOwnerByAthlete,
@@ -1043,6 +1160,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     logSets,
     macroContext,
     kinemos,
+    coachComments,
   });
 
   return { facts, window, athleteLabels: athleteNameById, groupLabels, athleteBodyweight, intensityZones, dimensionColors };

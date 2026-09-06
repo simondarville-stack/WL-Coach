@@ -35,7 +35,10 @@ import {
   markSessionReviewed,
   REVIEW_SESSION_LOOKBACK_DAYS,
   type ReviewFeedItem,
+  type ReviewVideoItem,
 } from '../../lib/reviewFeedService';
+import type { MessageTag } from '../../lib/database.types';
+import { sanitizeLabel, tagToken } from '../../lib/messageTags';
 import {
   addComment,
   markLogVideoReviewed,
@@ -384,7 +387,12 @@ export function ReviewScroller() {
 
   // ── Comment plumbing ─────────────────────────────────────────────────────
   const commentOnSession = useCallback(
-    async (item: ReviewFeedItem, sessionId: string | null, text: string) => {
+    async (
+      item: ReviewFeedItem,
+      sessionId: string | null,
+      text: string,
+      tags: MessageTag[] = [],
+    ) => {
       if (item.key.startsWith(DEMO_KEY_PREFIX)) {
         // Example card: show the send feedback, write nothing.
         await new Promise(r => setTimeout(r, 250));
@@ -397,20 +405,44 @@ export function ReviewScroller() {
         message: text,
         senderType: 'coach',
         senderCoachId: activeCoachId,
+        tags,
       });
       markSeen(item); // replying implies reviewed
     },
     [activeCoachId, markSeen],
   );
 
+  // A clip comment is always about the clip's exercise — and the set it was
+  // filmed on, when the athlete attached it to one: the text keeps the
+  // `📹 #Snatch/3:` prefix it always had (now as a tag token) and the row
+  // carries the tag, so the athlete finds it under that exercise too.
+  const commentOnVideo = useCallback(
+    (item: ReviewVideoItem, text: string) => {
+      const tag: MessageTag = {
+        kind: 'exercise',
+        logExerciseId: item.logExerciseId,
+        label: sanitizeLabel(item.exerciseName) || 'Exercise',
+        ...(item.video.set_number != null && item.video.set_number > 0
+          ? { setNumber: item.video.set_number }
+          : {}),
+      };
+      return commentOnSession(item, item.sessionId, `📹 ${tagToken(tag)}: ${text}`, [tag]);
+    },
+    [commentOnSession],
+  );
+
   const replyToThread = useCallback(
-    async (item: Extract<ReviewFeedItem, { kind: 'thread' }>, text: string) => {
+    async (
+      item: Extract<ReviewFeedItem, { kind: 'thread' }>,
+      text: string,
+      tags: MessageTag[] = [],
+    ) => {
       if (item.key.startsWith(DEMO_KEY_PREFIX)) {
         await new Promise(r => setTimeout(r, 250));
         return;
       }
       if (item.sessionId) {
-        await commentOnSession(item, item.sessionId, text);
+        await commentOnSession(item, item.sessionId, text, tags);
         return;
       }
       const athlete = athleteById.get(item.athleteId);
@@ -467,7 +499,7 @@ export function ReviewScroller() {
       if (item.kind === 'thread') return; // a bare reaction is a non-answer
       try {
         if (item.kind === 'video') {
-          await commentOnSession(item, item.sessionId, `📹 ${item.exerciseName}: ${text}`);
+          await commentOnVideo(item, text);
         } else {
           await commentOnSession(item, item.session.id, text);
         }
@@ -479,7 +511,7 @@ export function ReviewScroller() {
         // Silent — the on-card buttons remain the reliable path.
       }
     },
-    [commentOnSession],
+    [commentOnSession, commentOnVideo],
   );
 
   useEffect(() => {
@@ -569,9 +601,7 @@ export function ReviewScroller() {
           seen={tag === 'history' || seen.has(item.key)}
           active={activeKey === item.key}
           near={Math.abs((cardIndexByKey.get(item.key) ?? 0) - activeCardIdx) <= 1}
-          onComment={text =>
-            commentOnSession(item, item.sessionId, `📹 ${item.exerciseName}: ${text}`)
-          }
+          onComment={text => commentOnVideo(item, text)}
           reactions={quickReactions}
           onRateTechnique={
             techniqueEnabled
@@ -591,7 +621,7 @@ export function ReviewScroller() {
           item={item}
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
-          onReply={text => replyToThread(item, text)}
+          onReply={(text, tags) => replyToThread(item, text, tags)}
           onOpenSession={openSessionFor(item)}
         />
       )}
@@ -600,7 +630,7 @@ export function ReviewScroller() {
           item={item}
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
-          onComment={text => commentOnSession(item, item.session.id, text)}
+          onComment={(text, tags) => commentOnSession(item, item.session.id, text, tags)}
           reactions={quickReactions}
           externalSent={keyboardSent[item.key]}
           onOpenSession={openSessionFor(item)}

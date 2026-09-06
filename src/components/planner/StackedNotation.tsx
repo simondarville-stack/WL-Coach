@@ -219,6 +219,12 @@ interface LoggedStackedNotationProps {
   sets: LoggedSetLike[];
   /** When true, also render skipped / failed sets in greyed style. */
   includeIncomplete?: boolean;
+  /** Makes each set column a tap target (the review reel tags a comment to
+   *  the set that was tapped). `index` is the column's position among the
+   *  visible sets; `set` is the row the caller passed in. */
+  onSetTap?: (set: LoggedSetLike, index: number) => void;
+  /** Tooltip for a tappable column, e.g. `Tag set 3 in your comment`. */
+  setTapTitle?: (set: LoggedSetLike, index: number) => string;
 }
 
 /**
@@ -232,7 +238,12 @@ interface LoggedStackedNotationProps {
  * messy rainbow and over-the-plan green falsely signalled "good". The
  * planned/actual comparison lives in the PlanActual summary strip instead.
  */
-export function LoggedStackedNotation({ sets, includeIncomplete = true }: LoggedStackedNotationProps) {
+export function LoggedStackedNotation({
+  sets,
+  includeIncomplete = true,
+  onSetTap,
+  setTapTitle,
+}: LoggedStackedNotationProps) {
   const visible = sets.filter(s =>
     includeIncomplete ? s.status !== 'pending' : s.status === 'completed',
   );
@@ -284,7 +295,7 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
 
   return (
     <div style={stackRow}>
-      {visible.map(s => {
+      {visible.map((s, index) => {
         const dim = s.status !== 'completed';
         // Completed → primary text; skipped/failed → dimmed grey. No
         // per-cell performed-vs-planned tint (see component doc).
@@ -302,8 +313,8 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
             : s.status === 'completed'
             ? '?'
             : 'x');
-        return (
-          <div key={s.id} style={stackPair} title={s.status}>
+        const column = (
+          <>
             <div style={stackColumn}>
               <span style={loadStyle}>{s.performed_load ?? '?'}</span>
               <div style={ruleStyle} />
@@ -314,6 +325,24 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
                 @{s.rpe}
               </span>
             )}
+          </>
+        );
+        // Tappable: the same column as a button, so the coach can tag the
+        // set they mean straight off the card. Same box, no extra chrome.
+        return onSetTap ? (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => onSetTap(s, index)}
+            title={setTapTitle?.(s, index) ?? s.status}
+            className="rounded-sm px-0.5 -mx-0.5 hover:bg-[var(--color-accent-subtle)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-accent)]"
+            style={{ ...stackPair, cursor: 'pointer' }}
+          >
+            {column}
+          </button>
+        ) : (
+          <div key={s.id} style={stackPair} title={s.status}>
+            {column}
           </div>
         );
       })}
