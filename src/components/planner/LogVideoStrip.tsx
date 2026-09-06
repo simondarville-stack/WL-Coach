@@ -22,6 +22,7 @@ import {
   LOG_VIDEO_MAX_SECONDS,
   VideoTooLargeError,
 } from '../../lib/videoLimits';
+import { REVIEW_CLIP_MAX_EDGE } from '../../lib/videoClipEdit';
 import { useClipEditor } from './useClipEditor';
 import { VideoLightbox } from './VideoLightbox';
 import { VideoThumb } from './VideoThumb';
@@ -92,6 +93,9 @@ export function LogVideoStrip({
     // The strip attaches a list, so a recording holding a set of singles can
     // come back as a clip per lift.
     allowSplit: true,
+    // Review footage: 4K comes down to 1080p, which is all the review player
+    // can use and a quarter of the bytes.
+    defaultMaxEdge: REVIEW_CLIP_MAX_EDGE,
   });
 
   if (videos.length === 0 && !onAdd) return null;

@@ -51,6 +51,69 @@ export const CLIP_RESOLUTIONS: { label: string; maxEdge: ClipResolution }[] = [
   { label: '480p', maxEdge: 854 },
 ];
 
+/**
+ * The ceiling review footage opens on. A phone's 4K is downscaled; anything
+ * at or under 1080p passes through untouched (see `isResize`), so the common
+ * 1080p clip keeps its lossless tail-trim path. Surfaces feeding analysis
+ * (KinEMOS) opt out and keep the camera's pixels.
+ */
+export const REVIEW_CLIP_MAX_EDGE: ClipResolution = 1920;
+
+// ── Review-clip encode profile ──────────────────────────────────────────────
+//
+// What a transcode is *for* here: a clip the coach's phone or laptop plays
+// back smoothly on gym wifi and scrubs frame by frame in the review player.
+// mediabunny's defaults aim at a different target — a qualitative "high"
+// quality — and on the browsers that support it that becomes fixed-quantizer
+// encoding with no bitrate ceiling at all. Handheld gym footage (sensor noise,
+// camera shake, a whole platform of people moving) is exactly what a fixed
+// quantizer spends bits on: measured against the same source, the output came
+// out at a higher bitrate than the phone's own recording, so every trimmed
+// clip landed in the review player heavier than the untrimmed original it
+// replaced. The player then stalls on the download and the decoder both.
+//
+// So review transcodes get an explicit, capped bitrate target from pixel
+// rate, never above what the source carried, held as a constant rate, plus a
+// one-second keyframe cadence (phone recordings' own) so the scrub player's
+// seeks decode at most a second of frames rather than mediabunny's two.
+
+/** Bits per pixel per frame at 30 fps, H.264. 0,12 puts 1080p30 at
+ *  ~7,5 Mbps — phone-recording territory, transparent for technique review. */
+const REVIEW_BITS_PER_PIXEL = 0.12;
+/** Bitrate grows sub-linearly with frame rate: consecutive frames at 60 fps
+ *  are closer together and cheaper to predict. 60 fps ≈ 1,5× the 30 fps
+ *  rate. */
+const REVIEW_FPS_EXPONENT = 0.6;
+const REVIEW_MIN_BITRATE = 1_000_000;
+/** Ceiling for an athlete who insists on "Original" at 4K: 12 Mbps still
+ *  streams on gym wifi. */
+const REVIEW_MAX_BITRATE = 12_000_000;
+/** Keyframe every second — what phone cameras write, and the seek distance
+ *  the scrub player's frame-by-frame drag has to decode across. */
+export const REVIEW_KEYFRAME_INTERVAL_S = 1;
+
+/**
+ * Target bitrate (bits/s) for a review transcode at the *output* size.
+ * `fps` and `sourceBitrate` come from the source track when known; a missing
+ * frame rate assumes 30, and a source below the model caps the target —
+ * re-encoding cannot add detail, only bytes.
+ */
+export function reviewClipBitrate(
+  width: number,
+  height: number,
+  fps?: number | null,
+  sourceBitrate?: number | null,
+): number {
+  const rate = fps != null && Number.isFinite(fps) && fps > 0 ? fps : 30;
+  const model =
+    REVIEW_BITS_PER_PIXEL * width * height * 30 * Math.pow(rate / 30, REVIEW_FPS_EXPONENT);
+  let target = Math.min(REVIEW_MAX_BITRATE, Math.max(REVIEW_MIN_BITRATE, model));
+  if (sourceBitrate != null && Number.isFinite(sourceBitrate) && sourceBitrate > 0) {
+    target = Math.min(target, Math.max(REVIEW_MIN_BITRATE, sourceBitrate));
+  }
+  return Math.round(target / 1000) * 1000;
+}
+
 /** A trim window plus an optional crop — the whole edit an athlete can make. */
 export interface ClipEdit {
   /** Seconds into the source at which the output starts. */
@@ -68,8 +131,30 @@ const NOOP_EPSILON = 0.005;
 
 export const FULL_FRAME: ClipCrop = { x: 0, y: 0, w: 1, h: 1 };
 
+/**
+ * Whether the resolution ceiling actually shrinks this frame. A 1080p ceiling
+ * on a 1080p clip is not a resize — and must not count as one, or the default
+ * ceiling would turn every untouched clip into a needless remux and every
+ * tail-trim into a re-encode. Without the frame size (metadata not loaded
+ * yet) a set ceiling is assumed to bind.
+ */
+export function isResize(
+  edit: ClipEdit,
+  frame?: { w: number; h: number } | null,
+): boolean {
+  if (edit.maxEdge == null) return false;
+  if (!frame) return true;
+  const cw = (edit.crop?.w ?? 1) * frame.w;
+  const ch = (edit.crop?.h ?? 1) * frame.h;
+  return edit.maxEdge < Math.max(cw, ch);
+}
+
 /** True when applying this edit would produce the file we already have. */
-export function isNoopEdit(edit: ClipEdit, duration: number): boolean {
+export function isNoopEdit(
+  edit: ClipEdit,
+  duration: number,
+  frame?: { w: number; h: number } | null,
+): boolean {
   const trimmed =
     edit.start > NOOP_EPSILON || edit.end < duration - NOOP_EPSILON;
   const cropped =
@@ -78,7 +163,7 @@ export function isNoopEdit(edit: ClipEdit, duration: number): boolean {
       edit.crop.y > NOOP_EPSILON ||
       edit.crop.w < 1 - NOOP_EPSILON ||
       edit.crop.h < 1 - NOOP_EPSILON);
-  return !trimmed && !cropped && edit.maxEdge == null;
+  return !trimmed && !cropped && !isResize(edit, frame);
 }
 
 /**
@@ -145,6 +230,14 @@ export interface ApplyClipEditOptions {
    * moment the edit crops or resizes, which force a transcode anyway.
    */
   preferLossless?: boolean;
+  /**
+   * What a transcode, when one happens, is encoded for. `review` (the
+   * default) applies the capped review profile above — the training log, a
+   * competition attempt, a coach's demo. `analysis` leaves mediabunny's
+   * quality-first defaults in place: KinEMOS footage that could not stay a
+   * packet copy (a crop) should lose as little as the encoder allows.
+   */
+  purpose?: 'review' | 'analysis';
 }
 
 /** Keep the edited name recognisable next to the original in a camera roll
@@ -170,7 +263,7 @@ function editedFileName(name: string, part?: number): string {
 export async function applyClipEdit(
   file: File,
   edit: ClipEdit,
-  { onProgress, signal, part, preferLossless }: ApplyClipEditOptions = {},
+  { onProgress, signal, part, preferLossless, purpose = 'review' }: ApplyClipEditOptions = {},
 ): Promise<File> {
   if (signal?.aborted) throw new ClipEditCanceledError();
 
@@ -195,6 +288,7 @@ export async function applyClipEdit(
     Input,
     Mp4OutputFormat,
     Output,
+    Quality,
   } = await import('mediabunny');
 
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
@@ -213,33 +307,61 @@ export async function applyClipEdit(
     width?: number;
     height?: number;
     fit?: 'fill';
+    quality?: InstanceType<typeof Quality>;
+    keyFrameInterval?: number;
   } = {};
 
-  if (edit.crop || edit.maxEdge != null) {
-    const track = await input.getPrimaryVideoTrack();
-    if (track) {
-      const dw = track.displayWidth;
-      const dh = track.displayHeight;
-      const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
-      if (edit.crop) {
-        video.crop = {
-          left: Math.round(edit.crop.x * dw),
-          top: Math.round(edit.crop.y * dh),
-          width: even(edit.crop.w * dw),
-          height: even(edit.crop.h * dh),
-        };
+  const track = await input.getPrimaryVideoTrack();
+  if (track) {
+    const dw = track.displayWidth;
+    const dh = track.displayHeight;
+    const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+    if (edit.crop) {
+      video.crop = {
+        left: Math.round(edit.crop.x * dw),
+        top: Math.round(edit.crop.y * dh),
+        width: even(edit.crop.w * dw),
+        height: even(edit.crop.h * dh),
+      };
+    }
+    const out = outputDimensions(edit, dw, dh);
+    // Only ask for a resize when it actually changes something — otherwise
+    // a trim-only edit would lose its lossless packet-copy path.
+    const cropped = video.crop ?? { width: dw, height: dh };
+    if (out.width !== cropped.width || out.height !== cropped.height) {
+      video.width = out.width;
+      video.height = out.height;
+      // Aspect ratio is already preserved by outputDimensions, so 'fill'
+      // just means "these exact pixels" rather than re-deriving a box.
+      video.fit = 'fill';
+    }
+
+    // The review profile applies only where mediabunny is going to re-encode
+    // anyway — a head-trim, a crop, a resize (the same test its Conversion
+    // makes). Asking for a bitrate or keyframe cadence on a tail-only trim
+    // would itself force the transcode the packet-copy path avoids.
+    const headTrim = edit.start > (await track.getFirstTimestamp());
+    const transcodes = headTrim || video.crop != null || video.width != null;
+    if (purpose === 'review' && transcodes) {
+      let fps: number | null = null;
+      let sourceBitrate: number | null = null;
+      try {
+        // A sample of packets, metadata only — cheap, and enough for a mean.
+        const stats = await track.computePacketStats(200);
+        fps = stats.averagePacketRate;
+        sourceBitrate = stats.averageBitrate;
+      } catch {
+        // Unknown rate: the model assumes 30 fps and no source cap.
       }
-      const out = outputDimensions(edit, dw, dh);
-      // Only ask for a resize when it actually changes something — otherwise
-      // a trim-only edit would lose its lossless packet-copy path.
-      const cropped = video.crop ?? { width: dw, height: dh };
-      if (out.width !== cropped.width || out.height !== cropped.height) {
-        video.width = out.width;
-        video.height = out.height;
-        // Aspect ratio is already preserved by outputDimensions, so 'fill'
-        // just means "these exact pixels" rather than re-deriving a box.
-        video.fit = 'fill';
-      }
+      // Constant rather than variable: the target is a ceiling the player
+      // has to stream, and on a clip this short VBR never settles — measured
+      // on the encode harness (verify/clip-encode.html) VBR overshot the
+      // target by ~70 %, CBR landed on it.
+      video.quality = new Quality({
+        bitrate: reviewClipBitrate(out.width, out.height, fps, sourceBitrate),
+        bitrateMode: 'constant',
+      });
+      video.keyFrameInterval = REVIEW_KEYFRAME_INTERVAL_S;
     }
   }
 

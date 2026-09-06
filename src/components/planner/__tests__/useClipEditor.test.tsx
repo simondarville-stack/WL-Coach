@@ -109,6 +109,24 @@ describe('useClipEditor', () => {
     expect(result.value).toBeUndefined();
   });
 
+  it('opens on the surface’s default resolution ceiling', async () => {
+    // Review surfaces pass 1080p so a 4K phone clip comes down to what the
+    // review player can actually use; a surface that passes nothing (KinEMOS)
+    // opens on Original.
+    const active = 'border-[color:var(--color-accent)]';
+    const gate = mountGate({ ...LOG_LIMITS, defaultMaxEdge: 1920 });
+    await startPrepare(() => gate().prepare(sizedClip(4 * 1024 * 1024)));
+    expect(screen.getByRole('button', { name: '1080p' }).className).toContain(active);
+    expect(screen.getByRole('button', { name: 'Original' }).className).not.toContain(active);
+  });
+
+  it('opens on Original where no ceiling is declared', async () => {
+    const active = 'border-[color:var(--color-accent)]';
+    const gate = mountGate(LOG_LIMITS);
+    await startPrepare(() => gate().prepare(sizedClip(4 * 1024 * 1024)));
+    expect(screen.getByRole('button', { name: 'Original' }).className).toContain(active);
+  });
+
   it('opens the editor for a batch pick too', async () => {
     // Deliberate: an untrimmed clip is mostly an athlete walking to the bar
     // and away from it, and those bytes are paid for on every upload. Five

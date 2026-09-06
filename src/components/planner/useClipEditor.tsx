@@ -52,6 +52,14 @@ export interface ClipEditorLimits {
    * re-encoded pixels would poison the measurement.
    */
   preferLossless?: boolean;
+  /**
+   * Resolution ceiling the editor opens on for an ordinary pick. Review
+   * surfaces pass `REVIEW_CLIP_MAX_EDGE` (1080p — a 4K phone clip is
+   * downscaled, anything smaller passes through untouched); analysis
+   * surfaces leave it unset to keep the camera's pixels. Over-cap picks
+   * still open on their own recovery ceilings regardless.
+   */
+  defaultMaxEdge?: ClipResolution;
 }
 
 export interface ClipEditorGate {
@@ -138,7 +146,7 @@ export function useClipEditor(limits: ClipEditorLimits): ClipEditorGate {
         );
       }
     }
-    return open(file, null, false);
+    return open(file, null, false, limits.defaultMaxEdge ?? null);
   };
 
   const prepareAfterRejection = (file: File) =>

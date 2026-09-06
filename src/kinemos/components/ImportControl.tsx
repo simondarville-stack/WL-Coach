@@ -64,6 +64,8 @@ export function ImportControl({ athletes, exercises, onImported, onArrivalNote }
     // keyframe-aligned packet copy instead of a re-encode, the start handle
     // snaps to where that copy can actually cut, and the editor shows the
     // kept-size estimate against the 300 MB cap (design §6.3, plan §2.3).
+    // No `defaultMaxEdge` for the same reason: the review surfaces open on
+    // 1080p, analysis keeps the camera's resolution.
     preferLossless: true,
   });
 

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Clip encode check</title>
+    <style>
+      body { margin: 0; padding: 20px; font: 13px/1.5 ui-monospace, Menlo, monospace; background: #fafaf9; color: #1a1a18; }
+      h1 { font: 600 16px system-ui, sans-serif; margin: 0 0 8px; }
+      pre { margin: 0 0 12px; white-space: pre-wrap; }
+      video { max-width: 480px; display: block; margin-top: 8px; background: #000; }
+    </style>
+  </head>
+  <body>
+    <h1>Clip encode check</h1>
+    <p>
+      Runs the review-clip editor's <code>applyClipEdit</code> on a clip and reports what
+      came out: size, bitrate, resolution, keyframe spacing. Open under
+      <code>npm run dev</code>; pass <code>?clip=/verify/fixtures/x.mp4&amp;start=1&amp;end=5&amp;maxEdge=1920</code>,
+      or pick a file. The numbers are what a coach's player has to swallow.
+    </p>
+    <input id="file" type="file" accept="video/*" />
+    <pre id="log">starting…</pre>
+    <video id="out" controls muted playsinline></video>
+
+    <script type="module">
+      import { applyClipEdit } from '/src/lib/videoClipEdit.ts';
+      import { ALL_FORMATS, BlobSource, EncodedPacketSink, Input } from 'mediabunny';
+
+      /** Keyframe times as the container flags them (no bitstream check, so
+       *  it counts for VP9/AV1 too, not only H.264). */
+      async function keyframeTimes(track) {
+        const times = [];
+        const sink = new EncodedPacketSink(track);
+        for await (const packet of sink.packets(undefined, undefined, { metadataOnly: true })) {
+          if (packet.type === 'key') times.push(packet.timestamp);
+        }
+        return times.sort((a, b) => a - b);
+      }
+
+      const params = new URLSearchParams(location.search);
+      const logEl = document.getElementById('log');
+      const lines = [];
+      const log = (...parts) => {
+        const line = parts.join(' ');
+        lines.push(line);
+        logEl.textContent = lines.join('\n');
+        console.log('[clip-encode]', line);
+      };
+      const mb = bytes => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+
+      async function describe(label, file) {
+        const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+        const track = await input.getPrimaryVideoTrack();
+        const duration = await input.computeDuration();
+        const keys = track ? await keyframeTimes(track) : [];
+        const gaps = keys.slice(1).map((t, i) => t - keys[i]);
+        const meanGap = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : duration;
+        const fps = track ? await track.computePacketStats(120).then(s => s.averagePacketRate) : 0;
+        const info = {
+          label,
+          bytes: file.size,
+          duration: +duration.toFixed(3),
+          mbps: +((file.size * 8) / duration / 1e6).toFixed(2),
+          codec: track?.codec ?? null,
+          width: track?.displayWidth ?? null,
+          height: track?.displayHeight ?? null,
+          fps: +fps.toFixed(2),
+          keyframes: keys.length,
+          keyframeGapS: +meanGap.toFixed(3),
+        };
+        log(`${label}: ${mb(file.size)} · ${info.duration} s · ${info.mbps} Mbps · ${info.codec} ${info.width}×${info.height} @ ${info.fps} fps · ${keys.length} keyframes, mean gap ${info.keyframeGapS} s`);
+        return info;
+      }
+
+      async function run(file) {
+        const start = Number(params.get('start') ?? 1);
+        const end = Number(params.get('end') ?? 5);
+        const maxEdgeParam = params.get('maxEdge');
+        const maxEdge = maxEdgeParam == null || maxEdgeParam === 'null' ? null : Number(maxEdgeParam);
+        const source = await describe('source', file);
+        log(`edit: ${start} → ${end} s, maxEdge ${maxEdge ?? 'original'}`);
+        const t0 = performance.now();
+        const edited = await applyClipEdit(file, { start, end, crop: null, maxEdge }, {
+          onProgress: p => { logEl.textContent = lines.join('\n') + `\nencoding ${Math.round(p * 100)}%`; },
+        });
+        const encodeMs = Math.round(performance.now() - t0);
+        const output = await describe('output', edited);
+        log(`encode took ${encodeMs} ms`);
+        document.getElementById('out').src = URL.createObjectURL(edited);
+        window.__result = { source, output, encodeMs };
+        log('done');
+      }
+
+      document.getElementById('file').addEventListener('change', e => {
+        const f = e.target.files?.[0];
+        if (f) void run(f).catch(err => log('ERROR', err?.message ?? String(err)));
+      });
+
+      const clip = params.get('clip');
+      if (clip) {
+        fetch(clip)
+          .then(r => r.blob())
+          .then(b => run(new File([b], clip.split('/').pop() ?? 'clip', { type: b.type })))
+          .catch(err => log('ERROR', err?.message ?? String(err)));
+      } else {
+        log('pick a clip, or pass ?clip=…');
+      }
+    </script>
+  </body>
+</html>

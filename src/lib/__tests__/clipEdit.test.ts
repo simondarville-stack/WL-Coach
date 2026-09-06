@@ -8,7 +8,15 @@ import {
   ratioInFractionSpace,
   resizeCrop,
 } from '../clipCropGeometry';
-import { FULL_FRAME, isNoopEdit, outputDimensions, type ClipEdit } from '../videoClipEdit';
+import {
+  FULL_FRAME,
+  isNoopEdit,
+  isResize,
+  outputDimensions,
+  REVIEW_CLIP_MAX_EDGE,
+  reviewClipBitrate,
+  type ClipEdit,
+} from '../videoClipEdit';
 
 const edit = (over: Partial<ClipEdit> = {}): ClipEdit => ({
   start: 0,
@@ -39,6 +47,60 @@ describe('isNoopEdit', () => {
     expect(isNoopEdit(edit({ end: 8 }), 10)).toBe(false);
     expect(isNoopEdit(edit({ crop: { x: 0.1, y: 0, w: 0.9, h: 1 } }), 10)).toBe(false);
     expect(isNoopEdit(edit({ maxEdge: 1280 }), 10)).toBe(false);
+  });
+
+  it('ignores a ceiling the frame already sits under', () => {
+    // The review default (1080p) on a 1080p phone clip is not an edit — the
+    // untouched clip must still read as "Upload", not "Save & upload".
+    const hd = { w: 1920, h: 1080 };
+    expect(isNoopEdit(edit({ maxEdge: REVIEW_CLIP_MAX_EDGE }), 10, hd)).toBe(true);
+    expect(isNoopEdit(edit({ maxEdge: REVIEW_CLIP_MAX_EDGE }), 10, { w: 1080, h: 1920 })).toBe(true);
+    // …but it is one on 4K, and a crop that stays wider than the ceiling too.
+    expect(isNoopEdit(edit({ maxEdge: REVIEW_CLIP_MAX_EDGE }), 10, { w: 3840, h: 2160 })).toBe(false);
+    expect(isResize(edit({ maxEdge: 1280, crop: { x: 0, y: 0, w: 0.5, h: 1 } }), { w: 3840, h: 2160 })).toBe(true);
+    // A 4K frame cropped to its middle quarter is 1920×1080 — already under
+    // the ceiling, so no resize.
+    expect(isResize(edit({ maxEdge: 1920, crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 } }), { w: 3840, h: 2160 })).toBe(false);
+    // Frame unknown: a set ceiling is assumed to bind.
+    expect(isResize(edit({ maxEdge: 1920 }), null)).toBe(true);
+    expect(isResize(edit(), null)).toBe(false);
+  });
+});
+
+describe('reviewClipBitrate', () => {
+  it('lands 1080p30 in phone-recording territory', () => {
+    const b = reviewClipBitrate(1920, 1080, 30);
+    expect(b).toBeGreaterThan(6_000_000);
+    expect(b).toBeLessThan(9_000_000);
+  });
+
+  it('grows with frame rate, but slower than linearly', () => {
+    const at30 = reviewClipBitrate(1920, 1080, 30);
+    const at60 = reviewClipBitrate(1920, 1080, 60);
+    expect(at60).toBeGreaterThan(at30 * 1.3);
+    expect(at60).toBeLessThan(at30 * 1.7);
+  });
+
+  it('scales with pixels and stays inside the floor and ceiling', () => {
+    expect(reviewClipBitrate(1280, 720, 30)).toBeLessThan(reviewClipBitrate(1920, 1080, 30));
+    // 4K "Original" is capped — the review player has to stream it on gym wifi.
+    expect(reviewClipBitrate(3840, 2160, 60)).toBe(12_000_000);
+    expect(reviewClipBitrate(320, 180, 30)).toBe(1_000_000);
+  });
+
+  it('never aims above the source, which re-encoding cannot improve on', () => {
+    expect(reviewClipBitrate(1920, 1080, 30, 3_000_000)).toBe(3_000_000);
+    // …but a hot source does not raise the target either.
+    expect(reviewClipBitrate(1920, 1080, 30, 40_000_000)).toBe(reviewClipBitrate(1920, 1080, 30));
+  });
+
+  it('assumes 30 fps when the rate is unknown', () => {
+    expect(reviewClipBitrate(1920, 1080, null)).toBe(reviewClipBitrate(1920, 1080, 30));
+    expect(reviewClipBitrate(1920, 1080, NaN)).toBe(reviewClipBitrate(1920, 1080, 30));
+  });
+
+  it('is a whole number of kbit/s', () => {
+    expect(reviewClipBitrate(1920, 1080, 59.94) % 1000).toBe(0);
   });
 });
 

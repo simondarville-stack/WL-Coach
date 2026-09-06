@@ -35,6 +35,7 @@ import {
   ClipEditCanceledError,
   FULL_FRAME,
   isNoopEdit,
+  isResize,
   outputDimensions,
   type ClipEdit,
   type ClipResolution,
@@ -458,7 +459,9 @@ export function ClipEditor({
   // ── Export ───────────────────────────────────────────────────────────────
   const selection = edit.end - edit.start;
   const out = frame ? outputDimensions(edit, frame.w, frame.h) : null;
-  const unchanged = duration != null && isNoopEdit(edit, duration);
+  // Frame-aware: a 1080p ceiling on a 1080p clip changes nothing, so it must
+  // not turn "Upload" into a pointless "Save & upload" remux.
+  const unchanged = duration != null && isNoopEdit(edit, duration, frame);
 
   /**
    * Kept-size estimate, shown only when the edit will be a lossless packet
@@ -468,7 +471,7 @@ export function ClipEditor({
    * tells the coach whether the import will clear it.
    */
   const losslessEstimate =
-    preferLossless && edit.crop == null && edit.maxEdge == null && duration != null && duration > 0
+    preferLossless && edit.crop == null && !isResize(edit, frame) && duration != null && duration > 0
       ? file.size *
         ((splitMode
           ? exportRanges.reduce((sum, r) => sum + (r.end - r.start), 0)
@@ -506,6 +509,10 @@ export function ClipEditor({
             signal: controller.signal,
             part: exportRanges.length > 1 ? i + 1 : undefined,
             preferLossless,
+            // Analysis footage keeps the encoder's quality-first defaults on
+            // the transcodes it cannot avoid; everything else is review
+            // footage and gets the capped profile the review player can play.
+            purpose: preferLossless ? 'analysis' : 'review',
           },
         );
         out.push(edited);

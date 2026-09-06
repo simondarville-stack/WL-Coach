@@ -27,6 +27,7 @@ import { ExerciseSearch } from './ExerciseSearch';
 import { fetchComboPlannedRows, fetchPlannedRowsForExercise } from '../../lib/comboHistory';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { useClipEditor } from './useClipEditor';
+import { REVIEW_CLIP_MAX_EDGE } from '../../lib/videoClipEdit';
 import {
   isStorageSizeRejection,
   PLANNER_MEDIA_MAX_BYTES,
@@ -166,6 +167,7 @@ export function ExerciseDetail({
   const clipEditor = useClipEditor({
     maxBytes: PLANNER_MEDIA_MAX_BYTES,
     maxSeconds: null,
+    defaultMaxEdge: REVIEW_CLIP_MAX_EDGE,
   });
   const [unit, setUnit] = useState<string>(plannedExercise?.unit ?? 'absolute_kg');
   // The week window the history chart is showing. Both history tables filter

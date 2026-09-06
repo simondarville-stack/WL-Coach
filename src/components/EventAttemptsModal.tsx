@@ -4,6 +4,7 @@ import type { Athlete, EventAttempts, EventVideo } from '../lib/database.types';
 import { useEvents } from '../hooks/useEvents';
 import { alertDialog, confirmDialog } from './ui';
 import { useClipEditor } from './planner/useClipEditor';
+import { REVIEW_CLIP_MAX_EDGE } from '../lib/videoClipEdit';
 import { EVENT_VIDEO_MAX_BYTES, VideoTooLargeError } from '../lib/videoLimits';
 
 interface EventAttemptsModalProps {
@@ -35,6 +36,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
   const clipEditor = useClipEditor({
     maxBytes: EVENT_VIDEO_MAX_BYTES,
     maxSeconds: null,
+    defaultMaxEdge: REVIEW_CLIP_MAX_EDGE,
   });
 
   useEffect(() => {

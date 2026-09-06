@@ -99,13 +99,33 @@ describe('ClipEditor', () => {
       />,
     );
 
-    loadMetadata();
+    loadMetadata({ width: 3840, height: 2160 });
 
     expect(screen.queryByRole('button', { name: 'Upload original' })).toBeNull();
     expect(screen.getByText(/Clip is 300 MB/)).toBeInTheDocument();
-    // A resolution ceiling is already set, so the edit is never a no-op and
-    // the athlete can send without touching anything else.
+    // The 1080p ceiling binds on a 4K clip, so the edit is a real one and the
+    // athlete can send without touching anything else.
     expect(screen.getByRole('button', { name: /Save & upload/ })).not.toBeDisabled();
+  });
+
+  it('does not pretend a ceiling the clip already sits under is an edit', () => {
+    render(
+      <ClipEditor
+        file={sizedClip(300 * 1024 * 1024)}
+        reason="Clip is 300 MB — the limit is 200 MB."
+        mustEdit
+        defaultMaxEdge={1920}
+        onCancel={() => {}}
+        onDone={() => {}}
+      />,
+    );
+    loadMetadata({ width: 1920, height: 1080 });
+
+    // 1080p on a 1080p clip changes nothing — sending it would be a remux to
+    // the same 300 MB and a refusal from storage. The button says so instead.
+    const send = screen.getByRole('button', { name: /^Upload$/ });
+    expect(send).toBeDisabled();
+    expect(send).toHaveAttribute('title', expect.stringMatching(/drop the size/));
   });
 
   it('shows the trim, crop and size controls', () => {
