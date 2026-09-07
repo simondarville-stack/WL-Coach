@@ -1,2 +1,3 @@
-# Pre-commit: run TypeScript type check
+# Pre-commit: refuse a commit on a main that is behind origin/main, then type check
+node scripts/guard-stale-main.mjs
 npx tsc --noEmit

@@ -230,6 +230,11 @@ Canonical logic lives in `src/lib/prescriptionParser.ts` (parsing) and
 - Substantial features are built on `feature/<topic>` branches and merged to
   `main` with the version bump (see Versioning). Small fixes may go straight
   to `main`.
+- The pre-commit hook (`scripts/guard-stale-main.mjs`) refuses a commit on
+  `main` when `origin/main` has commits `HEAD` lacks — it fetches quietly
+  first and stays silent when offline; feature branches are never checked.
+  Bring `main` up to date (`git fetch && git merge origin/main`) or work on
+  a branch; `EMOS_SKIP_MAIN_GUARD=1` is for a rollback made behind on purpose.
 
 ## Supabase & migrations
 
