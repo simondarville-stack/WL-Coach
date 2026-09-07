@@ -314,3 +314,41 @@ import `lib/supabase`, which throws without them) — the worktree has no
 search" test, untouched here, ran to 5,8 s once under the full suite's
 load and hit vitest's 5 s default (it passes alone in every run) — a
 `{ timeout }` like its neighbours carry would end that.
+
+## 7. Measured on the clips (07/09/2026, local)
+
+The walk as written called `frameAt` per frame and cost 89 ms a frame on
+the competition clip and 153 on the 60 fps double — a 9 s clip took 86 s to
+scan, three times what it saved. The per-call retrieval, not the decode, is
+the price: one decoder run over the clip through mediabunny's canvas
+iterator costs 16 ms a frame on the same clip (the sample sink with a
+thumbnail draw, 7 ms, but it does not apply the container rotation, which
+the vertical centroid depends on). `FrameServer.stream` is that run;
+`scanServer` uses it when present. Scan cost after the change, thumbnails
+160 px:
+
+| Clip | Frames | Scan ms/frame | Windows | Real lift found | Automatic path, before → after |
+| --- | --- | --- | --- | --- | --- |
+| Competition snatch, 30 fps | 314 | 20 (est. from 16 raw) | 4: 0,0–1,1 (settle), 2,6–3,0, **6,9–9,5**, 10,0–10,4 | yes, conf 1,00, coverage 0,10 | ~50 s → scan 6 s + find 3 s + track ~10 s |
+| Snatch double, 60 fps | 561 | 20,6 | 2: **1,2–3,2**, **7,0–9,3** | both, conf 1,00, coverage 0,09/0,08 | ~120 s → 42 s |
+| Close-camera pull, 60 fps | 532 | 20,4 | 3: **2,5–4,0**, 5,1–7,3 (standing up, conf 0,59), 8,2–8,8 | yes, conf 1,00, coverage 0,15 | ~80 s → 43 s |
+| Snatch 1080 × 1440, 30 fps | 457 | 24,7 | 2: 0,0–2,5 (settle), **12,0–15,2** | yes, conf 1,00, coverage 0,16 | ~70 s → ~40 s |
+| Training hall, 30 fps | 545 | 23,0 | 4 (the lifter walking, standing, the bar shifted; coverage 0,14–0,20) | no lift in the clip; no rep from any window | ~90 s → ~55 s |
+
+Findings, and what changed:
+
+- **Recall is complete** on the five clips; every real lift is a window at
+  confidence 1,00 with coverage 0,08–0,16. `coverageMax` 0,6 was never
+  approached — the close-camera pull sits at 0,15, so the constant stands.
+- **Precision is partial** and harmless: the plate finder and the rep cut
+  reject a false window (the training hall yields no rep from four of
+  them), at 5–10 s each. Two kinds recur: a burst at the clip's first frame
+  (the camera settling, the lifter walking in; `restT` 0,00) and short
+  bursts of 0,4–0,9 s. The shortest real burst is 1,53 s, so `minBurstS`
+  is 0,8 (was 0,4): that removes four false windows on the set and no
+  lift. The clip-start settle is left in — a clip that starts as the lifter
+  is already set is the case the rep cut allows a short first rest for, and
+  a rule against it would cost recall to save a few seconds.
+- The "training hall: none" row in §6 was a wrong expectation: motion
+  alone cannot tell a lifter standing up from a lift, and the design never
+  needed it to. The bar is: no false REP, and less time than before.

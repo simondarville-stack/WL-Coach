@@ -76,6 +76,17 @@ export interface FrameServer {
   readonly codec: string | null;
 
   frameAt(index: number): Promise<ServedFrame>;
+  /**
+   * Every frame in presentation order, streamed. One decoder run from the
+   * first frame to the last, no per-frame seek and no cache: the activity
+   * scan's way of seeing a whole clip. Measured on the testset (07/09/2026,
+   * 1080p H.264, 160 px thumbnails) this costs 16 ms per frame where
+   * `frameAt` frame by frame cost 89 — the per-call retrieval, not the
+   * decode, is the price. `onFrame` returning `false` stops the walk. Not to
+   * be interleaved with `frameAt` on the same server: both drive the one
+   * decoder. Absent on a server that cannot stream (tests' mocks).
+   */
+  stream?(onFrame: (frame: ServedFrame) => boolean | void): Promise<number>;
   /** Warm the cache around `index`, in presentation order. Best-effort and
    *  never rejects — a failed prefetch is a slower step, not an error. */
   prefetch(index: number, radius?: number): void;
@@ -584,6 +595,19 @@ export async function openFrameServer(
 
     nearestIndex(t: number) {
       return nearestIndexIn(timestamps, t);
+    },
+
+    async stream(onFrame) {
+      if (closed) throw new FrameServerUnavailableError('Frame server is closed.');
+      let served = 0;
+      for await (const wrapped of canvasSink.canvases()) {
+        if (closed) break;
+        served++;
+        const index = nearestIndexIn(timestamps, wrapped.timestamp);
+        const go = onFrame({ index, timestamp: wrapped.timestamp, canvas: wrapped.canvas });
+        if (go === false) break;
+      }
+      return served;
     },
 
     luma: lumaAt,

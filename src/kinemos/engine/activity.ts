@@ -264,7 +264,12 @@ export const DEFAULT_LIFT_WINDOW_OPTIONS: Required<LiftWindowOptions> = {
   holdFactor: 1.5,
   holdMinAbove: 0.08,
   mergeGapS: 0.25,
-  minBurstS: 0.4,
+  // Measured on the testset (07/09/2026): the shortest real lift burst was
+  // 1,53 s (the close-camera pull); the false ones — a settle at the clip
+  // start, a bounce, a step — ran 0,40–0,93 s. 0,8 s cuts four of those
+  // across the five clips and no lift; a snatch's pull alone is about a
+  // second.
+  minBurstS: 0.8,
   maxBurstS: 6,
   minRiseFraction: 0.04,
   coverageMax: 0.6,

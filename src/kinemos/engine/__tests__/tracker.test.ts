@@ -320,7 +320,7 @@ describe('staying fast on large footage', () => {
     expect(thin.gaveUp).toBe(false);
   });
 
-  it('the coarse-then-fine search finds the same peak an exhaustive one would', async () => {
+  it('the coarse-then-fine search finds the same peak an exhaustive one would', { timeout: 20_000 }, async () => {
     // The stride-2 first pass is only safe because a disc's correlation surface
     // is several pixels wide. If that ever stops holding, this catches it.
     const truth = pullTrajectory(24);
