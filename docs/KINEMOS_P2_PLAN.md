@@ -304,6 +304,58 @@ before; training hall 533/545, no rep found (the bar is never lifted in the
 tracked span — the fallback to the whole track is what remains to be said
 honestly in the viewer).
 
+### Testset acceptance checklist
+
+The bar a tracker or phase change has to clear before it ships, in the
+numbers `verify/testset.html` already logs (`track:` for the frames, `reps:`
+for the rep, `phases:` for the detection, `grade:` for the grade). The clips
+live in gitignored `verify/fixtures/testset-v2/`; a session without them
+designs against synthetic tests and leaves these rows to a local run.
+
+| Clip | Tracked frames | Rep (lift-off → catch) | Phases on the clean lift | Grade | Anchor verified |
+| --- | --- | --- | --- | --- | --- |
+| Competition snatch, H.264 1080p 30 fps (`20230930…`) | 314/314 | 6,87 → 8,17 s, peak 1,92 m/s | fully detected | — | (local) |
+| Snatch double, HEVC 1080 × 1920 60 fps (`VID20250908…`) | 561/561 (before the drop stop; from 0.92.0 the track ends at rep 1's drop — see below) | two reps: 1,22 → 2,36 s and 6,91 → 8,09 s; catch 0,17 s / 19 cm below the apex | fully detected on rep 1 | — | (local) |
+| Pull, HEVC 1080 × 1920 60 fps, close camera (`VID20250513…`) | 532/532 | one rep (a pull is lowered, never dropped) | fully detected; transition ≥ 15 cm above lift-off | A | (local) |
+| Snatch, HEVC 1080 × 1440 30 fps (`VID20250830…`) | 431/457, ends where the bar is dropped | one rep | fully detected | — | (local) |
+| Training hall, H.264 1080 × 1920 30 fps, 18 s (`20220824…`) | 533/545, ends where the camera pans away | none found — the bar is never lifted; the viewer keeps the whole track and says so | n/a | n/a | (local) |
+| Snatch, HEVC 1200 × 2136 (`VID20260216…`) | unverified — the numeric finder landed on a racked plate | (local) | (local) | (local) | (local) |
+| 8K HEVC 7680 × 4320 24 fps | unverified — decodes at 100–240 ms/frame; no anchor placed | (local) | (local) | (local) | (local) |
+
+"—" in the grade column: the grade was logged but not recorded as an
+acceptance number on 04/09/2026; the local run fills it. A change that moves
+any recorded number is a finding to write up here, not a regression to
+silence.
+
+**From 0.92.0 (`stopAtDrop`, P6 plan §2):** a forward track ends where the
+bar is dropped, so the tracked-frame count on the snatch double and the
+1080 × 1440 snatch should come DOWN (to within about ten frames after the
+drop) while the rep, its phases and its grade stay the same; `track:` now
+logs `stoppedAt: drop@<frame>` for those. The competition snatch, the pull
+and the training hall must log `stoppedAt: null`. TRACK THE SET on the
+double must still find both reps (the join after a drop stop is new code).
+
+**Recipe.** On the `kinemos-bench` server (`.claude/launch.json`, port
+5299; restart it after an engine edit), one URL per clip:
+
+```
+http://localhost:5299/verify/testset.html?clip=/verify/fixtures/testset-v2/<file>&frame=<f>&anchor=<x>,<y>&r=<px>&auto=1&force=1
+```
+
+`frame` is the anchor frame, `anchor` the bar end on it in display pixels,
+`r` the plate's on-screen radius; `auto=1` tracks and analyses on load,
+`force=1` re-tracks instead of restoring a stored track (omit it to
+re-analyse a stored track in seconds); `maxEdge=<px>` serves the 8K clip
+downscaled when the full frame is not the point. Shift-click the rim on the
+stage to set `r` by eye, click the bar end to set the anchor. Anchors that
+tracked on 04/09/2026, as `frame · x,y · r` — a starting point, to be
+confirmed in the last column: competition snatch `0 · 1092,868 · 106`;
+snatch double `60 · 573,1408 · 110`; 1080 × 1440 snatch `60 · 711,1636 ·
+178`; training hall `30 · 831,1101 · 165`; close-camera pull `30 · 548,1100
+· 120`. The 1200 × 2136 and 8K clips have no anchor yet: open the URL
+without `anchor`, place one, then read `window.__BENCH__.anchor` back into
+the URL.
+
 ## 5. The verification harnesses
 
 Three, each closing a gap the layer above it cannot:
