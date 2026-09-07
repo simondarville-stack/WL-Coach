@@ -164,6 +164,16 @@ All modules are **active** — nothing is currently disabled or hidden:
   in the P2 plan §4; and **luma-plane region reads** for the tracker
   (`engine/lumaRegion.ts`, `FrameServer.luma`) behind a flag that is off
   (`lib/featureFlags.ts`) until measured on the clips.
+  From 0.93.0 (`docs/KINEMOS_P7_PLAN.md`): the **activity scan** —
+  `engine/activity.ts` finds the lifts in a clip from luma thumbnails alone
+  (motion energy against the clip's own quiet level, a rising motion
+  centroid, coverage low enough to be one lifter and not a pan), fed by
+  `lib/activityScan.ts` from a second, thumbnail-sized frame server; the
+  automatic run and TRACK THE SET then find the plate on each lift's rest
+  frame and track inside its window (`TrackOptions.stopAtIndex` /
+  `stopBeforeIndex`, `trackSet`'s `range`), the scrub strip shows the lifts
+  before anything is tracked, and a clip with no lift found is tracked
+  whole as before.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver)
   — open them under `npm run dev`; `npm run bench` scores engine variants.

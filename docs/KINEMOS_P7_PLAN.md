@@ -256,9 +256,25 @@ track is re-run inside the window rather than restored from storage:
 http://localhost:5299/verify/testset.html?clip=/verify/fixtures/testset-v2/<file>&frame=<f>&anchor=<x>,<y>&r=<px>&auto=1&force=1&scan=1
 ```
 
-Record, per clip: the windows the scan logs (`scan:` lines, `restT–toT`
-and confidence), `scan.msPerFrame`, and `track.totalMs` and `track.range`
-with and without `scan=1`.
+What the bench logs with `scan=1`, and what to record per clip:
+
+- `scan:` — `frames`, `thumb` (must be 90×160 for a portrait clip, 160×90
+  landscape), **`msPerFrame`**, `totalMs`, `lifts`;
+- `  lift k: <liftT>–<toT> s — rest <restT> s, window <fromT>–<toT> s,
+  confidence …; peak … vs quiet …, rise … rows, fall …, coverage …,
+  burst … s` — one per window, the evidence being the numbers to quote
+  if a threshold has to move;
+- `  first lift: frames a–b, rest frame r` and `  plate found on frame r
+  at x,y …` — where the track is anchored (the given `anchor` is only a
+  hint to the finder; the coordinates it finds are the ones used);
+- `track:` as before, now with `range` inside `a–b` and `stoppedAt`
+  `range@b` (or `drop@…` when the bar is dropped inside the window);
+- `total: scan … + find … + track … = … ms` — against `track.totalMs` of
+  the same URL without `scan=1`, the number this phase exists to reduce.
+
+The same URL without `scan=1` (and with `force=1`) is the "before"
+column. Everything is also on `window.__BENCH__` (`scan`, `scanRanges`,
+`range`, `timings.scanMsPerFrame`, `timings.findMs`, `timings.trackMs`).
 
 | Clip | Windows the scan must return | Before (whole clip) | After (in the window) |
 | --- | --- | --- | --- |
@@ -269,8 +285,32 @@ with and without `scan=1`.
 | Training hall, H.264 1080 × 1920 30 fps, 18 s (`20220824…`, `30 · 831,1101 · 165`) | **none** — the bar is never lifted and the camera pans at the end. If the pan produces a window, log its coverage: that number is the floor `coverageMax` may not exceed | 533/545 | no window → today's path (the fallback), same 533/545; the automatic run on the library must say no lift found |
 | Scan cost, every clip | — | — | `scan.msPerFrame` — the decode is the whole of it; the pay-off condition is `scan.msPerFrame · frames < 150 ms · frames skipped`. On the competition clip that is ≈ 250 frames skipped, so the scan pays off under ~120 ms/frame; the expected figure on hardware-decoded 1080p is 5–20 ms |
 
+Then, in the app (`kinemos-dev`, port 5244):
+
+- Open the snatch double in the viewer: within a few seconds of the
+  clip opening, the scrub strip shows **two** light spans (hover: "lift,
+  1,2–2,4 s" and "lift, 6,9–8,1 s", within a couple of tenths). Reopen
+  the rep: the spans are there at once (cached under
+  `localStorage` `kinemos.scan.<kind>:<id>`; remove the key to force a
+  rescan). TRACK THE SET with the mark on frame 60 must still find both
+  reps, and the note must say "inside the 2 lifts the scan marked".
+- Import the training hall clip from a file, or sweep it from the
+  library: the arrival message must not mention a lift, and the analysis
+  must come out as before (no rep; the message says nothing rises 40 cm).
+- Import the snatch double the same way: the message must read
+  "2 lifts found at 1,2 s and 6,9 s; 2 reps analysed …".
+
 A window that lands a lift outside these spans, or a missed lift, is a
 threshold finding to write up here with the sample numbers (`energy`,
 `centroidRow`, `coverage` over the span), not a regression to silence:
 the thresholds in §2 were set on synthetic thumbnails and the clips are
 what sets them.
+
+Two things about the cloud session's own verification, for the record:
+`npx vitest run src/kinemos` needs `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` in the environment (any value; six test files
+import `lib/supabase`, which throws without them) — the worktree has no
+`.env`, the main tree does; and `tracker.test.ts`'s "coarse-then-fine
+search" test, untouched here, ran to 5,8 s once under the full suite's
+load and hit vitest's 5 s default (it passes alone in every run) — a
+`{ timeout }` like its neighbours carry would end that.
