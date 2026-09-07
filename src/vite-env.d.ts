@@ -24,4 +24,11 @@ interface ImportMetaEnv {
    * open routes, nothing more. Leave both unset for open (dev) behaviour.
    */
   readonly VITE_KINEMOS_TOKEN?: string;
+  /**
+   * `'1'` turns on the tracker's luma-plane region reads (P6 plan §4) for
+   * every user of the build. Off by default; a local session can try the
+   * path without a rebuild through the `kinemos.lumaRegion` localStorage
+   * key (`src/kinemos/lib/featureFlags.ts`).
+   */
+  readonly VITE_KINEMOS_LUMA_REGION?: string;
 }

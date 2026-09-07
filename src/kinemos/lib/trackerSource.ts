@@ -29,6 +29,7 @@ import {
   type FrameSource,
   type GrayImage,
 } from '../engine/tracker';
+import { lumaRegionReadsEnabled } from './featureFlags';
 
 export interface TrackerSource extends FrameSource {
   /** The frame in colour, for the colour assists. Not cached: a caller that
@@ -82,6 +83,20 @@ export function trackerSourceFrom(server: FrameServer): TrackerSource {
   let canvas: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
   let lastIndex = -1;
+  // Luma-plane reads (P6 plan §4), behind the flag: the Y plane of the
+  // region straight from the decoded frame, no canvas and no RGBA. Read once
+  // here so a track runs one way throughout.
+  const luma = lumaRegionReadsEnabled() && server.luma ? server.luma.bind(server) : null;
+
+  const remember = (index: number, gray: GrayImage): void => {
+    cache.delete(index);
+    cache.set(index, gray);
+    while (cache.size > GRAY_CACHE_FRAMES) {
+      const oldest = cache.keys().next();
+      if (oldest.done) break;
+      cache.delete(oldest.value);
+    }
+  };
 
   /** The whole frame's pixels, through the same grow-only canvas. */
   const readRgba = async (index: number): Promise<RgbaImage> => {
@@ -122,6 +137,19 @@ export function trackerSourceFrom(server: FrameServer): TrackerSource {
         cache.delete(index);
         cache.set(index, cached);
         return cached;
+      }
+
+      // Forward walks only: a backward walk leans on the canvas path's run
+      // decode and the frame server's own cache (below), which the sample
+      // sink has no counterpart for yet. A read that comes back null — an
+      // unreadable format, a downscaled clip — falls through to the canvas.
+      if (luma && wanted && index >= lastIndex) {
+        const gray = await luma(index, wanted);
+        if (gray) {
+          lastIndex = index;
+          remember(index, gray);
+          return gray;
+        }
       }
 
       // Walking backward: decode the run that ends here, forward, one at a
@@ -169,13 +197,7 @@ export function trackerSourceFrom(server: FrameServer): TrackerSource {
       gray.originX = rect.x;
       gray.originY = rect.y;
 
-      cache.delete(index);
-      cache.set(index, gray);
-      while (cache.size > GRAY_CACHE_FRAMES) {
-        const oldest = cache.keys().next();
-        if (oldest.done) break;
-        cache.delete(oldest.value);
-      }
+      remember(index, gray);
       return gray;
     },
 

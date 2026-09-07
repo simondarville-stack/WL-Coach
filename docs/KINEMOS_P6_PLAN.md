@@ -137,17 +137,42 @@ seeks per keyframe. That is the part that cannot be verified in jsdom.
 
 ### 4.2 What is built
 
-The pure parts, in `src/kinemos/engine/lumaRegion.ts`, with unit tests
-against a mocked `VideoFrame`: the display→coded rect mapping under each
-rotation, the alignment, the plane copy through `copyTo` with a `rect`, and
-the rotation of the Y bytes back into display space. The flag
-(`KINEMOS_LUMA_REGION` in `src/kinemos/lib/featureFlags.ts`, default off)
-gates `trackerSourceFrom`'s use of `server.luma`. The `VideoSampleSink`
-wiring in `frameServer.ts` is written behind the same flag and is the part
-§5 lists for local verification.
+- **`src/kinemos/engine/lumaRegion.ts`** (pure; tested against a frame that
+  is a plain object, `engine/__tests__/lumaRegion.test.ts`): the display →
+  coded rect mapping under each rotation and its inverse (the same mapping
+  mediabunny's `VideoSample.draw` applies to a source rect, checked pixel
+  for pixel against a whole-image clockwise rotation), outward alignment to
+  the even grid, the copy through `copyTo` with a `rect` (honouring the
+  returned plane layout's offset and stride), and the rotation of the bytes
+  back into display orientation. Plane 0 is luma for NV12 / I420 / I420A /
+  I422 / I444; the RGB(A/X) and BGR(A/X) formats a software decoder may
+  produce are weighted with the Rec. 601 coefficients `grayFromRgba` uses;
+  any other format (including `null`) declines, and so does a region wholly
+  off the frame. Departure from §4.1 step 1: mediabunny's `VideoSample`
+  exposes `copyTo`/`allocationSize` itself, so no `toVideoFrame()`.
+- **`FrameServer.luma?(index, region)`** in `engine/frameServer.ts`: a
+  `VideoSampleSink` built on first use (never when nobody asks), its own
+  serialised chain, the canvas decode's single retry, the sample closed
+  after the copy. Declines when the clip is served downscaled (`maxEdge`):
+  the decoder's frame is full size and the tracker's coordinates would not
+  be. Optional on the interface, so the tests' stand-in servers need not
+  provide it.
+- **The flag**: `lumaRegionReadsEnabled()` in `src/kinemos/lib/featureFlags.ts`
+  — `VITE_KINEMOS_LUMA_REGION=1` at build time, or the `kinemos.lumaRegion`
+  localStorage key set to `1` in the browser for a local run without a
+  rebuild. Off by default. The engine is flag-free; the adapter reads it.
+- **`trackerSourceFrom`** takes the luma path when the flag is on, the
+  server has it, and the walk is FORWARD (`index >= lastIndex`); a backward
+  walk keeps the canvas path, whose 16-frame run decode leans on the frame
+  server's cache and which the sample sink has no counterpart for yet. A
+  null from the server falls through to the canvas. Same bounded cache
+  either way (`lib/__tests__/trackerSource.test.ts`).
 
-If the sample-sink wiring proves unstable it can be removed without touching
-the pure module; the flag is the cut.
+Not verifiable here, and therefore on the §5 list: whether two decoders on
+one demuxer contend, what a forward run of `getSample` costs against the
+canvas sink's cached run, and that the luma image tracks to the same
+confidences as the canvas one. If the sink wiring proves unstable it can be
+removed without touching the pure module; the flag is the cut.
 
 ## 5. Deferred to local verification (the clips)
 

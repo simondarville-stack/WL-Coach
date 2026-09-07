@@ -75,6 +75,9 @@ vi.mock('mediabunny', () => {
     },
     EncodedPacketSink: FakePacketSink,
     CanvasSink: FakeCanvasSink,
+    // The luma path's sink is only constructed on first use; nothing here
+    // asks for it.
+    VideoSampleSink: class {},
   };
 });
 

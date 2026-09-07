@@ -27,6 +27,9 @@
  * Engine purity: this module imports mediabunny and the DOM. Nothing from EMOS,
  * nothing from React (design §4 rule 1).
  */
+import type { VideoSampleSink } from 'mediabunny';
+import { readLumaRegion } from './lumaRegion';
+import type { FrameRegion, GrayImage } from './tracker';
 
 /** A decoded frame, in display space (rotation already applied). */
 export interface ServedFrame {
@@ -78,6 +81,16 @@ export interface FrameServer {
   prefetch(index: number, radius?: number): void;
   /** Frame whose timestamp is closest to `t`. */
   nearestIndex(t: number): number;
+  /**
+   * The luma of a display-space region of frame `index`, copied from the
+   * decoded frame's Y plane with no canvas in between (P6 plan §4). Null
+   * when the path is not available for this clip (served downscaled, a
+   * format with no readable luma) or the region is off the frame — the
+   * caller then reads the canvas as before. Absent on servers that do not
+   * decode (the tests' stand-ins). Callers gate it behind
+   * `lumaRegionReadsEnabled()`; the server itself is flag-free.
+   */
+  luma?(index: number, region: FrameRegion): Promise<GrayImage | null>;
   close(): void;
 }
 
@@ -243,8 +256,15 @@ export async function openFrameServer(
 
   // Dynamic import keeps mediabunny's ~570 kB out of every bundle that does not
   // decode video — the same rule the clip editor and the probe follow.
-  const { ALL_FORMATS, BlobSource, CanvasSink, EncodedPacketSink, Input, UrlSource } =
-    await import('mediabunny');
+  const {
+    ALL_FORMATS,
+    BlobSource,
+    CanvasSink,
+    EncodedPacketSink,
+    Input,
+    UrlSource,
+    VideoSampleSink: SampleSink,
+  } = await import('mediabunny');
 
   const input = new Input({
     source: typeof src === 'string' ? new UrlSource(src) : new BlobSource(src),
@@ -347,6 +367,49 @@ export async function openFrameServer(
   const cache = new FrameCache<ServedFrame>(boundedCacheSize);
   const inFlight = new Map<number, Promise<ServedFrame>>();
   let closed = false;
+
+  // ── Luma-region reads (P6 plan §4) ────────────────────────────────────────
+  //
+  // A second sink on the same track hands over the decoder's own frames, so a
+  // region's Y plane can be copied straight out of one. Built on first use
+  // and never when nobody asks — the flag lives with the caller. Serialised
+  // on its own chain for the same reason the canvas decodes are queued: a
+  // sink's decoder does not take overlapping requests. Not available when
+  // the clip is served downscaled: the decoder's frame is full size and the
+  // tracker's coordinates would not be.
+  //
+  // What this cannot know without a browser: whether two decoders on one
+  // demuxer contend, and what a forward run of `getSample` costs against the
+  // canvas sink's cached run. Both are on the plan's local list.
+  let sampleSink: VideoSampleSink | null = null;
+  let lumaChain: Promise<unknown> = Promise.resolve();
+  const lumaAvailable = sinkOptions.width === undefined;
+  // Pinned here, where the null check above has already run: a closure
+  // cannot see through `let track`'s narrowing.
+  const lumaTrack = track;
+  const rotation = track.rotation;
+
+  function lumaAt(index: number, region: FrameRegion): Promise<GrayImage | null> {
+    if (closed || !lumaAvailable) return Promise.resolve(null);
+    const clamped = Math.max(0, Math.min(timestamps.length - 1, Math.round(index)));
+    const run = async (): Promise<GrayImage | null> => {
+      if (closed) return null;
+      sampleSink ??= new SampleSink(lumaTrack);
+      const timestamp = timestamps[clamped];
+      // The same single retry the canvas decode gets.
+      let sample = await sampleSink.getSample(timestamp).catch(() => null);
+      if (!sample) sample = await sampleSink.getSample(timestamp);
+      if (!sample) return null;
+      try {
+        return await readLumaRegion(sample, region, rotation);
+      } finally {
+        sample.close();
+      }
+    };
+    const result = lumaChain.then(run, run);
+    lumaChain = result.catch(() => undefined);
+    return result;
+  }
 
   async function decodeAt(index: number): Promise<ServedFrame> {
     const timestamp = timestamps[index];
@@ -523,10 +586,13 @@ export async function openFrameServer(
       return nearestIndexIn(timestamps, t);
     },
 
+    luma: lumaAt,
+
     close() {
       closed = true;
       cache.clear();
       inFlight.clear();
+      sampleSink = null;
       // Anyone waiting on a queued frame gets an answer rather than a promise
       // that never settles — the failure this whole queue exists to remove.
       for (const job of queued.values()) {
