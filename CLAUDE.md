@@ -157,6 +157,13 @@ All modules are **active** — nothing is currently disabled or hidden:
   on import from the local file and on a stoppable backlog sweep, since a
   pure client-side SPA has no server to pre-analyse on. Lifter pose tracking
   is deliberately not built; P5 plan §6 says why.
+  From 0.92.0 (`docs/KINEMOS_P6_PLAN.md`, the testset follow-ups): a
+  forward track **ends where the bar is dropped** (`stopAtDrop`,
+  `TrackResult.stoppedAt`; the set tracker joins on from the next rest) —
+  `gaveUp` still means the bar was lost; the testset acceptance checklist
+  in the P2 plan §4; and **luma-plane region reads** for the tracker
+  (`engine/lumaRegion.ts`, `FrameServer.luma`) behind a flag that is off
+  (`lib/featureFlags.ts`) until measured on the clips.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver)
   — open them under `npm run dev`; `npm run bench` scores engine variants.
