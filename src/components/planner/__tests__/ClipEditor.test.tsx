@@ -3,7 +3,7 @@
  * itself is WebCodecs and cannot run under jsdom, so what is checked here is
  * the part that decides whether a clip gets uploaded at all.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClipEditor } from '../ClipEditor';
 
@@ -18,6 +18,33 @@ vi.mock('../../../lib/clipMotion', async importOriginal => ({
   analyseClipMotion: () => Promise.resolve(motionSamples.value),
 }));
 
+/**
+ * The encode and the geometry check both need a real decoder. Stubbed so the
+ * distorted-result path — encode, check, re-render, check again, refuse — can
+ * be driven through the editor's own buttons.
+ */
+const encodes = vi.hoisted(() => ({ calls: [] as { renderer: string | undefined }[] }));
+const verdicts = vi.hoisted(() => ({
+  queue: [] as { ok: boolean; reason?: string; detail?: string; measured?: Record<string, number> }[],
+}));
+vi.mock('../../../lib/videoClipEdit', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../lib/videoClipEdit')>()),
+  applyClipEdit: (_file: File, _edit: unknown, opts?: { renderer?: string }) => {
+    encodes.calls.push({ renderer: opts?.renderer });
+    return Promise.resolve(new File([new Uint8Array(4)], 'lift-clip.mp4', { type: 'video/mp4' }));
+  },
+}));
+vi.mock('../../../lib/clipGeometryCheck', () => ({
+  checkEditedClip: () => Promise.resolve(verdicts.queue.shift() ?? { ok: true, checked: true }),
+}));
+const logged = vi.hoisted(() => ({ calls: [] as unknown[] }));
+vi.mock('../../../lib/errorLogger', () => ({
+  logError: (err: unknown, opts: unknown) => {
+    logged.calls.push({ err, opts });
+    return Promise.resolve();
+  },
+}));
+
 /** A quiet clip with a burst of movement over [from, to) — an athlete milling
  *  about the platform, then lifting. */
 function motionWithLiftAt(from: number, to: number, duration: number) {
@@ -30,6 +57,9 @@ function motionWithLiftAt(from: number, to: number, duration: number) {
 
 beforeEach(() => {
   motionSamples.value = [];
+  encodes.calls = [];
+  verdicts.queue = [];
+  logged.calls = [];
 });
 
 beforeAll(() => {
@@ -105,6 +135,61 @@ describe('ClipEditor', () => {
     expect(screen.getByText(/Clip is 300 MB/)).toBeInTheDocument();
     // A resolution ceiling is already set, so the edit is never a no-op and
     // the athlete can send without touching anything else.
+    expect(screen.getByRole('button', { name: /Save & upload/ })).not.toBeDisabled();
+  });
+
+  it('hands over an edit whose result checks out, after one encode', async () => {
+    const onDone = vi.fn();
+    render(
+      <ClipEditor file={sizedClip(300 * 1024 * 1024)} mustEdit defaultMaxEdge={1920} onCancel={() => {}} onDone={onDone} />,
+    );
+    loadMetadata();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save & upload/ }));
+    });
+    expect(encodes.calls.map(c => c.renderer)).toEqual([undefined]);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone.mock.calls[0][0].map((f: File) => f.name)).toEqual(['lift-clip.mp4']);
+  });
+
+  it('re-renders a distorted result the conservative way and uploads that when it checks out', async () => {
+    verdicts.queue = [
+      { ok: false, reason: 'crop-ignored', detail: 'whole frame squeezed', measured: {} },
+      { ok: true },
+    ];
+    const onDone = vi.fn();
+    render(
+      <ClipEditor file={sizedClip(300 * 1024 * 1024)} mustEdit defaultMaxEdge={1920} onCancel={() => {}} onDone={onDone} />,
+    );
+    loadMetadata();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save & upload/ }));
+    });
+    expect(encodes.calls.map(c => c.renderer)).toEqual([undefined, 'conservative']);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    // The device failure is on record, with the numbers.
+    await waitFor(() => expect(logged.calls).toHaveLength(1));
+  });
+
+  it('refuses to upload a clip that comes back distorted twice, and says why', async () => {
+    verdicts.queue = [
+      { ok: false, reason: 'size', detail: 'came back 1080×1344, expected 1080×1920', measured: {} },
+      { ok: false, reason: 'size', detail: 'came back 1080×1344, expected 1080×1920', measured: {} },
+    ];
+    const onDone = vi.fn();
+    render(
+      <ClipEditor file={sizedClip(300 * 1024 * 1024)} mustEdit defaultMaxEdge={1920} onCancel={() => {}} onDone={onDone} />,
+    );
+    loadMetadata();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save & upload/ }));
+    });
+    expect(onDone).not.toHaveBeenCalled();
+    expect(screen.getByText(/distorted clip/)).toBeInTheDocument();
+    expect(screen.getByText(/1080×1344, expected 1080×1920/)).toBeInTheDocument();
+    // Both failures are on record; the second lands after the throw.
+    await waitFor(() => expect(logged.calls).toHaveLength(2));
+    // Nothing is stuck: the editor is usable again.
     expect(screen.getByRole('button', { name: /Save & upload/ })).not.toBeDisabled();
   });
 

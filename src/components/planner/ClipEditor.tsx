@@ -55,6 +55,7 @@ import {
   type CropHandle,
 } from '../../lib/clipCropGeometry';
 import { readKeyframeTimes, snapToKeyframe } from '../../lib/losslessTrim';
+import { checkEditedClip, type ClipGeometryVerdict } from '../../lib/clipGeometryCheck';
 
 interface ClipEditorProps {
   file: File;
@@ -99,6 +100,39 @@ interface ClipEditorProps {
    * caller set `allowSplit`.
    */
   onDone: (files: File[]) => void;
+}
+
+/**
+ * A distorted result is a device bug the app cannot see from here — the
+ * pipeline measures exact on desktop — so each one goes to the error log with
+ * the user agent and the numbers, which is how the next one gets a root cause.
+ * The logger is loaded on demand: it brings the Supabase client with it, and
+ * the editor's hot path — and its tests — have no other reason to.
+ */
+let errorLogger: Promise<typeof import('../../lib/errorLogger')> | null = null;
+
+function reportDistortion(
+  file: File,
+  edit: ClipEdit,
+  renderer: 'default' | 'conservative',
+  verdict: Extract<ClipGeometryVerdict, { ok: false }>,
+) {
+  errorLogger ??= import('../../lib/errorLogger');
+  void errorLogger
+    .then(({ logError }) =>
+      logError(new Error(`Clip edit distorted (${verdict.reason}) via ${renderer} renderer`), {
+        source: 'manual',
+        context: {
+          reason: verdict.reason,
+          detail: verdict.detail,
+          measured: verdict.measured,
+          renderer,
+          edit,
+          file: { name: file.name, size: file.size, type: file.type },
+        },
+      }),
+    )
+    .catch(() => undefined);
 }
 
 /** Comma decimals, per the app's numeric conventions. */
@@ -152,6 +186,9 @@ export function ClipEditor({
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  /** What the progress bar is measuring: the encode, the check of its
+   *  result, or the slower re-render after a failed check. */
+  const [phase, setPhase] = useState<'render' | 'check' | 'retry'>('render');
   /** Motion signal for the whole clip, once the analysis pass finishes. */
   const [motion, setMotion] = useState<MotionSample[] | null>(null);
   /** Every lift the analysis could defend, in time order. */
@@ -488,6 +525,7 @@ export function ClipEditor({
     }
     setError(null);
     setProgress(0);
+    setPhase('render');
     videoRef.current?.pause();
     setPlaying(false);
     const controller = new AbortController();
@@ -496,18 +534,50 @@ export function ClipEditor({
       const out: File[] = [];
       for (let i = 0; i < exportRanges.length; i++) {
         const range = exportRanges[i];
-        const edited = await applyClipEdit(
-          file,
-          { ...edit, start: range.start, end: range.end },
-          {
-            // One bar across the whole job, so splitting three lifts reads as
-            // one wait rather than three that keep restarting.
-            onProgress: p => setProgress((i + p) / exportRanges.length),
-            signal: controller.signal,
-            part: exportRanges.length > 1 ? i + 1 : undefined,
-            preferLossless,
-          },
-        );
+        const rangeEdit: ClipEdit = { ...edit, start: range.start, end: range.end };
+        const options = {
+          signal: controller.signal,
+          part: exportRanges.length > 1 ? i + 1 : undefined,
+          preferLossless,
+        };
+        // One bar across the whole job, so splitting three lifts reads as
+        // one wait rather than three that keep restarting.
+        const onProgress = (p: number) => setProgress((i + p) / exportRanges.length);
+
+        let edited = await applyClipEdit(file, rangeEdit, { ...options, onProgress });
+
+        // Trust, but measure: this phone's decoder, canvas and encoder just
+        // produced the file, and one such file once came back with the whole
+        // frame squeezed into the crop. Compare the result with the source
+        // before it goes anywhere.
+        setPhase('check');
+        let verdict = await checkEditedClip(file, edited, rangeEdit);
+        // Only the encoder listens to the abort signal; a cancel tapped during
+        // the check must still count.
+        if (controller.signal.aborted) throw new ClipEditCanceledError();
+        if (!verdict.ok) {
+          reportDistortion(file, rangeEdit, 'default', verdict);
+          // Same edit, drawn the slow and unambiguous way.
+          setPhase('retry');
+          setProgress(i / exportRanges.length);
+          edited = await applyClipEdit(file, rangeEdit, {
+            ...options,
+            onProgress,
+            renderer: 'conservative',
+          });
+          setPhase('check');
+          verdict = await checkEditedClip(file, edited, rangeEdit);
+          if (controller.signal.aborted) throw new ClipEditCanceledError();
+          if (!verdict.ok) {
+            reportDistortion(file, rangeEdit, 'conservative', verdict);
+            throw new Error(
+              `This phone returned a distorted clip (${verdict.detail}), twice, so nothing was uploaded. ` +
+                (mustEdit
+                  ? 'Trim it in your phone’s gallery app and attach it again.'
+                  : 'Use “Upload original”, or trim it in your phone’s gallery app.'),
+            );
+          }
+        }
         out.push(edited);
       }
       onDone(out);
@@ -653,7 +723,9 @@ export function ClipEditor({
                 />
               </div>
               <p className="text-[11px] text-gray-300">
-                Processing {Math.round((progress ?? 0) * 100)}%
+                {phase === 'check'
+                  ? 'Checking the result…'
+                  : `${phase === 'retry' ? 'Re-rendering' : 'Processing'} ${Math.round((progress ?? 0) * 100)}%`}
               </p>
             </div>
           )}

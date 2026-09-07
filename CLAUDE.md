@@ -175,8 +175,20 @@ All modules are **active** — nothing is currently disabled or hidden:
   before anything is tracked, and a clip with no lift found is tracked
   whole as before.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
-  for the analysis panels, a trends bench with a Playwright screenshot driver)
-  — open them under `npm run dev`; `npm run bench` scores engine variants.
+  for the analysis panels, a trends bench with a Playwright screenshot driver,
+  and `clip-edit-probe.html`, which measures the clip editor's geometry on
+  synthetic phone footage and proves the pre-upload distortion gate refuses
+  a squeezed clip) — open them under `npm run dev`; `npm run bench` scores
+  engine variants.
+- **Clip editor guard** (0.93.1, `src/lib/clipGeometryCheck.ts`): every
+  edited clip is checked against its source before upload — declared aspect,
+  and for a crop, whether the output resembles the crop or the whole frame
+  squeezed into it. A failure re-renders through
+  `src/lib/clipConservativeRender.ts` (three whole-canvas draws, rotation
+  baked in) and a second failure refuses the file; both are logged to
+  `error_logs` with the user agent. Built after a phone returned a lift with
+  the right size and the whole frame squeezed into it, from a pipeline that
+  measures exact on desktop.
 
 **Deletion policy:** shipped code and database tables are never deleted
 without explicit instruction. **Carve-out for failed experiments:** once the

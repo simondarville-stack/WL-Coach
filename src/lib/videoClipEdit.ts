@@ -17,6 +17,14 @@
  * Phone footage carries a rotation matrix rather than rotated pixels, and
  * mediabunny applies it before the crop — so the rectangle the athlete drags
  * over the preview is the rectangle that comes out.
+ *
+ * What comes out is nevertheless *checked* before upload
+ * (`clipGeometryCheck.ts`): the pipeline measures exact on desktop
+ * (`verify/clip-edit-probe.html`), but it runs on the athlete's phone against
+ * that phone's hardware decoder, GPU canvas and hardware encoder, and one of
+ * those once returned the whole frame squeezed into the crop's box. A failed
+ * check re-runs the edit through `clipConservativeRender.ts`; a second
+ * failure refuses the edited file rather than upload a distorted lift.
  */
 
 /**
@@ -145,6 +153,18 @@ export interface ApplyClipEditOptions {
    * moment the edit crops or resizes, which force a transcode anyway.
    */
   preferLossless?: boolean;
+  /**
+   * How frames are drawn when the edit re-renders them.
+   *
+   * `'default'` is mediabunny's single-draw path — fast, and measured correct
+   * on desktop. `'conservative'` is `clipConservativeRender`: the same crop,
+   * rotation and resize done as three whole-canvas draws, always through a
+   * full re-encode with the rotation baked into the pixels rather than left
+   * to container metadata. The editor switches to it when
+   * `clipGeometryCheck` finds the default path's output distorted on the
+   * athlete's device.
+   */
+  renderer?: 'default' | 'conservative';
 }
 
 /** Keep the edited name recognisable next to the original in a camera roll
@@ -170,11 +190,12 @@ function editedFileName(name: string, part?: number): string {
 export async function applyClipEdit(
   file: File,
   edit: ClipEdit,
-  { onProgress, signal, part, preferLossless }: ApplyClipEditOptions = {},
+  { onProgress, signal, part, preferLossless, renderer = 'default' }: ApplyClipEditOptions = {},
 ): Promise<File> {
   if (signal?.aborted) throw new ClipEditCanceledError();
+  const conservative = renderer === 'conservative';
 
-  if (preferLossless && edit.crop == null && edit.maxEdge == null) {
+  if (preferLossless && !conservative && edit.crop == null && edit.maxEdge == null) {
     const { losslessTrimClip } = await import('./losslessTrim');
     const copied = await losslessTrimClip(file, edit.start, edit.end);
     if (signal?.aborted) throw new ClipEditCanceledError();
@@ -213,9 +234,11 @@ export async function applyClipEdit(
     width?: number;
     height?: number;
     fit?: 'fill';
+    forceTranscode?: boolean;
+    allowRotationMetadata?: boolean;
   } = {};
 
-  if (edit.crop || edit.maxEdge != null) {
+  if (edit.crop || edit.maxEdge != null || conservative) {
     const track = await input.getPrimaryVideoTrack();
     if (track) {
       const dw = track.displayWidth;
@@ -231,9 +254,11 @@ export async function applyClipEdit(
       }
       const out = outputDimensions(edit, dw, dh);
       // Only ask for a resize when it actually changes something — otherwise
-      // a trim-only edit would lose its lossless packet-copy path.
+      // a trim-only edit would lose its lossless packet-copy path. The
+      // conservative renderer states the size regardless: its whole point is
+      // an explicit box, drawn by us.
       const cropped = video.crop ?? { width: dw, height: dh };
-      if (out.width !== cropped.width || out.height !== cropped.height) {
+      if (conservative || out.width !== cropped.width || out.height !== cropped.height) {
         video.width = out.width;
         video.height = out.height;
         // Aspect ratio is already preserved by outputDimensions, so 'fill'
@@ -241,6 +266,14 @@ export async function applyClipEdit(
         video.fit = 'fill';
       }
     }
+  }
+
+  if (conservative) {
+    // Every frame goes through the canvas, and the rotation is baked into the
+    // pixels: an output with no rotation metadata, square pixels and the
+    // stated size leaves a player nothing to misinterpret.
+    video.forceTranscode = true;
+    video.allowRotationMetadata = false;
   }
 
   const conversion = await Conversion.init({
@@ -261,12 +294,16 @@ export async function applyClipEdit(
 
   const abort = () => void conversion.cancel();
   signal?.addEventListener('abort', abort);
+  const releaseRenderer = conservative
+    ? await (await import('./clipConservativeRender')).withConservativeRender()
+    : null;
   try {
     await conversion.execute();
   } catch (e) {
     if (e instanceof ConversionCanceledError) throw new ClipEditCanceledError();
     throw e;
   } finally {
+    releaseRenderer?.();
     signal?.removeEventListener('abort', abort);
   }
 
