@@ -36,6 +36,10 @@ interface ViewerTransportProps {
    *  warning colour: this strip is where "which frames are worth checking" gets
    *  answered without scrubbing all 218 of them. */
   uncertainIndices?: number[];
+  /** Where the activity scan found the lifts (P7 plan), as frame ranges.
+   *  Drawn under the coverage as light spans, before anything is tracked:
+   *  the coach sees what TRACK THE SET will work on. */
+  liftSpans?: Array<{ from: number; to: number; label: string }>;
   fps: number;
   vfr: boolean;
 
@@ -71,6 +75,7 @@ export function ViewerTransport({
   speed,
   markedTimes,
   uncertainIndices = [],
+  liftSpans = [],
   fps,
   vfr,
   onSeek,
@@ -130,6 +135,25 @@ export function ViewerTransport({
           overflow: 'hidden',
         }}
       >
+        {liftSpans.map((span, k) => {
+          const left = frameCount > 1 ? (span.from / (frameCount - 1)) * 100 : 0;
+          const width = frameCount > 1 ? (Math.max(1, span.to - span.from) / (frameCount - 1)) * 100 : 0;
+          return (
+            <span
+              key={`lift${k}`}
+              title={span.label}
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: `${left}%`,
+                width: `${width}%`,
+                background: 'var(--color-accent)',
+                opacity: 0.14,
+              }}
+            />
+          );
+        })}
         {/* Coverage: one tick per marked frame. Ticks are 2 px wide whatever
             the clip length, so a sparse start reads as sparse rather than
             disappearing. */}

@@ -146,7 +146,13 @@ export async function scanActivity(src: ClipSource, options: ScanActivityOptions
   }
 }
 
-/** "1,2 s" — a window's start for a message; comma decimal, one place. */
+/** A second with a comma decimal and one place: "6,9". */
+export function secondsLabel(t: number): string {
+  return t.toFixed(1).replace('.', ',');
+}
+
+/** "1,2–2,4 s" — the lift's span, from where the bar moves to the window's
+ *  end, for a marker or a message. */
 export function windowLabel(window: LiftWindow): string {
-  return `${window.fromT.toFixed(1).replace('.', ',')}–${window.toT.toFixed(1).replace('.', ',')} s`;
+  return `${secondsLabel(window.liftT)}–${secondsLabel(window.toT)} s`;
 }

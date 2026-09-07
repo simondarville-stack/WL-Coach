@@ -121,6 +121,9 @@ export async function analyseArrival(
     const result = await autoAnalyse(server, {
       source: target.source,
       sourceId: target.sourceId,
+      // The same URL again for the activity scan's thumbnail server (P7
+      // plan §1), so tracking stays inside the lifts.
+      src: url,
       ownerId: options.ownerId,
       massKg: target.massKg ?? null,
       massSource: target.massSource ?? null,

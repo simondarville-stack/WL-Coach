@@ -194,6 +194,9 @@ describe('liftWindows', () => {
     expect(w.restT).toBeGreaterThanOrEqual(liftOff - DEFAULT_LIFT_WINDOW_OPTIONS.restLeadS - 0.05);
     expect(w.restT).toBeLessThanOrEqual(liftOff + 0.1);
     expect(w.fromT).toBeLessThanOrEqual(w.restT);
+    // The lift itself starts where the bar moves.
+    expect(w.liftT).toBeGreaterThanOrEqual(liftOff - 0.1);
+    expect(w.liftT).toBeLessThanOrEqual(liftOff + 0.2);
     // The window covers the whole lift, overhead position included.
     expect(w.toT).toBeGreaterThanOrEqual(liftOff + 1.3);
     expect(w.toT).toBeLessThanOrEqual(liftOff + DEFAULT_LIFT_WINDOW_OPTIONS.forwardCapS);
@@ -276,7 +279,7 @@ describe('windowRanges', () => {
 
   it('maps by nearest timestamp and keeps the rest inside the range', () => {
     const [range] = windowRanges(
-      [{ restT: 0.51, fromT: 0.5, toT: 2.0, confidence: 0.8, evidence }],
+      [{ restT: 0.51, fromT: 0.5, liftT: 1.0, toT: 2.0, confidence: 0.8, evidence }],
       timestamps,
     );
     expect(range.from).toBe(15);
@@ -286,7 +289,7 @@ describe('windowRanges', () => {
 
   it('clamps to the clip', () => {
     const [range] = windowRanges(
-      [{ restT: -1, fromT: -1, toT: 10, confidence: 0.8, evidence }],
+      [{ restT: -1, fromT: -1, liftT: 0, toT: 10, confidence: 0.8, evidence }],
       timestamps,
     );
     expect(range).toEqual({ restIndex: 0, from: 0, to: 99 });

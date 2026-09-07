@@ -11,10 +11,14 @@
  *
  * So this is the same pipeline the coach drives, driven by nothing:
  *
- *   1. find the plate on a frame where the bar is still (the start, where a
- *      lift begins on the floor and nothing is moving);
- *   2. take its centre as the anchor;
- *   3. track the set, cut it into reps, calibrate each at its own rest;
+ *   1. scan the clip for its lifts at thumbnail resolution (P7 plan;
+ *      `lib/activityScan.ts`), when the clip's source is given;
+ *   2. for each lift: find the plate on the still frame before it and take
+ *      its centre as the anchor; track the set inside that stretch of the
+ *      clip, cut it into reps, calibrate each at its own rest;
+ *   3. with no lift found — or none that tracked to a rep — do as before:
+ *      find the plate on the first frame and track the whole clip, so the
+ *      scan can only ever save time, never lose a rep;
  *   4. compute and store every rep.
  *
  * **It is not a replacement for the coach, and the grade says why.** Every
@@ -28,10 +32,12 @@ import { DEFAULT_FILTER } from '../engine/signal';
 import { computeKinematics, summariseRep } from '../engine/kinematics';
 import { computeLiftMetrics, proposePhases, spansFrom } from '../engine/phases';
 import { toStoredMetrics } from '../engine/metricCatalogue';
+import { windowRanges, type LiftWindow } from '../engine/activity';
 import type { Calibration, PlateEllipse } from '../engine/calibration';
-import type { FrameServer } from '../engine/frameServer';
+import type { FrameServer, FrameSource as ClipSource } from '../engine/frameServer';
 import type { KinemosTrackPoint } from '../../lib/database.types';
 import { ensureAnalysis, saveAnalysisState, saveCalibration, saveTrack } from './analysisService';
+import { scanActivity, secondsLabel, type ActivityScanResult } from './activityScan';
 import { findPlateOnFrame } from './assists';
 import { trackSet, type TrackedRep } from './setTracker';
 import type { LibrarySource } from './videoLibrary';
@@ -103,8 +109,18 @@ export interface AutoAnalyseOptions {
   massKg?: number | null;
   massSource?: 'logged' | 'manual' | null;
   camera?: 'tripod' | 'stabilised' | 'handheld' | 'unknown';
-  /** Which frame to look for the bar at rest on. Default: the start. */
+  /** Which frame to look for the bar at rest on when the clip is tracked
+   *  whole. Default: the start. */
   anchorIndex?: number;
+  /**
+   * The clip's source — the same URL or Blob the frame server was opened
+   * on — for the activity scan (P7 plan §1), which opens its own thumbnail
+   * server on it. With it, tracking stays inside the lifts the scan finds;
+   * without it, and without `activity`, the whole clip is tracked as before.
+   */
+  src?: ClipSource;
+  /** A scan already run (the viewer's, the bench's), so it is not repeated. */
+  activity?: ActivityScanResult | null;
   onProgress?: (stage: string, done: number, total: number) => void;
 }
 
@@ -112,9 +128,17 @@ export interface AutoAnalyseResult {
   reps: TrackedRep[];
   /** Analysis ids written, in rep order. */
   analysisIds: string[];
-  /** The outline the plate detector found, when it found one. */
+  /** The outline the plate detector found, when it found one — the first
+   *  lift's, when the clip was tracked by lifts. */
   ellipse: PlateEllipse | null;
   joins: number;
+  /** Where the activity scan found the lifts; empty without a scan. */
+  windows: LiftWindow[];
+  /** The scan's cost, when one ran. */
+  scan: { frames: number; totalMs: number; msPerFrame: number } | null;
+  /** True when lifts were found but none of them tracked to a rep, and the
+   *  whole clip was tracked instead. */
+  fellBack: boolean;
   /** Why there is nothing, when there is nothing. */
   problem?: 'no-plate' | 'no-reps';
 }
@@ -126,11 +150,71 @@ export async function autoAnalyse(
   server: FrameServer,
   options: AutoAnalyseOptions,
 ): Promise<AutoAnalyseResult> {
+  const plateDiameterCm = options.plateDiameterCm ?? 45;
+
+  let activity: ActivityScanResult | null = options.activity ?? null;
+  if (!activity && options.src !== undefined) {
+    options.onProgress?.('Looking for the lifts', 0, server.frameCount);
+    activity = await scanActivity(options.src, {
+      onProgress: (done, total) => options.onProgress?.('Looking for the lifts', done, total),
+    });
+  }
+  const windows = activity?.windows ?? [];
+  const scan = activity ? { frames: activity.frames, totalMs: activity.totalMs, msPerFrame: activity.msPerFrame } : null;
+  const empty = (): Pick<AutoAnalyseResult, 'reps' | 'analysisIds' | 'ellipse' | 'windows' | 'scan'> => ({
+    reps: [],
+    analysisIds: [],
+    ellipse: null,
+    windows,
+    scan,
+  });
+
+  // ── By lifts ─────────────────────────────────────────────────────────────
+  if (windows.length > 0) {
+    const ranges = windowRanges(windows, server.timestamps);
+    const reps: TrackedRep[] = [];
+    let joins = 0;
+    let ellipse: PlateEllipse | null = null;
+    let near: { x: number; y: number } | undefined;
+    for (const [k, range] of ranges.entries()) {
+      options.onProgress?.('Looking for the plate', k, ranges.length);
+      // With the previous lift's plate centre as a hint first — `near` is a
+      // hard constraint in the finder — and without it if that finds
+      // nothing: the bar may have been rolled between reps.
+      const found =
+        (near ? await findPlateOnFrame(server, range.restIndex, near) : null) ??
+        (await findPlateOnFrame(server, range.restIndex));
+      if (!found) continue;
+      ellipse ??= found.ellipse;
+      near = { x: found.ellipse.cx, y: found.ellipse.cy };
+      const result = await trackSet(
+        server,
+        { index: range.restIndex, x: found.ellipse.cx, y: found.ellipse.cy },
+        {
+          ellipse: found.ellipse,
+          plateDiameterCm,
+          range: { from: range.from, to: range.to },
+          onProgress: (done, total) => options.onProgress?.(`Following the bar, lift ${k + 1} of ${ranges.length}`, done, total),
+        },
+      );
+      joins += result.joins.length;
+      // Reps are numbered from 1 within a call; across lifts they run on.
+      for (const rep of result.reps) reps.push({ ...rep, rep: reps.length + 1 });
+    }
+    if (reps.length > 0) {
+      const analysisIds = await storeReps(server, options, reps);
+      return { reps, analysisIds, ellipse, joins, windows, scan, fellBack: false };
+    }
+    // Nothing tracked to a rep inside the lifts: the whole clip, as before.
+  }
+
+  // ── The whole clip ───────────────────────────────────────────────────────
+  const fellBack = windows.length > 0;
   const anchorIndex = options.anchorIndex ?? 0;
   options.onProgress?.('Looking for the plate', 0, 1);
   const found = await findPlateOnFrame(server, anchorIndex);
   if (!found) {
-    return { problem: 'no-plate', reps: [], analysisIds: [], ellipse: null, joins: 0 };
+    return { ...empty(), problem: 'no-plate', joins: 0, fellBack };
   }
   const ellipse = found.ellipse;
 
@@ -139,17 +223,21 @@ export async function autoAnalyse(
     { index: anchorIndex, x: ellipse.cx, y: ellipse.cy },
     {
       ellipse,
-      plateDiameterCm: options.plateDiameterCm ?? 45,
+      plateDiameterCm,
       onProgress: (done, total) => options.onProgress?.('Following the bar', done, total),
     },
   );
   if (result.reps.length === 0) {
-    return { problem: 'no-reps', reps: [], analysisIds: [], ellipse: null, joins: result.joins.length };
+    return { ...empty(), problem: 'no-reps', joins: result.joins.length, fellBack };
   }
+  const analysisIds = await storeReps(server, options, result.reps);
+  return { reps: result.reps, analysisIds, ellipse, joins: result.joins.length, windows, scan, fellBack };
+}
 
+async function storeReps(server: FrameServer, options: AutoAnalyseOptions, reps: TrackedRep[]): Promise<string[]> {
   const analysisIds: string[] = [];
-  for (const [k, rep] of result.reps.entries()) {
-    options.onProgress?.('Storing the reps', k, result.reps.length);
+  for (const [k, rep] of reps.entries()) {
+    options.onProgress?.('Storing the reps', k, reps.length);
     analysisIds.push(
       await persistRep({
         source: options.source,
@@ -167,21 +255,38 @@ export async function autoAnalyse(
       }),
     );
   }
-  return { reps: result.reps, analysisIds, ellipse, joins: result.joins.length };
+  return analysisIds;
+}
+
+/** "1,2 s and 6,9 s" — where the lifts start, for a message. */
+function liftTimes(windows: readonly LiftWindow[]): string {
+  const times = windows.map(w => `${secondsLabel(w.liftT)} s`);
+  return times.length <= 1 ? times.join('') : `${times.slice(0, -1).join(', ')} and ${times[times.length - 1]}`;
 }
 
 /** What an automatic run did, in the coach's terms. */
 export function describeAutoAnalysis(result: AutoAnalyseResult, clipLabel: string): string {
+  const n = result.windows.length;
+  const lifts =
+    n === 0 ? '' : `${n} lift${n === 1 ? '' : 's'} found at ${liftTimes(result.windows)}`;
   if (result.problem === 'no-plate') {
-    return `${clipLabel}: no plate found on the first frame. Open it and outline one — the rest runs from there.`;
+    return n > 0
+      ? `${clipLabel}: ${lifts}, but no plate on the still frame before ${n === 1 ? 'it' : 'any of them'} or on the first frame. Open it and outline one — the rest runs from there.`
+      : `${clipLabel}: no plate found on the first frame. Open it and outline one — the rest runs from there.`;
   }
   if (result.problem === 'no-reps') {
-    return `${clipLabel}: the plate was found and followed, but nothing in the track rises 40 cm from a rest. A clip that starts mid-pull needs the viewer.`;
+    return (
+      `${clipLabel}: ` +
+      (n > 0 ? `${lifts}, but nothing tracked there rises 40 cm from a rest, and neither does the whole clip` : 'the plate was found and followed, but nothing in the track rises 40 cm from a rest') +
+      '. A clip that starts mid-pull needs the viewer.'
+    );
   }
-  const n = result.reps.length;
+  const reps = result.reps.length;
   const own = result.reps.filter(r => r.ownCalibration).length;
   return (
-    `${clipLabel}: ${n} rep${n === 1 ? '' : 's'} analysed` +
+    `${clipLabel}: ` +
+    (n > 0 ? `${lifts}${result.fellBack ? ' but nothing tracked there, so the whole clip was tracked' : ''}; ` : '') +
+    `${reps} rep${reps === 1 ? '' : 's'} analysed` +
     (result.joins > 0 ? `, the plate found again ${result.joins} time${result.joins === 1 ? '' : 's'}` : '') +
     `; ${own} calibrated at ${own === 1 ? 'its' : 'their'} own rest. Check the grade before quoting the numbers.`
   );

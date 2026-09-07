@@ -125,7 +125,8 @@ describe('windowLabel', () => {
     expect(
       windowLabel({
         restT: 1.0,
-        fromT: 1.2,
+        fromT: 0.7,
+        liftT: 1.2,
         toT: 2.44,
         confidence: 0.9,
         evidence: { peakEnergy: 1, quietEnergy: 0.1, centroidRiseRows: 30, centroidFallRows: 0, coverage: 0.1, burstS: 1 },

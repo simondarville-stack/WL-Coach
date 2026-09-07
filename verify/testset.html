@@ -24,7 +24,7 @@
       <label>mass kg <input id="mass" type="number" min="0" value="60" /></label>
       <button id="track">Track from anchor</button>
       <button id="analyse">Analyse</button>
-      <span class="hint">click = anchor (bar end); shift+click = plate rim (sets radius)</span>
+      <span class="hint">click = anchor (bar end); shift+click = plate rim (sets radius); ?scan=1 finds the lifts first and tracks inside the first</span>
     </div>
     <div id="row">
       <canvas id="stage" width="640" height="360"></canvas>
@@ -42,6 +42,9 @@
       import { gradeAnalysis } from '/src/kinemos/engine/grade.ts';
       import { DEFAULT_FILTER } from '/src/kinemos/engine/signal.ts';
       import { splitReps } from '/src/kinemos/engine/reps.ts';
+      import { scanActivity, windowLabel } from '/src/kinemos/lib/activityScan.ts';
+      import { windowRanges } from '/src/kinemos/engine/activity.ts';
+      import { findPlateOnFrame } from '/src/kinemos/lib/assists.ts';
 
       // Vite full-reloads every page when a file outside its module graph
       // changes — another editor touching the planner would wipe a 60 s track.
@@ -57,6 +60,9 @@
       const MAX_W = Number(params.get('w') ?? 720);
       const MAX_H = Number(params.get('h') ?? 720);
       const maxEdge = params.get('maxEdge') ? Number(params.get('maxEdge')) : null;
+      // scan=1: run the activity scan first (P7 plan) and anchor/track inside
+      // the first lift it finds instead of from `frame`.
+      const SCAN = Boolean(params.get('scan'));
 
       const $ = id => document.getElementById(id);
       const logEl = $('log');
@@ -76,6 +82,9 @@
         server: null,
         anchor: null,
         radiusPx: 0,
+        /** Frame range the track is confined to (scan=1), else null. */
+        range: null,
+        scan: null,
         track: null,
         analysis: null,
         errors: [],
@@ -305,7 +314,8 @@
           dispose: () => inner.dispose(),
         };
         const r = B.radiusPx > 0 ? B.radiusPx : undefined;
-        log(`→ tracking from frame ${B.anchor.index}, template radius ${r ?? DEFAULT_TRACK_OPTIONS.templateRadiusPx} …`);
+        const bounds = B.range ? { stopBeforeIndex: B.range.from, stopAtIndex: B.range.to } : {};
+        log(`→ tracking from frame ${B.anchor.index}, template radius ${r ?? DEFAULT_TRACK_OPTIONS.templateRadiusPx}${B.range ? `, inside frames ${B.range.from}–${B.range.to}` : ''} …`);
         await paint();
         const t0 = performance.now();
         let result;
@@ -313,7 +323,7 @@
           result = await trackFromAnchor(
             source,
             { index: B.anchor.index, x: B.anchor.x, y: B.anchor.y },
-            { templateRadiusPx: r, ...opts },
+            { templateRadiusPx: r, ...bounds, ...opts },
           );
         } catch (err) {
           log(`track FAILED: ${err.message}`);
@@ -386,7 +396,7 @@
       // Results survive a reload (the pane reloads heavy pages on its own),
       // keyed by clip + anchor + radius so a different anchor re-tracks.
       const storeKey = () =>
-        `bench:${clip}:${B.anchor?.index}:${Math.round(B.anchor?.x)}:${Math.round(B.anchor?.y)}:${Math.round(B.radiusPx)}`;
+        `bench:${clip}:${B.anchor?.index}:${Math.round(B.anchor?.x)}:${Math.round(B.anchor?.y)}:${Math.round(B.radiusPx)}:${B.range ? `${B.range.from}-${B.range.to}` : 'all'}`;
       function persist() {
         try {
           localStorage.setItem(
@@ -524,15 +534,74 @@
         await showFrame(first);
 
         const a = params.get('anchor');
-        if (a) {
-          const [x, y] = a.split(',').map(Number);
-          const r = Number(params.get('r') ?? 0);
-          await window.__bench.setAnchor(first, x, y, r);
-          if (params.get('auto')) {
-            if (params.get('force') || !restore()) await runTrack();
-            runAnalyse();
-            await showFrame(first);
+        const r = Number(params.get('r') ?? 0);
+        let anchored = false;
+        if (SCAN) {
+          // The activity scan on its own thumbnail server, timed: the
+          // number to read is msPerFrame against the tracker's ~150 ms.
+          log('→ scanning for lifts (thumbnail server, maxEdge 160) …');
+          await paint();
+          const scan = await scanActivity(clip);
+          B.scan = scan;
+          B.timings.scanMs = scan.totalMs;
+          B.timings.scanMsPerFrame = scan.msPerFrame;
+          log('scan:', {
+            frames: scan.frames,
+            thumb: `${scan.thumbWidth}×${scan.thumbHeight}`,
+            msPerFrame: fmt(scan.msPerFrame, 1),
+            totalMs: fmt(scan.totalMs, 0),
+            lifts: scan.windows.length,
+          });
+          scan.windows.forEach((w, k) => {
+            const e = w.evidence;
+            log(`  lift ${k + 1}: ${windowLabel(w)} — rest ${fmt(w.restT, 2)} s, window ${fmt(w.fromT, 2)}–${fmt(w.toT, 2)} s, confidence ${fmt(w.confidence, 2)}; peak ${fmt(e.peakEnergy, 2)} vs quiet ${fmt(e.quietEnergy, 2)}, rise ${fmt(e.centroidRiseRows, 0)} rows, fall ${fmt(e.centroidFallRows, 0)}, coverage ${fmt(e.coverage, 2)}, burst ${fmt(e.burstS, 2)} s`);
+          });
+          const ranges = windowRanges(scan.windows, server.timestamps);
+          B.scanRanges = ranges;
+          if (ranges.length === 0) {
+            log('  no lift found — anchoring from `frame` as before (the fallback)');
+          } else {
+            const w0 = ranges[0];
+            B.range = { from: w0.from, to: w0.to };
+            log(`  first lift: frames ${w0.from}–${w0.to}, rest frame ${w0.restIndex}`);
+            // The plate on the rest frame: near the given anchor first
+            // (the finder's hint is a hard constraint), anywhere second,
+            // the given coordinates as a last resort.
+            let x, y, radius = r;
+            if (a) [x, y] = a.split(',').map(Number);
+            const t0 = performance.now();
+            const found =
+              (a ? await findPlateOnFrame(server, w0.restIndex, { x, y }) : null) ??
+              (await findPlateOnFrame(server, w0.restIndex));
+            B.timings.findMs = performance.now() - t0;
+            if (found) {
+              log(`  plate found on frame ${w0.restIndex} at ${fmt(found.ellipse.cx, 1)},${fmt(found.ellipse.cy, 1)}, semi-major ${fmt(found.ellipse.semiMajorPx, 1)} px, support ${fmt(found.support, 2)} (${fmt(B.timings.findMs, 0)} ms)`);
+              x = found.ellipse.cx;
+              y = found.ellipse.cy;
+              if (!radius) radius = found.ellipse.semiMajorPx * 1.08;
+            } else if (a) {
+              log(`  no plate found on frame ${w0.restIndex} — using the given anchor coordinates there`);
+            }
+            if (x !== undefined) {
+              await window.__bench.setAnchor(w0.restIndex, x, y, radius);
+              anchored = true;
+            } else {
+              log('  no anchor: pass anchor=x,y or place one by clicking');
+            }
           }
+        }
+        if (!anchored && a) {
+          const [x, y] = a.split(',').map(Number);
+          await window.__bench.setAnchor(first, x, y, r);
+          anchored = true;
+        }
+        if (anchored && params.get('auto')) {
+          if (params.get('force') || !restore()) await runTrack();
+          runAnalyse();
+          if (B.timings.scanMs !== undefined && B.timings.trackMs !== undefined) {
+            log(`total: scan ${fmt(B.timings.scanMs, 0)} ms + find ${fmt(B.timings.findMs ?? 0, 0)} ms + track ${fmt(B.timings.trackMs, 0)} ms = ${fmt(B.timings.scanMs + (B.timings.findMs ?? 0) + B.timings.trackMs, 0)} ms`);
+          }
+          await showFrame(B.anchor.index);
         }
         B.ready = true;
         log('READY');

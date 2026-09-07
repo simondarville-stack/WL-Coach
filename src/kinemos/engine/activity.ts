@@ -187,6 +187,9 @@ export interface LiftWindow {
   restT: number;
   /** Start of the window: the lead-in before the burst. */
   fromT: number;
+  /** Where the motion begins — the burst's first sample, within a few
+   *  frames of lift-off. The time a coach means by "the lift at 6,9 s". */
+  liftT: number;
   /** End of the window: the burst's end, or the forward cap. */
   toT: number;
   /** 0–1, from the evidence; the UI can say why. */
@@ -487,6 +490,7 @@ export function liftWindows(
     windows.push({
       restT: samples[rest].t,
       fromT: samples[from].t,
+      liftT: burstStartT,
       toT: samples[to].t,
       confidence,
       evidence: {

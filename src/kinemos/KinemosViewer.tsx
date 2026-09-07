@@ -50,7 +50,9 @@ import { ComparisonView } from './components/ComparisonView';
 import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
 import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack, trackMarkerFrom } from './lib/assists';
-import { trackSet } from './lib/setTracker';
+import { trackSet, type TrackSetResult } from './lib/setTracker';
+import { scanActivity, windowLabel } from './lib/activityScan';
+import { windowRanges, type LiftWindow } from './engine/activity';
 import { splitReps } from './engine/reps';
 import { persistRep } from './lib/autoAnalyse';
 import { createClubShare, createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
@@ -120,6 +122,19 @@ const TOOLS: Array<{
   { id: 'knee', label: 'Mark the knee height — click the knee on the start frame', icon: Minus, key: 'K' },
 ];
 
+/** What the viewer keeps of an activity scan (P7 plan): the windows and
+ *  the cost, cached per clip under `LIFT_SCAN_KEY` + the clip key. */
+interface LiftScan {
+  windows: LiftWindow[];
+  frames: number;
+  msPerFrame: number;
+}
+const LIFT_SCAN_KEY = 'kinemos.scan.';
+
+/** What TRACK THE SET reads of a set tracker's result, whether from one
+ *  call over the whole clip or several inside the lifts. */
+type SetOutcome = Pick<TrackSetResult, 'points' | 'reps' | 'joins' | 'lostAtEnd' | 'colour'>;
+
 export function KinemosViewer() {
   const { kind, id } = useParams<{ kind: string; id: string }>();
   const navigate = useNavigate();
@@ -174,6 +189,10 @@ export function KinemosViewer() {
    *  how a coach finds the frames worth checking without scrubbing all of
    *  them — the design brief's third open question. */
   const [uncertainIndices, setUncertainIndices] = useState<number[]>([]);
+  /** Where the activity scan found the lifts (P7 plan): shown on the
+   *  scrub strip before anything is tracked, and what TRACK THE SET works
+   *  inside. Null until the scan has run (or was found cached). */
+  const [liftScan, setLiftScan] = useState<LiftScan | null>(null);
   const [trackProgress, setTrackProgress] = useState<{ done: number; total: number } | null>(null);
 
   const [comparing, setComparing] = useState(false);
@@ -266,6 +285,60 @@ export function KinemosViewer() {
   } = playback;
 
   const currentT = server ? (server.timestamps[index] ?? null) : null;
+
+  // ── The lifts in the clip ─────────────────────────────────────────────────
+  //
+  // The activity scan (P7 plan) runs once per clip, in the background on its
+  // own thumbnail frame server, as soon as the clip is open; its windows go
+  // on the scrub strip and TRACK THE SET stays inside them. Cached per clip
+  // in localStorage so reopening an analysed rep does not decode the clip
+  // again; the cache holds the windows and the timing, nothing heavier.
+  useEffect(() => {
+    setLiftScan(null);
+    if (status !== 'ready' || !playbackUrl || !clipKey) return;
+    const key = `${LIFT_SCAN_KEY}${clipKey}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const cached = JSON.parse(raw) as LiftScan;
+        if (Array.isArray(cached.windows)) {
+          setLiftScan(cached);
+          return;
+        }
+      }
+    } catch {
+      // No cache, or none readable: scan.
+    }
+    let cancelled = false;
+    scanActivity(playbackUrl, { shouldStop: () => cancelled })
+      .then(result => {
+        if (cancelled || result.stopped) return;
+        const summary: LiftScan = { windows: result.windows, frames: result.frames, msPerFrame: result.msPerFrame };
+        setLiftScan(summary);
+        try {
+          localStorage.setItem(key, JSON.stringify(summary));
+        } catch {
+          // Storage full or refused: the scan simply runs again next time.
+        }
+      })
+      .catch(() => {
+        // A clip the thumbnail server cannot open is one the main server
+        // could not either; nothing to say here that the stage does not.
+        if (!cancelled) setLiftScan(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [status, playbackUrl, clipKey]);
+
+  const liftSpans = useMemo(() => {
+    if (!server || !liftScan || liftScan.windows.length === 0) return [];
+    return windowRanges(liftScan.windows, server.timestamps).map((range, k) => ({
+      from: range.from,
+      to: range.to,
+      label: `lift, ${windowLabel(liftScan.windows[k])}`,
+    }));
+  }, [server, liftScan]);
 
   // ── The rep's stored record ───────────────────────────────────────────────
   useEffect(() => {
@@ -841,15 +914,51 @@ export function KinemosViewer() {
     setTrackProgress({ done: 0, total: server.frameCount });
     setSetNote(null);
     try {
-      const result = await trackSet(
-        server,
-        { index: server.nearestIndex(anchorPoint.t), x: anchorPoint.x, y: anchorPoint.y },
-        {
-          ellipse,
-          plateDiameterCm,
-          onProgress: (done, total) => setTrackProgress({ done, total }),
-        },
-      );
+      const anchorIndex = server.nearestIndex(anchorPoint.t);
+      const onProgress = (done: number, total: number) => setTrackProgress({ done, total });
+      const whole = () =>
+        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, onProgress });
+
+      // Inside the lifts the scan found (P7 plan), when it found any. The
+      // coach's mark anchors the lift it sits in; every other lift is
+      // anchored where the plate finder puts the plate on the still frame
+      // before it — near the mark first, anywhere second — and, failing
+      // both, at the mark's own coordinates. Nothing found in any lift: the
+      // whole clip, as before, so the scan can only ever save time.
+      const windows = liftScan?.windows ?? [];
+      let result: SetOutcome | null = null;
+      if (windows.length > 0) {
+        const combined: SetOutcome = { points: [], reps: [], joins: [], lostAtEnd: false, colour: null };
+        for (const range of windowRanges(windows, server.timestamps)) {
+          let at = { index: range.restIndex, x: anchorPoint.x, y: anchorPoint.y };
+          let outline = ellipse;
+          if (anchorIndex >= range.from && anchorIndex <= range.to) {
+            at = { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y };
+          } else {
+            const found =
+              (await findPlateOnFrame(server, range.restIndex, { x: anchorPoint.x, y: anchorPoint.y }, { shape: plateShape })) ??
+              (await findPlateOnFrame(server, range.restIndex, undefined, { shape: plateShape }));
+            if (found) {
+              at = { index: range.restIndex, x: found.ellipse.cx, y: found.ellipse.cy };
+              outline = found.ellipse;
+            }
+          }
+          const piece = await trackSet(server, at, {
+            ellipse: outline,
+            plateDiameterCm,
+            range: { from: range.from, to: range.to },
+            onProgress,
+          });
+          combined.points.push(...piece.points);
+          combined.joins.push(...piece.joins);
+          combined.lostAtEnd = piece.lostAtEnd;
+          combined.colour = combined.colour ?? piece.colour;
+          for (const rep of piece.reps) combined.reps.push({ ...rep, rep: combined.reps.length + 1 });
+        }
+        if (combined.reps.length > 0) result = combined;
+      }
+      const usedLifts = result !== null;
+      if (!result) result = await whole();
       if (result.reps.length === 0) {
         setSetNote(
           result.points.length < 8
@@ -900,6 +1009,11 @@ export function KinemosViewer() {
       const byColour = result.joins.filter(j => j.how === 'colour').length;
       setSetNote(
         `${result.reps.length} rep${result.reps.length === 1 ? '' : 's'} found` +
+          (usedLifts
+            ? ` inside the ${windows.length} lift${windows.length === 1 ? '' : 's'} the scan marked`
+            : windows.length > 0
+              ? ' — nothing tracked inside the marked lifts, so the whole clip was tracked'
+              : '') +
           (result.joins.length > 0
             ? `, the plate found again ${result.joins.length} time${result.joins.length === 1 ? '' : 's'}` +
               (byColour > 0 ? ` (${byColour} by its colour, in flight)` : '')
@@ -913,7 +1027,7 @@ export function KinemosViewer() {
     } finally {
       setTrackProgress(null);
     }
-  }, [server, source, id, currentT, ellipse, points, plateDiameterCm, repIndex, massKg, massSource, camera]);
+  }, [server, source, id, currentT, ellipse, points, plateDiameterCm, repIndex, massKg, massSource, camera, liftScan, plateShape]);
 
   /**
    * Follow a marker on the bar end rather than the plate. The coach clicks
@@ -2163,6 +2277,7 @@ export function KinemosViewer() {
                 speed={speed}
                 markedTimes={points.map(p => p.t)}
                 uncertainIndices={uncertainIndices}
+                liftSpans={liftSpans}
                 fps={server.averageFps}
                 vfr={server.isVfr}
                 onSeek={seek}
