@@ -74,13 +74,14 @@ track; a missed lift costs the rep.
   changes nearly every cell; a lift changes the cells the lifter and the
   bar occupy. Coverage is the fraction of cells whose change clears an
   absolute floor. The floor is absolute (luma levels, on cell means), not
-  relative: a cell mean over 64 pixels averages sensor noise down to under
-  a level, so a fixed floor of 6 levels is quiet on every clip that has
-  been seen and only a real change clears it.
+  relative: a cell mean over 64 pixels averages sensor noise down to a few
+  tenths of a level, so a fixed floor of 1,5 levels is quiet on every clip
+  that has been seen and only a real change — a plate edge, a body edge —
+  clears it.
 - **Recall over precision, explicitly.** A slow heavy first pull is low
   energy; a lift near the top of the frame has its centroid rise clipped;
   a phone close to the platform has the lifter filling half the picture.
-  So: the energy threshold enters at 3 × quiet but the burst is extended
+  So: the energy threshold enters at 2 × quiet and the burst is extended
   at 1,5 × quiet (hysteresis), the minimum centroid rise is small, the
   "then falls" half of rise-and-fall raises confidence rather than
   gating, the coverage ceiling is 0,6 rather than 0,5, and the minimum
@@ -125,14 +126,19 @@ Types: `Thumb { width, height, data: Float32Array | Uint8Array, t }` (luma,
 `evidence { peakEnergy, quietEnergy, centroidRiseRows, centroidFallRows,
 coverage, burstS }`.
 
-`activityOf(thumbs, { cellPx = 8, cellFloor = 6 })`: consecutive thumbnails
-are differenced on a grid of `cellPx × cellPx` cells (an 8 px cell on a
-160 × 90 thumbnail is a 20 × 12 grid; the mean over 64 pixels averages
-sensor noise down so the floor holds). Per pair:
+`activityOf(thumbs, { cellPx = 8, cellFloor = 1,5 })`: consecutive
+thumbnails are differenced on a grid of `cellPx × cellPx` cells (an 8 px
+cell on a 160 × 90 thumbnail is a 20 × 12 grid). The cell's value is the
+difference of its MEAN luma between the two frames, not the mean of its
+pixels' differences: averaging 64 pixels first is what takes sensor noise
+out (σ ≈ 0,2 of a level for ordinary noise, 0,9 for a very noisy phone),
+whereas a per-pixel |d| is always positive and would put the noise floor
+under every sample. Per pair:
 
-- `energy` — mean over cells of the cell's mean absolute difference, luma
-  levels;
-- `coverage` — fraction of cells whose difference exceeds `cellFloor`;
+- `energy` — mean over cells of |Δ cell mean|, luma levels;
+- `coverage` — fraction of cells whose |Δ| exceeds `cellFloor` (1,5
+  levels: a plate edge crossing a cell moves it by ten or more, a body
+  edge by two to five);
 - `centroidRow` — the mean row (in thumbnail pixels, 0 at the top) of the
   cells above the floor, weighted by how far above it they are; `NaN`
   when no cell clears the floor, so still frames do not report a centroid
@@ -144,13 +150,14 @@ Sample 0 has zero energy and no centroid, so samples line up with frames.
 
 | Option | Default | Why |
 | --- | --- | --- |
-| `quietPercentile` | 0,20 | The clip's own noise level; a percentile so a duplicated frame cannot set it. |
-| `enterFactor` / `enterMinAbove` | 3 / 1,5 | A sample is active at `max(quiet · 3, quiet + 1,5)` levels. The additive floor keeps a clean, near-zero quiet level from making everything active. |
-| `holdFactor` / `holdMinAbove` | 1,5 / 0,5 | Once entered, a burst runs while energy stays above `max(quiet · 1,5, quiet + 0,5)` — hysteresis, so the slow first pull and the turnover pause stay inside the burst that the second pull started. |
+| `quietPercentile` | 0,20 | The clip's own noise level; a percentile so a duplicated frame cannot set it. Sample 0 (no predecessor, energy 0) is left out. |
+| `smoothS` | 0,1 s | Energy is smoothed by a centred moving average this wide before thresholding; a lift's energy is sustained over tens of frames, the flicker in a quiet stretch is not. |
+| `enterFactor` / `enterMinAbove` | 2 / 0,15 | A sample is active at `max(quiet · 2, quiet + 0,15)` levels. Two, not three: the quiet level is a mean over ~240 cells and barely spreads, so the factor is not there to clear noise but small real motion, and the rise, coverage and length rules do the rest. The synthetic low-contrast slow lift (plates 50 levels above the ground, 1,5 rows a frame) reaches 1,3 × this and is missed at three. The additive floor keeps a clean, near-zero quiet level from making everything active. |
+| `holdFactor` / `holdMinAbove` | 1,5 / 0,08 | Once entered, a burst runs while energy stays above `max(quiet · 1,5, quiet + 0,08)` — hysteresis, so the slow first pull and the turnover pause stay inside the burst that the second pull started. |
 | `mergeGapS` | 0,25 | Two bursts closer than this are one: the bar is still for a moment at the catch while the lifter is not. |
 | `minBurstS` | 0,4 | Below this a burst is a fidget. The brief's 0,6 s is the lower end of a real lift; 0,4 s leaves room for a clip that starts mid-pull. |
 | `maxBurstS` | 6 | A burst longer than this (a lifter walking about, a pan that coverage did not catch) is kept but capped and marked down in confidence — never dropped, for recall. |
-| `minRiseRows` | 4 % of height | The motion centroid must rise (row index fall) by this over the burst, measured as the largest rise from any earlier sample to a later one over a 3-sample median of the centroid. On a 160-row portrait thumbnail that is 6 rows; a snatch moves the centroid 20–50 rows. Small on purpose: a lift near the top edge is clipped. |
+| `minRiseFraction` | 4 % of height | The motion centroid must rise (row index fall) by this over the burst, measured as the largest rise from any earlier sample to a later one over a 3-sample median of the centroid — taken over the burst's ACTIVE samples only (energy above the enter level). In the hold-level tails the motion is something else (a body lowering before the bar is let go) and the centroid JUMPS from it to the bar when the bar moves; on a synthetic miss that jump read as a 15-row "rise" and made a window of the drop. On a 160-row portrait thumbnail 4 % is 6 rows; a snatch moves the centroid 20–50 rows. Small on purpose: a lift near the top edge is clipped. |
 | `coverageMax` | 0,6 | Median coverage over the burst's active samples above this is a pan (or a lifter filling the frame — the close-camera pull is the case to measure in §6). |
 | `restLeadS` | 0,5 | How far before the burst the window starts: covers the rep cut's 0,15 s rest and the phase detector's 0,4 s lead. Clamped to the quiet stretch actually there and to the clip's start. |
 | `forwardCapS` | 4 | The window ends at the burst's end or this long after it began, whichever is first. A snatch is under 3 s from lift-off to the stand; the drop stop ends the track earlier anyway. |
@@ -172,12 +179,20 @@ evidence carries the raw numbers so the UI can say why.
 (`restIndex`, `from`, `to`) by nearest timestamp — the pure half of what
 W4 needs.
 
-Synthetic tests draw a bright blob on a dark noisy ground: still frames
-with sensor noise → no window; a jittering blob (fidget) → no window; a
-pan (every cell changes) → no window; a rise-then-fall → one window with
-the rest lead-in before the rise; a double → two windows, each with its
-own lead-in; a rise that leaves the top edge → still one window; a slow,
-low-contrast rise → still found.
+Synthetic tests (`engine/__tests__/activity.test.ts`) draw a lifter — a
+flat rectangle whose top rises through the pull and dips into the catch —
+and two soft-edged plates of radius 10 on a textured, noisy 90 × 160
+ground at 30 fps, at a real scale (a 45 cm plate is 20 px, a 1,0 s pull
+over 90 rows is a 2 m/s bar): still frames with sensor noise → no window;
+the bar rolled a pixel and the lifter shuffling (fidget) → no window; a
+pan (the wall's texture moves, median coverage above the ceiling) → no
+window; a snatch → one window with `restT` in the 0,5 s before lift-off
+and `toT` past the overhead hold; a double → two disjoint windows, each
+anchored in its own rest; a bar that leaves the top of the frame → still
+one window; plates at 50 levels of contrast rising 1,5 rows a frame →
+still found; a clip that is nothing but the lift → found from frame 0
+(the 20th percentile lands on the pull's slow start, and the second pull
+still stands out from it).
 
 ## 3. W2 — a range bound on the tracker
 
