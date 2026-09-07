@@ -1,0 +1,261 @@
+# KinEMOS P7 — track only where a lift is happening (0.93.0)
+
+Scope: the automatic path — the library's zero-click analysis
+(`lib/autoAnalyse.ts`) and TRACK THE SET in the viewer — finds the plate on
+frame 0 and tracks every frame of the clip at ~150 ms a frame
+(decode-to-canvas plus correlation). Most of a clip is set-up, rest between
+reps and the walk-away; the drop stop (P6 plan §2) already removes the tail
+after each lift, and this removes the rest. Built in a cloud session on
+`claude/kinemos-activity-scan-p7` from `origin/main` at 0.92.0 (aa2c35d).
+The real clips are not in the repository (`verify/fixtures/` is gitignored),
+so everything here is verified with synthetic tests; the numbers to be read
+off the clips are in §6, for the local session that merges.
+
+Two passes:
+
+1. **Activity scan, cheap** (`engine/activity.ts`, `lib/activityScan.ts`).
+   Decode the whole clip once at thumbnail resolution — a second frame
+   server on the same source with `maxEdge` 160 — and per frame compute,
+   from the luma thumbnail, motion energy, the vertical centroid of the
+   motion and its coverage. A lift is a burst of energy whose motion
+   centroid rises, with coverage low enough to be one person and a bar
+   rather than a camera pan. Each window is extended backward to the rest
+   before it (where the plate finder looks and the tracker anchors) and
+   forward to the end of the burst or a cap.
+2. **Find and track inside the windows** (W2, W4). Per window: the plate
+   finder on the rest frame, then `trackSet` confined to the window's frame
+   range; the drop stop still ends each track. Rep cut, phases, grade and
+   persistence are unchanged.
+
+A clip with no window found takes today's path — plate on frame 0, track
+everything — so recall can never be worse than now. The scan is tuned for
+recall over precision: a false window costs a plate search and a short
+track; a missed lift costs the rep.
+
+## 1. Decisions
+
+- **Thumbnails, not regions.** The tracker's cost is per-frame decode; the
+  scan cannot avoid decoding but it can avoid everything after it. A
+  160-px-edge canvas is 160 × 90 (landscape) or 90 × 160 (portrait) —
+  14 400 pixels, read in one `getImageData` — and the frame server's own
+  `maxEdge` draw does the downscale. The scan opens its **own** frame
+  server on the same source rather than downscaling frames from the
+  viewer's: the viewer's server is full resolution with a 24-frame cache
+  of RGBA canvases, and walking every frame through it would evict the
+  coach's stepping window and pay the full-size draw for every frame.
+  Cost of the second server: one more mediabunny input on the same URL and
+  its own decoder; the two never contend because the scan runs to
+  completion before any tracking begins (and in the viewer, in the
+  background at low priority).
+- **Where the `src` comes from.** `autoAnalyse` receives an already-open
+  full-resolution server. Rather than opening both in every caller,
+  `AutoAnalyseOptions` gains `src?: string | Blob` — the frame server's own
+  source type — and `autoAnalyse` runs the scan itself when it is given
+  one; `lib/arrivals.ts` passes the URL it already has. A caller that has
+  scanned already (the bench, the viewer) passes `activity` instead and the
+  scan is not repeated. No `src`, no `activity`: today's path, unchanged.
+- **The engine takes arrays.** `engine/activity.ts` sees `Thumb` objects
+  (width, height, a luma array, a timestamp) and nothing else — no canvas,
+  no frame server — so the burst logic is tested on thumbnails drawn in
+  Node. `lib/activityScan.ts` is the walk: open, `frameAt` in presentation
+  order, draw, read, feed. Its walk is tested against a stand-in server
+  with an injected thumbnail reader, since jsdom has no 2D canvas.
+- **Incremental.** A ten-minute 60 fps session is 36 000 thumbnails —
+  half a gigabyte held whole. The engine exposes an accumulator
+  (`activityAccumulator`) that takes one thumbnail at a time and keeps only
+  the previous one; `activityOf(thumbs)` is the same thing over an array,
+  for tests and short clips.
+- **Relative energy floor.** Sensor noise differs by an order of magnitude
+  between a competition camera and a phone in a dim hall, so "active" is
+  measured against the clip's own quiet level: the 20th percentile of the
+  energy series. A percentile rather than the minimum because one
+  duplicated frame (energy 0) must not set the floor.
+- **Coverage rejects pans; the centroid confirms lifts.** A camera pan
+  changes nearly every cell; a lift changes the cells the lifter and the
+  bar occupy. Coverage is the fraction of cells whose change clears an
+  absolute floor. The floor is absolute (luma levels, on cell means), not
+  relative: a cell mean over 64 pixels averages sensor noise down to under
+  a level, so a fixed floor of 6 levels is quiet on every clip that has
+  been seen and only a real change clears it.
+- **Recall over precision, explicitly.** A slow heavy first pull is low
+  energy; a lift near the top of the frame has its centroid rise clipped;
+  a phone close to the platform has the lifter filling half the picture.
+  So: the energy threshold enters at 3 × quiet but the burst is extended
+  at 1,5 × quiet (hysteresis), the minimum centroid rise is small, the
+  "then falls" half of rise-and-fall raises confidence rather than
+  gating, the coverage ceiling is 0,6 rather than 0,5, and the minimum
+  burst length is 0,4 s rather than 0,6 s. Every one of these is a knob
+  in `LiftWindowOptions`, tagged `COACH-CONFIG candidate`, with its
+  default and reason beside it.
+- **The window's range is a bound on the tracker, not a new tracker.**
+  `TrackOptions.stopAtIndex` / `stopBeforeIndex` end the forward and
+  backward passes at a frame, reported as `stoppedAt: { reason: 'range' }`
+  with `gaveUp` false. `trackSet` takes `range?: { from, to }` and confines
+  the first track, the in-flight colour search, the rest search and every
+  join to it. A drop inside the range still stops the track with reason
+  `drop`, since the drop check runs on the frame before the range check
+  would end the loop.
+- **Plate finder with a hint, then without.** `findPlate`'s `near` is a
+  hard constraint (a candidate more than 1,25 R + 8 px from the hint is
+  discarded), so for the second and later windows the finder runs with
+  the previous window's plate centre as the hint and, if that finds
+  nothing, once more without it — the bar may have been rolled between
+  reps. A window whose rest frame has no plate is skipped and said so.
+- **Windows found, no reps: fall back.** If every window's track produces
+  no rep, the clip takes today's path in full. This costs the training
+  hall's worst case a whole track on top of the scan — exactly what it
+  costs today plus the scan — and never loses a rep to the scan.
+- **The viewer scans on open, once, and remembers.** TRACK THE SET uses
+  the windows the way the automatic run does; the timeline band shows them
+  as light spans before anything is tracked. The scan runs when the frame
+  server is ready, in the background on its own server, and the windows
+  are cached in `localStorage` under `kinemos.scan.<kind>:<id>` so that
+  reopening an analysed rep does not decode the clip again. A cached
+  result is trusted for the same clip; the cache is small (a few windows
+  and the timing) and is cleared by hand like any other local key.
+- **The rep index across windows.** `trackSet` numbers reps from 1 within
+  a call; `autoAnalyse` renumbers across windows so a double found as two
+  windows is rep 1 and rep 2.
+
+## 2. W1 — `engine/activity.ts`
+
+Types: `Thumb { width, height, data: Float32Array | Uint8Array, t }` (luma,
+0–255, row-major); `ActivitySample { t, energy, centroidRow, coverage }`;
+`LiftWindow { restT, fromT, toT, confidence, evidence }` with
+`evidence { peakEnergy, quietEnergy, centroidRiseRows, centroidFallRows,
+coverage, burstS }`.
+
+`activityOf(thumbs, { cellPx = 8, cellFloor = 6 })`: consecutive thumbnails
+are differenced on a grid of `cellPx × cellPx` cells (an 8 px cell on a
+160 × 90 thumbnail is a 20 × 12 grid; the mean over 64 pixels averages
+sensor noise down so the floor holds). Per pair:
+
+- `energy` — mean over cells of the cell's mean absolute difference, luma
+  levels;
+- `coverage` — fraction of cells whose difference exceeds `cellFloor`;
+- `centroidRow` — the mean row (in thumbnail pixels, 0 at the top) of the
+  cells above the floor, weighted by how far above it they are; `NaN`
+  when no cell clears the floor, so still frames do not report a centroid
+  at the picture's middle.
+
+Sample 0 has zero energy and no centroid, so samples line up with frames.
+
+`liftWindows(samples, options)`:
+
+| Option | Default | Why |
+| --- | --- | --- |
+| `quietPercentile` | 0,20 | The clip's own noise level; a percentile so a duplicated frame cannot set it. |
+| `enterFactor` / `enterMinAbove` | 3 / 1,5 | A sample is active at `max(quiet · 3, quiet + 1,5)` levels. The additive floor keeps a clean, near-zero quiet level from making everything active. |
+| `holdFactor` / `holdMinAbove` | 1,5 / 0,5 | Once entered, a burst runs while energy stays above `max(quiet · 1,5, quiet + 0,5)` — hysteresis, so the slow first pull and the turnover pause stay inside the burst that the second pull started. |
+| `mergeGapS` | 0,25 | Two bursts closer than this are one: the bar is still for a moment at the catch while the lifter is not. |
+| `minBurstS` | 0,4 | Below this a burst is a fidget. The brief's 0,6 s is the lower end of a real lift; 0,4 s leaves room for a clip that starts mid-pull. |
+| `maxBurstS` | 6 | A burst longer than this (a lifter walking about, a pan that coverage did not catch) is kept but capped and marked down in confidence — never dropped, for recall. |
+| `minRiseRows` | 4 % of height | The motion centroid must rise (row index fall) by this over the burst, measured as the largest rise from any earlier sample to a later one over a 3-sample median of the centroid. On a 160-row portrait thumbnail that is 6 rows; a snatch moves the centroid 20–50 rows. Small on purpose: a lift near the top edge is clipped. |
+| `coverageMax` | 0,6 | Median coverage over the burst's active samples above this is a pan (or a lifter filling the frame — the close-camera pull is the case to measure in §6). |
+| `restLeadS` | 0,5 | How far before the burst the window starts: covers the rep cut's 0,15 s rest and the phase detector's 0,4 s lead. Clamped to the quiet stretch actually there and to the clip's start. |
+| `forwardCapS` | 4 | The window ends at the burst's end or this long after it began, whichever is first. A snatch is under 3 s from lift-off to the stand; the drop stop ends the track earlier anyway. |
+
+`restT` is the lowest-energy sample in `[fromT, burstStart]` — the stillest
+frame of the lead-in, where the plate finder is surest and the tracker's
+anchor sits; `fromT` is the start of the lead-in; `toT` the end of the
+window. Windows are disjoint by construction (a lead-in lives in a quiet
+stretch, a burst ends where the energy falls under the hold level).
+
+`confidence` in [0, 1] is the product of four factors, each 0–1: energy
+ratio (`peak / quiet`, 1 at ≥ 6), centroid rise (1 at ≥ 15 % of height,
+0 at `minRiseRows`), burst length (1 in 0,6–3 s, tapering to 0,3 at the
+limits) and coverage (1 at ≤ 0,3, 0 at `coverageMax`); a fall of the
+centroid after its peak (the catch, the drop) adds 0,15 up to 1. The
+evidence carries the raw numbers so the UI can say why.
+
+`windowRanges(windows, timestamps)` maps windows onto frame indices
+(`restIndex`, `from`, `to`) by nearest timestamp — the pure half of what
+W4 needs.
+
+Synthetic tests draw a bright blob on a dark noisy ground: still frames
+with sensor noise → no window; a jittering blob (fidget) → no window; a
+pan (every cell changes) → no window; a rise-then-fall → one window with
+the rest lead-in before the rise; a double → two windows, each with its
+own lead-in; a rise that leaves the top edge → still one window; a slow,
+low-contrast rise → still found.
+
+## 3. W2 — a range bound on the tracker
+
+`TrackOptions.stopAtIndex` (forward: the last frame the pass may track,
+inclusive) and `stopBeforeIndex` (backward: the earliest frame the pass may
+reach, inclusive — "before" the anchor in time). When a bound ends a pass
+with frames still beyond it, `stoppedAt` is `{ index, reason: 'range' }`;
+a bound at or past the clip's end reports nothing, because nothing was
+left out. `gaveUp` stays false. Progress totals count only the frames in
+range. `trackFromAnchor` reports the forward stop first, as before.
+
+`trackSet(server, anchor, { range: { from, to } })`: the first track runs
+with both bounds; the in-flight colour search looks no later than `to`;
+the rest search stops ten frames before `to`; a join tracks on with
+`stopAtIndex` set so it ends at `to`. A `range` stop is not a drop and not
+a loss: it ends the join loop.
+
+## 4. W3 — `lib/activityScan.ts`
+
+`scanActivity(src, { maxEdge = 160, cacheSize = 4, onProgress, shouldStop,
+open })` opens a thumbnail frame server (`open` defaults to
+`openFrameServer`, injectable for the tests), walks `frameAt(0…n−1)` in
+order — the frame server's queue is one decode at a time and sequential
+decode is the cheap direction — draws each served canvas onto a
+`willReadFrequently` canvas of its own size, reads the luma with
+`grayFromRgba`, feeds the accumulator, and closes the server. Returns
+`{ windows, samples, frames, totalMs, msPerFrame, thumbWidth,
+thumbHeight }`. `scanServer(server, readThumb, …)` is the walk without the
+opening, which the tests drive with a stand-in server and a reader that
+returns arrays; `shouldStop` lets the viewer abandon a scan when the coach
+navigates away.
+
+## 5. W4 — wiring
+
+- `autoAnalyse`: `src` → scan → windows → per window find (rest frame,
+  hint, then no hint) and `trackSet` in range → reps renumbered. No
+  window, or no reps from any window: today's path. The result gains
+  `windows`, `scan: { frames, totalMs, msPerFrame } | null` and
+  `fellBack`; `describeAutoAnalysis` says "2 lifts found at 1,2 s and
+  6,9 s".
+- `lib/arrivals.ts` passes the URL it opened the server from.
+- `KinemosViewer`: scans on open (cached per clip), holds `liftWindows`,
+  passes them to `ViewerTransport` as light spans with `title` "lift,
+  1,2–2,4 s"; TRACK THE SET uses them as the automatic run does, with the
+  coach's anchor standing in for the finder on the window it sits in.
+- `verify/testset.html`: `scan=1` runs the scan first, logs each window
+  and `scan:` `{ frames, msPerFrame, totalMs }`, then anchors on the first
+  window's rest frame — at the `anchor` coordinates when given, else where
+  the plate finder puts it — and tracks with the window's bounds, logging
+  `track:` as before so the before/after frame counts and `totalMs` can
+  be compared on the same URL with and without `scan=1`.
+
+## 6. Deferred to local verification (the clips)
+
+Run on the `kinemos-bench` server (`.claude/launch.json`, port 5299;
+restart it after engine edits). For each clip, the same URL as the P2
+plan §4 recipe with `&scan=1` appended — and always with `force=1`, so the
+track is re-run inside the window rather than restored from storage:
+
+```
+http://localhost:5299/verify/testset.html?clip=/verify/fixtures/testset-v2/<file>&frame=<f>&anchor=<x>,<y>&r=<px>&auto=1&force=1&scan=1
+```
+
+Record, per clip: the windows the scan logs (`scan:` lines, `restT–toT`
+and confidence), `scan.msPerFrame`, and `track.totalMs` and `track.range`
+with and without `scan=1`.
+
+| Clip | Windows the scan must return | Before (whole clip) | After (in the window) |
+| --- | --- | --- | --- |
+| Competition snatch, H.264 1080p 30 fps (`20230930…`, anchor `0 · 1092,868 · 106`) | one, containing 6,9–8,2 s; `restT` in the still before 6,87 s | 314/314 frames, `trackMs` (local) | frames ≈ (8,2 − 6,4) · 30 ≈ 55; the rep still 6,87 → 8,17 s, peak 1,92 m/s |
+| Snatch double, HEVC 1080 × 1920 60 fps (`VID20250908…`, `60 · 573,1408 · 110`) | two: one containing 1,2–2,4 s, one containing 6,9–8,1 s; the second's `restT` after rep 1's drop has settled | to the drop stop (local) | two reps found through the windows, 1,22 → 2,36 s and 6,91 → 8,09 s; TRACK THE SET in the viewer must show two spans on the band and still find both reps |
+| Close-camera pull, HEVC 1080 × 1920 60 fps (`VID20250513…`, `30 · 548,1100 · 120`) | one containing 2,5–4,0 s. **The coverage number to read:** the lifter fills the frame here; if the window is missing, log `samples` coverage over 2,5–4,0 s — above 0,6 means `coverageMax` must rise, and the pan clip below says how far it can | 532/532 | one rep, grade A, `stoppedAt` `range` or `null` |
+| Snatch, HEVC 1080 × 1440 30 fps (`VID20250830…`, `60 · 711,1636 · 178`) | one containing 12,0–13,4 s | 431/457 to the drop | one rep, `stoppedAt` `drop` inside the window |
+| Training hall, H.264 1080 × 1920 30 fps, 18 s (`20220824…`, `30 · 831,1101 · 165`) | **none** — the bar is never lifted and the camera pans at the end. If the pan produces a window, log its coverage: that number is the floor `coverageMax` may not exceed | 533/545 | no window → today's path (the fallback), same 533/545; the automatic run on the library must say no lift found |
+| Scan cost, every clip | — | — | `scan.msPerFrame` — the decode is the whole of it; the pay-off condition is `scan.msPerFrame · frames < 150 ms · frames skipped`. On the competition clip that is ≈ 250 frames skipped, so the scan pays off under ~120 ms/frame; the expected figure on hardware-decoded 1080p is 5–20 ms |
+
+A window that lands a lift outside these spans, or a missed lift, is a
+threshold finding to write up here with the sample numbers (`energy`,
+`centroidRow`, `coverage` over the span), not a regression to silence:
+the thresholds in §2 were set on synthetic thumbnails and the clips are
+what sets them.
