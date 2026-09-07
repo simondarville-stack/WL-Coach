@@ -235,10 +235,26 @@ export interface TrackOptions {
    *  in the pass — about one template radius. Without it a track anchored
    *  on a bar being lowered from a rack, or mid-fall, would end at once. */
   dropAfterRiseM?: number;
+  /**
+   * A RANGE bound (P7 plan §3): the last frame the forward pass may track,
+   * inclusive. The activity scan names the stretch of a clip a lift is in,
+   * and the tracker need not walk past it. When the bound ends the pass
+   * with frames still beyond it, `stoppedAt` says `range`; a bound at or
+   * past the clip's end reports nothing, since nothing was left out.
+   * `gaveUp` stays false. A drop inside the range still ends the pass as a
+   * drop — the drop check runs on each frame before the bound is looked at
+   * for the next one.
+   */
+  stopAtIndex?: number;
+  /** The same for the backward pass: the earliest frame it may reach,
+   *  inclusive — the bound BEFORE the anchor in time. */
+  stopBeforeIndex?: number;
   onProgress?: (done: number, total: number) => void;
 }
 
-export const DEFAULT_TRACK_OPTIONS: Required<Omit<TrackOptions, 'onProgress' | 'template'>> = {
+export const DEFAULT_TRACK_OPTIONS: Required<
+  Omit<TrackOptions, 'onProgress' | 'template' | 'stopAtIndex' | 'stopBeforeIndex'>
+> = {
   templateRadiusPx: 26,
   // Zero: measured, not assumed. See decision 1 in the header.
   innerRadiusFraction: 0,
@@ -310,8 +326,10 @@ export interface TrackStop {
   /** The last frame in the track. */
   index: number;
   /** `drop`: the bar, having risen, fell faster than a catch ever lowers it
-   *  — it was let go, and what follows is not the lift. */
-  reason: 'drop';
+   *  — it was let go, and what follows is not the lift. `range`: the pass
+   *  reached the bound it was given (`stopAtIndex` / `stopBeforeIndex`)
+   *  with frames still beyond it. */
+  reason: 'drop' | 'range';
 }
 
 export interface TrackResult {
@@ -717,12 +735,24 @@ export async function trackDirection(
    *  from; −1 outside a run. */
   let dropRunFrom = -1;
 
-  const total =
-    direction === 1 ? source.frameCount - anchor.index - 1 : anchor.index;
+  // The range bound for this pass, clamped to the clip; undefined when the
+  // pass may run to the clip's end.
+  const bound = direction === 1 ? options.stopAtIndex : options.stopBeforeIndex;
+  const lastAllowed =
+    direction === 1
+      ? Math.min(source.frameCount - 1, bound ?? Infinity)
+      : Math.max(0, bound ?? 0);
+  const total = Math.max(0, direction === 1 ? lastAllowed - anchor.index : anchor.index - lastAllowed);
 
   for (let step = 1; ; step++) {
     const index = anchor.index + direction * step;
     if (index < 0 || index >= source.frameCount) break;
+    if (direction === 1 ? index > lastAllowed : index < lastAllowed) {
+      // The bound, with a frame beyond it (the clip-end check above came
+      // first): the pass stops here on purpose.
+      stoppedAt = { index: points[points.length - 1].index, reason: 'range' };
+      break;
+    }
 
     // Prediction runs in tracking order, so the two most recent points are the
     // last two entries whichever way we are walking. Velocity is per frame of

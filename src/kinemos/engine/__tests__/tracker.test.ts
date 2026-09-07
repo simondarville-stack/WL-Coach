@@ -721,3 +721,79 @@ describe('a bar that is lowered', () => {
     expect(result.points).toHaveLength(truth.length);
   });
 });
+
+describe('a range bound on the tracker (P7 plan §3)', () => {
+  const truth = pullTrajectory(40);
+  const source = sourceFrom(truth.map(p => ({ cx: p.x, cy: p.y })));
+  const SLOW = { timeout: 30_000 };
+
+  it('the forward pass ends at stopAtIndex and says so', SLOW, async () => {
+    const result = await trackDirection(source, { index: 5, x: truth[5].x, y: truth[5].y }, 1, {
+      stopAtIndex: 20,
+    });
+    expect(result.points.map(p => p.index)).toEqual(Array.from({ length: 16 }, (_, i) => 5 + i));
+    expect(result.stoppedAt).toEqual({ index: 20, reason: 'range' });
+    expect(result.gaveUp).toBe(false);
+    expect(rmsError(result.points, truth)).toBeLessThan(0.3);
+  });
+
+  it('the backward pass ends at stopBeforeIndex, in time order', SLOW, async () => {
+    const result = await trackDirection(source, { index: 30, x: truth[30].x, y: truth[30].y }, -1, {
+      stopBeforeIndex: 10,
+    });
+    expect(result.points[0].index).toBe(10);
+    expect(result.points[result.points.length - 1].index).toBe(30);
+    expect(result.points).toHaveLength(21);
+    expect(result.stoppedAt).toEqual({ index: 10, reason: 'range' });
+    expect(result.gaveUp).toBe(false);
+  });
+
+  it('a bound at or past the clip end is no stop at all', SLOW, async () => {
+    const atEnd = await trackDirection(source, { index: 30, x: truth[30].x, y: truth[30].y }, 1, {
+      stopAtIndex: truth.length - 1,
+    });
+    expect(atEnd.stoppedAt).toBeNull();
+    expect(atEnd.points).toHaveLength(truth.length - 30);
+    const past = await trackDirection(source, { index: 30, x: truth[30].x, y: truth[30].y }, 1, {
+      stopAtIndex: 999,
+    });
+    expect(past.stoppedAt).toBeNull();
+    const atStart = await trackDirection(source, { index: 6, x: truth[6].x, y: truth[6].y }, -1, {
+      stopBeforeIndex: 0,
+    });
+    expect(atStart.stoppedAt).toBeNull();
+    expect(atStart.points[0].index).toBe(0);
+  });
+
+  it('counts progress over the frames in range only', SLOW, async () => {
+    const totals = new Set<number>();
+    await trackDirection(source, { index: 5, x: truth[5].x, y: truth[5].y }, 1, {
+      stopAtIndex: 20,
+      onProgress: (_done, total) => totals.add(total),
+    });
+    expect([...totals]).toEqual([15]);
+  });
+
+  it('trackFromAnchor fills exactly the range around the anchor', SLOW, async () => {
+    const result = await trackFromAnchor(source, { index: 15, x: truth[15].x, y: truth[15].y }, {
+      stopBeforeIndex: 8,
+      stopAtIndex: 25,
+    });
+    expect(result.points[0].index).toBe(8);
+    expect(result.points[result.points.length - 1].index).toBe(25);
+    expect(result.points).toHaveLength(18);
+    expect(result.gaveUp).toBe(false);
+    // The forward pass's stop is the one reported, as for a drop.
+    expect(result.stoppedAt).toEqual({ index: 25, reason: 'range' });
+  });
+
+  it('a drop inside the range is still reported as a drop', SLOW, async () => {
+    const dropped = dropTrajectory();
+    const dropSource = sourceFrom(dropped.map(p => ({ cx: p.x, cy: p.y })));
+    const result = await trackDirection(dropSource, { index: 0, x: dropped[0].x, y: dropped[0].y }, 1, {
+      stopAtIndex: dropped.length - 2,
+    });
+    expect(result.stoppedAt?.reason).toBe('drop');
+    expect(result.stoppedAt!.index).toBeLessThan(dropped.length - 2);
+  });
+});

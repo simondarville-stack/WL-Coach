@@ -30,6 +30,11 @@
  * (a lifter standing over the bar, the discs behind peeking out): the set's
  * calibration then stands for that rep.
  *
+ * A `range` (P7 plan §3) keeps all of this — the first track, both kinds of
+ * search, every join — inside the frames the activity scan said a lift is
+ * in; a track that reaches the range's end stops there as a `range` stop,
+ * which is neither a loss nor a drop and ends the joining.
+ *
  * This is the lib layer: it may use the cv assists. The engine it calls stays
  * pure. `verify/track-clip.html?reps=1` runs exactly this function.
  */
@@ -110,7 +115,15 @@ export interface TrackSetOptions {
   colour?: boolean;
   /** Passed through to the tracker. The template radius defaults to a little
    *  more than the outline's semi-major axis. */
-  trackOptions?: Omit<TrackOptions, 'onProgress'>;
+  trackOptions?: Omit<TrackOptions, 'onProgress' | 'stopAtIndex' | 'stopBeforeIndex'>;
+  /**
+   * Frames to stay inside, inclusive (P7 plan §3). The activity scan says
+   * where a lift is; the first track, the in-flight colour search, the
+   * search for the plate at rest and every join then stay within it, and a
+   * track that reaches `to` ends there as a `range` stop — not a drop, not
+   * a loss. Default: the whole clip.
+   */
+  range?: { from: number; to: number };
   onProgress?: (done: number, total: number) => void;
   /** Something worth telling: a join, a candidate turned down, the colour. */
   onLog?: (line: string) => void;
@@ -149,6 +162,10 @@ export async function trackSet(
     };
     const minConfidence = trackOptions.minConfidence ?? DEFAULT_TRACK_OPTIONS.minConfidence;
     const total = server.frameCount;
+    // The range, clamped to the clip: `end` is the last frame any piece of
+    // the set may reach.
+    const rangeFrom = Math.max(0, Math.min(total - 1, options.range?.from ?? 0));
+    const end = Math.max(rangeFrom, Math.min(total - 1, options.range?.to ?? total - 1));
     const fps = 1 / Math.max(1e-3, medianInterval(source.timestamps));
     // The physics the tracker's search radius follows: a bar end at 3 m/s on
     // a plate of radius R px (45 cm) moves about 15·R/fps px a frame.
@@ -183,7 +200,12 @@ export async function trackSet(
       );
     }
 
-    const first = await trackFromAnchor(source, anchor, { ...trackOptions, onProgress: done => report(done) });
+    const first = await trackFromAnchor(source, anchor, {
+      ...trackOptions,
+      stopBeforeIndex: rangeFrom,
+      stopAtIndex: end,
+      onProgress: done => report(done),
+    });
     const all: TrackedPoint[] = [...first.points];
     const low: number[] = [...first.lowConfidenceIndices];
     const joins: SetJoin[] = [];
@@ -206,7 +228,7 @@ export async function trackSet(
     // Where the next search may begin. Always moves forward, so a hit the
     // tracker could do nothing with — a plate half out of frame, where no
     // template can be cut — is not found again and again.
-    let searchFrom = 0;
+    let searchFrom = rangeFrom;
     let attempts = 0;
     while ((gaveUp || stoppedAtDrop) && attempts < MAX_JOINS) {
       attempts++;
@@ -261,7 +283,7 @@ export async function trackSet(
         const frames = Math.max(1, lastGood.index - before.index);
         const vx = (lastGood.x - before.x) / frames;
         const vy = (lastGood.y - before.y) / frames;
-        const until = Math.min(total - 1, lastGood.index + Math.round(FLIGHT_WINDOW_S * fps));
+        const until = Math.min(end, lastGood.index + Math.round(FLIGHT_WINDOW_S * fps));
         for (let at = startAt; at <= until; at += FLIGHT_STEP) {
           report(at);
           const elapsed = at - lastGood.index;
@@ -286,7 +308,9 @@ export async function trackSet(
       //    correlates with the set's own template.
       if (!found) {
         const resumeFrom = Math.max(startAt, lastGood.index + 10);
-        for (let at = resumeFrom; at < total - 10; at += REACQUIRE_STEP) {
+        // Ten frames short of the end: fewer than that is not a piece
+        // worth tracking on from.
+        for (let at = resumeFrom; at + 10 <= end; at += REACQUIRE_STEP) {
           report(at);
           const gray = await source.getGray(at);
           const candidate = await findPlate(gray, radiusOpts);
@@ -356,6 +380,7 @@ export async function trackSet(
       const more = await trackDirection(sub, { index: 0, x: seed.x, y: seed.y }, 1, {
         ...trackOptions,
         template: template ?? undefined,
+        stopAtIndex: end - from,
         onProgress: done => report(from + done),
       });
       if (more.points.length <= 1) {
@@ -370,7 +395,7 @@ export async function trackSet(
       all.push(...more.points);
       low.push(...more.lowConfidenceIndices.map(i => i + from));
       joins.push({ at: from, x: found.x, y: found.y, how: found.how, frames: more.points.length });
-      log(`join ${joins.length}: ${found.how === 'rest' ? 'plate found again at rest' : 'tracking on'} from frame ${from} at (${found.x.toFixed(1)}, ${found.y.toFixed(1)}), ${more.points.length} more frames${more.gaveUp ? ' until it was lost again' : more.stoppedAt ? ' until the bar was dropped again' : ''}`);
+      log(`join ${joins.length}: ${found.how === 'rest' ? 'plate found again at rest' : 'tracking on'} from frame ${from} at (${found.x.toFixed(1)}, ${found.y.toFixed(1)}), ${more.points.length} more frames${more.gaveUp ? ' until it was lost again' : more.stoppedAt?.reason === 'drop' ? ' until the bar was dropped again' : more.stoppedAt?.reason === 'range' ? ' to the end of the range' : ''}`);
       gaveUp = more.gaveUp;
       stoppedAtDrop = more.stoppedAt?.reason === 'drop';
       lostAtEnd = more.gaveUp;
