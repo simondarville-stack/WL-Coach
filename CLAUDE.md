@@ -293,6 +293,12 @@ the browser). It is hosted on **Cloudflare Workers static assets**:
   which is exactly how the source leaked once, in 0.60.1.
 - `npm run build:deploy` — `vite build` plus `scripts/strip-sourcemaps.mjs`.
   Second, independent guard; prefer it as the CI build command.
+- `dist/version.json` — emitted by the `versionManifest` plugin in
+  `vite.config.ts` with the same version/SHA the bundle carries. A tab that
+  becomes visible again after a long absence fetches it and reloads when
+  the live build differs (`src/lib/staleBundleReload.ts`, 0.93.2); a missing
+  lazy chunk reloads once as before (0.91.2). `public/_headers` and
+  `netlify.toml` serve it `no-store` — keep that when touching either.
 - Build-time env: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are baked
   into the bundle at build time — they are Workers Builds **environment
   variables**, not runtime secrets.

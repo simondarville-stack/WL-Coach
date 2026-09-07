@@ -27,6 +27,38 @@ const MAX_BREADCRUMBS = 25;
 
 let breadcrumbs: ErrorBreadcrumb[] = [];
 
+/**
+ * Set once the app has decided to reload itself (staleBundleReload). Between
+ * that decision and the navigation, the half-torn-down page still throws —
+ * React.lazy resolving to nothing after a swallowed chunk failure, effects
+ * racing the unload — and each of those would file a row that describes the
+ * reload, not a bug. Nothing is lost: the reload is the fix, and a reload
+ * that does not resolve the problem surfaces again on the fresh page.
+ */
+let suspended = false;
+
+export function suspendCapture(): void {
+  suspended = true;
+}
+
+/**
+ * True when a window 'error' event names a script served from another
+ * origin — an injected analytics beacon, a browser extension, an in-app
+ * webview shim. Their failures are not EMOS defects (the Cloudflare
+ * Insights beacon calling Array.prototype.at on a 2019 Chrome filed six
+ * rows) and their stacks point into code the repository does not contain.
+ * An empty filename is *not* foreign: that is the browser-muted report,
+ * handled separately by `muted`.
+ */
+export function isForeignScript(filename: string | null | undefined, origin: string): boolean {
+  if (!filename) return false;
+  try {
+    return new URL(filename, origin).origin !== origin;
+  } catch {
+    return false;
+  }
+}
+
 export function addBreadcrumb(crumb: Omit<ErrorBreadcrumb, 'ts'>): void {
   breadcrumbs.push({ ts: new Date().toISOString(), ...crumb });
   if (breadcrumbs.length > MAX_BREADCRUMBS) {
@@ -119,7 +151,7 @@ function shouldSkipCapture(): boolean {
 }
 
 export async function logError(err: unknown, opts: LogErrorOptions = {}): Promise<void> {
-  if (shouldSkipCapture()) return;
+  if (shouldSkipCapture() || suspended) return;
   try {
     const { name, message, stack, code } = normaliseError(err);
     const actor = resolveActor();
@@ -174,6 +206,7 @@ export function installGlobalHandlers(): void {
     // third-party throw is distinguishable from a genuine app error at a
     // glance rather than by forensics.
     const muted = event.error == null;
+    if (!muted && isForeignScript(event.filename, location.origin)) return;
     if (muted) {
       // One muted report per page load. Identical opaque reports carry zero
       // extra signal, and iOS Firefox re-fires them on a timer for as long
