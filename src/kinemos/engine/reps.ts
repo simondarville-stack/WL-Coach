@@ -71,13 +71,21 @@ export interface SplitRepsOptions {
   localFloorS?: number;
 }
 
+/**
+ * The one definition of "dropped": downward speed past which a bar is being
+ * let go, m/s (see `SplitRepsOptions.dropSpeedMs`). The tracker's
+ * `stopAtDrop` ends a track on the same bound, so the two agree on where a
+ * rep ends. COACH-CONFIG candidate.
+ */
+export const DROP_SPEED_MS = 2;
+
 const DEFAULTS: Required<SplitRepsOptions> = {
   minRiseCm: 40,
   restSpeedMs: 0.25,
   minRestS: 0.15,
   restBandCm: 15,
   maxSpeedMs: 6,
-  dropSpeedMs: 2,
+  dropSpeedMs: DROP_SPEED_MS,
   localFloorS: 5,
 };
 

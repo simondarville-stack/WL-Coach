@@ -345,6 +345,7 @@
           of: server.frameCount,
           range: `${first}–${last}`,
           gaveUp: result.gaveUp,
+          stoppedAt: result.stoppedAt ? `${result.stoppedAt.reason}@${result.stoppedAt.index}` : null,
           lowConfidence: result.lowConfidenceIndices.length,
           confMin: q(0),
           confP10: q(0.1),

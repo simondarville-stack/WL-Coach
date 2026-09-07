@@ -796,11 +796,17 @@ export function KinemosViewer() {
               '(before lift-off, or the drop after the catch) were left out.',
           );
         }
-        if (result.gaveUp && (leftOut === 0 || kept[kept.length - 1].index === result.points[result.points.length - 1].index)) {
+        const endsWhereTrackEnded =
+          leftOut === 0 || kept[kept.length - 1].index === result.points[result.points.length - 1].index;
+        if (result.gaveUp && endsWhereTrackEnded) {
           notes.push(
             'The tracker lost the bar part way through, so the track stops there. Mark it again ' +
               'further on and re-track.',
           );
+        } else if (result.stoppedAt?.reason === 'drop' && endsWhereTrackEnded) {
+          // Not a loss: the tracker stops where the bar is let go, on
+          // purpose, because the fall and the bounce are not the lift.
+          notes.push('The track ends where the bar was dropped.');
         }
         setSaveError(notes.length ? notes.join(' ') : null);
       } catch {

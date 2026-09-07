@@ -2,11 +2,11 @@
  * setTracker — a whole set from one click.
  *
  * A coach films a double or a triple, not a rep. The tracker follows the
- * plate through the first rep and loses it on the drop, which is fine: the
- * bar comes back to rest before the next rep, and a plate at rest near where
- * the set started can be found again. So a set is tracked as: track from the
- * anchor; when the tracker gives up, look for the plate again; track on from
- * there; repeat to the end. The joined track is then cut into reps by the
+ * plate through the first rep and stops where the bar is dropped (or loses
+ * it), which is fine: the bar comes back to rest before the next rep, and a
+ * plate at rest near where the set started can be found again. So a set is
+ * tracked as: track from the anchor; when the tracker stops or gives up,
+ * look for the plate again; track on from there; repeat to the end. The joined track is then cut into reps by the
  * engine (`engine/reps.ts`), and each rep is calibrated on the plate as it
  * sat at ITS rest — the phone, or the bar, may have moved between reps.
  *
@@ -189,6 +189,13 @@ export async function trackSet(
     const joins: SetJoin[] = [];
     let lostAtEnd = first.gaveUp;
     let gaveUp = first.gaveUp;
+    // A track that ended where the bar was DROPPED (tracker option
+    // `stopAtDrop`, P6 plan §2) needs joining like a lost one — the next rep
+    // starts at the next rest — but nothing was lost: the in-flight colour
+    // search is skipped, since it would only find the falling plate and
+    // track it to the floor, which is what stopping was for.
+    let stoppedAtDrop = first.stoppedAt?.reason === 'drop';
+    if (stoppedAtDrop) log(`frame ${all[all.length - 1].index}: the bar was dropped — looking for it at its next rest`);
 
     const radiusOpts = {
       minRadiusPx: Math.max(6, Math.round(server.displayHeight * 0.03)),
@@ -201,7 +208,7 @@ export async function trackSet(
     // template can be cut — is not found again and again.
     let searchFrom = 0;
     let attempts = 0;
-    while (gaveUp && attempts < MAX_JOINS) {
+    while ((gaveUp || stoppedAtDrop) && attempts < MAX_JOINS) {
       attempts++;
       // A tracker that gave up spent its last frames unsure. A blurred plate
       // in the second pull is unsure and still the bar; a fan the template
@@ -247,8 +254,9 @@ export async function trackSet(
       //    the plate was HEADING — its last motion carried on, for a few
       //    frames at most — with a reach that grows with the frames since it
       //    was last seen but never so far that the plate on the far end of
-      //    the bar, the same colour, is the nearest patch.
-      if (colour) {
+      //    the bar, the same colour, is the nearest patch. Not after a drop
+      //    stop: the plate is in flight there by design.
+      if (colour && !stoppedAtDrop) {
         const before = all.length > 1 ? all[all.length - 2] : lastGood;
         const frames = Math.max(1, lastGood.index - before.index);
         const vx = (lastGood.x - before.x) / frames;
@@ -316,7 +324,9 @@ export async function trackSet(
       }
 
       if (!found) {
-        lostAtEnd = true;
+        // Lost at the end only if the last stop was a loss; a bar dropped
+        // and never lifted again is a set that simply ended.
+        lostAtEnd = gaveUp;
         break;
       }
       const from = found.at;
@@ -360,8 +370,9 @@ export async function trackSet(
       all.push(...more.points);
       low.push(...more.lowConfidenceIndices.map(i => i + from));
       joins.push({ at: from, x: found.x, y: found.y, how: found.how, frames: more.points.length });
-      log(`join ${joins.length}: ${found.how === 'rest' ? 'plate found again at rest' : 'tracking on'} from frame ${from} at (${found.x.toFixed(1)}, ${found.y.toFixed(1)}), ${more.points.length} more frames${more.gaveUp ? ' until it was lost again' : ''}`);
+      log(`join ${joins.length}: ${found.how === 'rest' ? 'plate found again at rest' : 'tracking on'} from frame ${from} at (${found.x.toFixed(1)}, ${found.y.toFixed(1)}), ${more.points.length} more frames${more.gaveUp ? ' until it was lost again' : more.stoppedAt ? ' until the bar was dropped again' : ''}`);
       gaveUp = more.gaveUp;
+      stoppedAtDrop = more.stoppedAt?.reason === 'drop';
       lostAtEnd = more.gaveUp;
     }
 

@@ -65,6 +65,7 @@
  * an interface the caller implements — the tracker knows nothing about the
  * frame server, WebCodecs or canvases.
  */
+import { DROP_SPEED_MS } from './reps';
 
 /**
  * A greyscale image. `data` is one value per pixel, row-major, any range.
@@ -204,6 +205,36 @@ export interface TrackOptions {
    *  anchor. A set tracked in pieces keeps ONE template across its joins, so
    *  every piece centres the plate the same way and a join is not a step. */
   template?: Template;
+  /**
+   * End the track where the bar is DROPPED (P6 plan §2). The tracker used to
+   * follow a let-go bar to the floor and through the bounce, and the rep cut
+   * then threw those frames away — a third of the tracking time on most of
+   * the testset clips (04/09/2026). On, a forward pass ends once the bar,
+   * after having risen `dropAfterRiseM`, falls faster than `dropSpeedMs` for
+   * `dropMinFrames` consecutive intervals spanning `dropMinS`. Reported in
+   * `TrackResult.stoppedAt`; `gaveUp` stays false — nothing was lost.
+   *
+   * Forward passes only. The rise-then-fall condition is stated in time
+   * order, and a backward pass meets the frames later-in-time first, so the
+   * rise that precedes a drop cannot be established before the drop is
+   * reached; applied in walking order it would end the pass at the second
+   * pull. The backward pass runs to its usual end instead.
+   */
+  stopAtDrop?: boolean;
+  /** Downward speed past which the bar is being dropped, m/s — the rep
+   *  splitter's bound (`reps.ts` `DROP_SPEED_MS`): a catch lowers the bar at
+   *  under ~1,5 m/s, a bar let go passes 2 m/s within a fifth of a second. */
+  dropSpeedMs?: number;
+  /** A drop must last at least this long, s, AND this many intervals. Three
+   *  frames alone are 12 ms at 240 fps, where per-frame velocity noise on a
+   *  small plate is a few tenths of a m/s; a tenth of a second past 2 m/s is
+   *  a drop at any frame rate. */
+  dropMinS?: number;
+  dropMinFrames?: number;
+  /** The bar must first have been this far, m, above its lowest point earlier
+   *  in the pass — about one template radius. Without it a track anchored
+   *  on a bar being lowered from a rack, or mid-fall, would end at once. */
+  dropAfterRiseM?: number;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -225,6 +256,11 @@ export const DEFAULT_TRACK_OPTIONS: Required<Omit<TrackOptions, 'onProgress' | '
   refreshBelowConfidence: 0.9,
   refreshRate: 0.5,
   discardBelowConfidence: 0.3,
+  stopAtDrop: true,
+  dropSpeedMs: DROP_SPEED_MS,
+  dropMinS: 0.1,
+  dropMinFrames: 3,
+  dropAfterRiseM: 0.25,
 };
 
 /**
@@ -269,12 +305,24 @@ export function searchRadiusFor(
   return Math.max(floorPx, Math.ceil(metres * pxPerM));
 }
 
+/** Why a track ended before the clip did, other than losing the bar. */
+export interface TrackStop {
+  /** The last frame in the track. */
+  index: number;
+  /** `drop`: the bar, having risen, fell faster than a catch ever lowers it
+   *  — it was let go, and what follows is not the lift. */
+  reason: 'drop';
+}
+
 export interface TrackResult {
   points: TrackedPoint[];
   /** Frames the tracker was not confident about — the ones worth checking. */
   lowConfidenceIndices: number[];
   /** True when tracking stopped early because the bar was lost. */
   gaveUp: boolean;
+  /** Where and why the track ended on purpose (`TrackOptions.stopAtDrop`);
+   *  null when it ran to the clip's end or gave up. */
+  stoppedAt: TrackStop | null;
 }
 
 // ── Template geometry ───────────────────────────────────────────────────────
@@ -635,7 +683,7 @@ export async function trackDirection(
   const anchorTemplate =
     options.template ?? extractTemplate(anchorImage, anchor.x, anchor.y, offsets);
   if (!anchorTemplate) {
-    return { points: [], lowConfidenceIndices: [], gaveUp: true };
+    return { points: [], lowConfidenceIndices: [], gaveUp: true, stoppedAt: null };
   }
   /** The reference that follows the plate's appearance; the anchor until the
    *  first confident refresh. */
@@ -656,6 +704,18 @@ export async function trackDirection(
   let consecutiveMisses = 0;
   let lowRun = 0;
   let gaveUp = false;
+  let stoppedAt: TrackStop | null = null;
+
+  // The drop rule's state (`stopAtDrop`), in time order. Only the forward
+  // pass walks in time order, so only it can apply the rule — see the option.
+  const dropRule = opts.stopAtDrop && direction === 1;
+  const pxPerM = (2 * opts.templateRadiusPx) / PLATE_DIAMETER_M;
+  /** The lowest the bar has been so far — the largest y. */
+  let lowestY = anchor.y;
+  let hasRisen = false;
+  /** Position in `points` of the sample the current fast-falling run starts
+   *  from; −1 outside a run. */
+  let dropRunFrom = -1;
 
   const total =
     direction === 1 ? source.frameCount - anchor.index - 1 : anchor.index;
@@ -777,12 +837,35 @@ export async function trackDirection(
       lowRun = 0;
     }
 
+    if (dropRule) {
+      // Down is +y. Speed over the interval from the previous point, which
+      // may be more than a frame back when frames were discarded; the
+      // timestamps carry the real interval either way.
+      const p = points[points.length - 1];
+      const q = points[points.length - 2];
+      lowestY = Math.max(lowestY, p.y);
+      if (!hasRisen && lowestY - p.y >= opts.dropAfterRiseM * pxPerM) hasRisen = true;
+      const dtS = p.t - q.t;
+      const downMs = dtS > 0 ? (p.y - q.y) / pxPerM / dtS : 0;
+      if (hasRisen && downMs > opts.dropSpeedMs) {
+        if (dropRunFrom < 0) dropRunFrom = points.length - 2;
+        const intervals = points.length - 1 - dropRunFrom;
+        const spanS = p.t - points[dropRunFrom].t;
+        if (intervals >= opts.dropMinFrames && spanS >= opts.dropMinS) {
+          stoppedAt = { index: p.index, reason: 'drop' };
+          break;
+        }
+      } else {
+        dropRunFrom = -1;
+      }
+    }
+
     options.onProgress?.(step, Math.max(1, total));
   }
 
   // Backward tracks come out reversed; every consumer wants time order.
   if (direction === -1) points.reverse();
-  return { points, lowConfidenceIndices, gaveUp };
+  return { points, lowConfidenceIndices, gaveUp, stoppedAt };
 }
 
 /**
@@ -811,6 +894,8 @@ export async function trackFromAnchor(
       (a, b) => a - b,
     ),
     gaveUp: forward.gaveUp || backward.gaveUp,
+    // Only the forward pass can stop at a drop (see `stopAtDrop`).
+    stoppedAt: forward.stoppedAt ?? backward.stoppedAt,
   };
 }
 

@@ -629,3 +629,95 @@ describe('a plate that leaves the frame', () => {
     }
   }, 20000);
 });
+
+/**
+ * A lift that is dropped: a fast rise (100 px in 24 frames — 2,25 m/s at
+ * this scale, faster than the drop bound, so the backward pass has something
+ * to be tempted by), a catch that lowers the bar 15 px over 8 frames (about
+ * 1 m/s), a hold, then the bar let go — free fall from 2,7 m/s, accelerating
+ * — and six frames on the floor the tracker should never reach.
+ *
+ * Scale: 2 · PLATE_R px = 0,45 m, so 1 m/s is 1,93 px per frame at 60 fps.
+ */
+const DROP_AT = 36;
+function dropTrajectory(): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = [];
+  const x = 120.37;
+  for (let i = 0; i < 24; i++) out.push({ x, y: 170.61 - (100 * i) / 23 });
+  for (let i = 1; i <= 8; i++) out.push({ x, y: 70.61 + (15 * i) / 8 });
+  for (let i = 0; i < 4; i++) out.push({ x, y: 85.61 });
+  for (let k = 1; k <= 12; k++) out.push({ x, y: 85.61 + 5 * k + 0.15 * k * (k + 1) });
+  for (let i = 0; i < 6; i++) out.push({ x, y: 171.61 });
+  return out;
+}
+
+describe('a bar that is dropped', () => {
+  const truth = dropTrajectory();
+  const source = sourceFrom(truth.map(p => ({ cx: p.x, cy: p.y })));
+  const SLOW = { timeout: 30_000 };
+
+  it('ends the track where the bar was let go, and says so', SLOW, async () => {
+    const result = await trackDirection(source, { index: 0, x: truth[0].x, y: truth[0].y }, 1);
+    expect(result.gaveUp).toBe(false);
+    expect(result.stoppedAt?.reason).toBe('drop');
+    // A tenth of a second past the bound — six intervals at 60 fps — plus
+    // the interval the run is counted from. Never the floor.
+    expect(result.stoppedAt!.index).toBeGreaterThanOrEqual(DROP_AT + 4);
+    expect(result.stoppedAt!.index).toBeLessThanOrEqual(DROP_AT + 10);
+    expect(result.points[result.points.length - 1].index).toBe(result.stoppedAt!.index);
+    expect(result.points.length).toBe(result.stoppedAt!.index + 1);
+    expect(rmsError(result.points, truth)).toBeLessThan(0.3);
+  });
+
+  it('is still whole with the rule off', SLOW, async () => {
+    const result = await trackDirection(source, { index: 0, x: truth[0].x, y: truth[0].y }, 1, {
+      stopAtDrop: false,
+    });
+    expect(result.stoppedAt).toBeNull();
+    expect(result.points).toHaveLength(truth.length);
+  });
+
+  it('does not fire on a fall it never saw the rise before', SLOW, async () => {
+    // Anchored in the hold after the catch: from here the bar only falls.
+    // The rule needs a lift to be over, and this pass never saw one.
+    const anchor = DROP_AT - 1;
+    const result = await trackDirection(source, { index: anchor, x: truth[anchor].x, y: truth[anchor].y }, 1);
+    expect(result.stoppedAt).toBeNull();
+    expect(result.gaveUp).toBe(false);
+    expect(result.points).toHaveLength(truth.length - anchor);
+  });
+
+  it('never mistakes the second pull for a drop on the way back', SLOW, async () => {
+    // Walking backward from the hold, the rise is a 2,25 m/s "fall" in
+    // walking order. The rule reads time, not the walk, and stays quiet.
+    const anchor = DROP_AT - 1;
+    const result = await trackDirection(source, { index: anchor, x: truth[anchor].x, y: truth[anchor].y }, -1);
+    expect(result.stoppedAt).toBeNull();
+    expect(result.points).toHaveLength(anchor + 1);
+    expect(result.points[0].index).toBe(0);
+  });
+
+  it('carries the forward stop through a mid-lift anchor', SLOW, async () => {
+    const result = await trackFromAnchor(source, { index: 12, x: truth[12].x, y: truth[12].y });
+    expect(result.gaveUp).toBe(false);
+    expect(result.stoppedAt?.reason).toBe('drop');
+    expect(result.points[0].index).toBe(0);
+    expect(result.points[result.points.length - 1].index).toBe(result.stoppedAt!.index);
+    expect(result.stoppedAt!.index).toBeLessThan(truth.length - 6);
+  });
+});
+
+describe('a bar that is lowered', () => {
+  it('is not a drop — a catch and a controlled descent stay under the bound', { timeout: 30_000 }, async () => {
+    // The same rise, then 2,5 px a frame down for 30 frames: 1,3 m/s, a
+    // brisk lowering, well under what a let-go bar reaches.
+    const truth: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < 24; i++) truth.push({ x: 120.37, y: 170.61 - (100 * i) / 23 });
+    for (let i = 1; i <= 30; i++) truth.push({ x: 120.37, y: 70.61 + 2.5 * i });
+    const source = sourceFrom(truth.map(p => ({ cx: p.x, cy: p.y })));
+    const result = await trackDirection(source, { index: 0, x: truth[0].x, y: truth[0].y }, 1);
+    expect(result.stoppedAt).toBeNull();
+    expect(result.gaveUp).toBe(false);
+    expect(result.points).toHaveLength(truth.length);
+  });
+});
