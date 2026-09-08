@@ -796,4 +796,24 @@ describe('a range bound on the tracker (P7 plan §3)', () => {
     expect(result.stoppedAt?.reason).toBe('drop');
     expect(result.stoppedAt!.index).toBeLessThan(dropped.length - 2);
   });
+
+  it('ends where the caller asks, as a stop and not a loss (P8 plan §2)', SLOW, async () => {
+    let frames = 0;
+    const result = await trackDirection(source, { index: 0, x: truth[0].x, y: truth[0].y }, 1, {
+      // True once ten frames have been asked for: the pass keeps the ten.
+      shouldStop: () => frames++ >= 10,
+    });
+    expect(result.points).toHaveLength(11);
+    expect(result.stoppedAt).toEqual({ index: 10, reason: 'stopped' });
+    expect(result.gaveUp).toBe(false);
+    expect(rmsError(result.points, truth)).toBeLessThan(0.3);
+  });
+
+  it('a stop never asked for changes nothing', SLOW, async () => {
+    const result = await trackDirection(source, { index: 0, x: truth[0].x, y: truth[0].y }, 1, {
+      shouldStop: () => false,
+    });
+    expect(result.stoppedAt).toBeNull();
+    expect(result.points).toHaveLength(truth.length);
+  });
 });

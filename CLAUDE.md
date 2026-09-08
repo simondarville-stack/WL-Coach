@@ -174,6 +174,15 @@ All modules are **active** — nothing is currently disabled or hidden:
   `stopBeforeIndex`, `trackSet`'s `range`), the scrub strip shows the lifts
   before anything is tracked, and a clip with no lift found is tracked
   whole as before.
+  From 0.95.0 (`docs/KINEMOS_P8_PLAN.md`): an athlete's upload is analysed
+  **on the athlete's phone** right after its row exists — the same
+  pipeline from the local file (`src/athlete/v2/lib/useUploadAnalysis.ts`,
+  gated by `lib/deviceGate.ts`: WebCodecs, data saver, battery), stored
+  against `source: 'log'` — since a Stream-hosted clip can never be opened
+  by a coach's browser; `shouldStop` runs through the whole automatic
+  pipeline, the library shows such reps and the viewer shows them over
+  the Stream player. The server-side worker is designed and costed in the
+  plan's §5, not built.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on

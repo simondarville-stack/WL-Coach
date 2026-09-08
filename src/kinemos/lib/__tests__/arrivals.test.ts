@@ -40,7 +40,7 @@ vi.mock('../analysisService', async () => {
   return { ...actual, listRecentAnalyses: vi.fn(async () => []) };
 });
 
-const { runArrivalQueue, unanalysedClips, targetFor } = await import('../arrivals');
+const { runArrivalQueue, unanalysedClips, targetFor, summariseAnalyses } = await import('../arrivals');
 
 function target(id: string) {
   return { source: 'direct' as const, sourceId: id, label: id, url: `blob:${id}` };
@@ -128,6 +128,39 @@ describe('unanalysedClips', () => {
   it('leaves out embedded clips, whose bytes are behind an iframe', () => {
     const rows = [row({ sourceId: 'a', isEmbed: true }), row({ sourceId: 'b' })];
     expect(unanalysedClips(rows, new Set()).map(r => r.sourceId)).toEqual(['b']);
+  });
+});
+
+describe('summariseAnalyses', () => {
+  const stored = [
+    { source_kind: 'log' as const, source_id: 'phone-clip', grade: 'B' as const },
+    { source_kind: 'log' as const, source_id: 'phone-clip', grade: 'A' as const },
+    { source_kind: 'direct' as const, source_id: 'import', grade: null },
+  ];
+
+  it('counts reps per clip and keeps the best grade', () => {
+    const map = summariseAnalyses(stored);
+    expect(map.get('log:phone-clip')).toEqual({ reps: 2, grade: 'A' });
+    expect(map.get('direct:import')).toEqual({ reps: 1, grade: null });
+  });
+
+  it('includes a Stream embed analysed on the athlete’s phone (P8 plan §4)', () => {
+    // The library's column reads the map; the sweep reads `unanalysedClips`.
+    // An embed with reps shows them and is not waiting; an embed without is
+    // not waiting either, since no browser here can open it.
+    const embedWithReps = row({
+      key: 'log:phone-clip',
+      source: 'log',
+      sourceId: 'phone-clip',
+      isEmbed: true,
+      playbackUrl: 'https://customer-x.cloudflarestream.com/abc/iframe',
+    });
+    const embedWithout = row({ key: 'log:other', source: 'log', sourceId: 'other', isEmbed: true });
+    const map = summariseAnalyses(stored);
+    expect(map.has('log:phone-clip')).toBe(true);
+    expect(unanalysedClips([embedWithReps, embedWithout, row({ sourceId: 'x' })], new Set(map.keys()))).toEqual([
+      row({ sourceId: 'x' }),
+    ]);
   });
 });
 

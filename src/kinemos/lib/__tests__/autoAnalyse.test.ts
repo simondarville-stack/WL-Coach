@@ -226,3 +226,57 @@ describe('describeAutoAnalysis', () => {
     );
   });
 });
+
+describe('a stopped run (P8 plan §2)', () => {
+  it('stores nothing when the scan was cut short, and never looks for the plate', async () => {
+    const { autoAnalyse } = await import('../autoAnalyse');
+    scanActivity.mockResolvedValue({ ...scanOf([windowAt(1.2)]), stopped: true });
+    const result = await autoAnalyse(server, { ...options, shouldStop: () => false });
+    expect(result.problem).toBe('stopped');
+    expect(findPlateOnFrame).not.toHaveBeenCalled();
+    expect(trackSet).not.toHaveBeenCalled();
+    expect(persisted).toEqual([]);
+  });
+
+  it('hands the stop to the scan and to every track, and stores nothing once asked', async () => {
+    const { autoAnalyse } = await import('../autoAnalyse');
+    let stop = false;
+    scanActivity.mockResolvedValue(scanOf([windowAt(1.2), windowAt(6.9)]));
+    findPlateOnFrame.mockResolvedValue(plate(500, 1400));
+    trackSet.mockImplementation(async () => {
+      // The athlete leaves while the first lift is being tracked.
+      stop = true;
+      return setResult([rep(1, 1.22)]);
+    });
+    const result = await autoAnalyse(server, { ...options, shouldStop: () => stop });
+    expect(scanActivity.mock.calls[0][1].shouldStop).toBeTypeOf('function');
+    expect(trackSet).toHaveBeenCalledTimes(1);
+    expect(trackSet.mock.calls[0][2].shouldStop).toBeTypeOf('function');
+    expect(result.problem).toBe('stopped');
+    expect(result.reps).toEqual([]);
+    expect(persisted).toEqual([]);
+  });
+
+  it('stops the whole-clip path too, after the track and before the store', async () => {
+    const { autoAnalyse } = await import('../autoAnalyse');
+    let stop = false;
+    scanActivity.mockResolvedValue(scanOf([]));
+    findPlateOnFrame.mockResolvedValue(plate(500, 1400));
+    trackSet.mockImplementation(async () => {
+      stop = true;
+      return setResult([rep(1, 1.22), rep(2, 6.91)]);
+    });
+    const result = await autoAnalyse(server, { ...options, shouldStop: () => stop });
+    expect(result.problem).toBe('stopped');
+    expect(persisted).toEqual([]);
+  });
+
+  it('says so, in one line', async () => {
+    const { describeAutoAnalysis } = await import('../autoAnalyse');
+    const text = describeAutoAnalysis(
+      { reps: [], analysisIds: [], ellipse: null, joins: 0, windows: [], scan: null, fellBack: false, problem: 'stopped' },
+      'Your lift',
+    );
+    expect(text).toBe('Your lift: the analysis was stopped before anything was stored.');
+  });
+});
