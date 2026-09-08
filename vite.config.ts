@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -26,13 +26,38 @@ function gitSha(): string {
   }
 }
 
+// Computed once so the bundle's own provenance and the manifest it is
+// compared against can never disagree within one build.
+const buildSha = gitSha();
+const buildTime = new Date().toISOString();
+
+// Emit dist/version.json: the same provenance the bundle carries, as a file
+// the running app can fetch to learn which build is live. A tab resuming
+// after a long absence compares it with its own APP_VERSION/BUILD_SHA and
+// reloads on a mismatch (src/lib/staleBundleReload.ts). It sits next to
+// index.html, outside /assets/, so the immutable cache rule never applies;
+// public/_headers marks it no-store as well.
+function versionManifest(): Plugin {
+  return {
+    name: 'emos-version-manifest',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ version: pkg.version, sha: buildSha, builtAt: buildTime }),
+      });
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), versionManifest()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
-    __BUILD_SHA__: JSON.stringify(gitSha()),
-    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __BUILD_SHA__: JSON.stringify(buildSha),
+    __BUILD_TIME__: JSON.stringify(buildTime),
   },
   build: {
     // 'hidden' emits .map files but omits the //# sourceMappingURL comment, so

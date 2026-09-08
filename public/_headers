@@ -12,6 +12,13 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# The build's provenance manifest (vite.config.ts). A tab resuming after a
+# long absence fetches it to learn whether a newer build is live, so it must
+# never be answered from a cache — the Workers default would already
+# revalidate, but an intermediary must not hold it either.
+/version.json
+  Cache-Control: no-store
+
 # Security headers on every response. index.html is deliberately NOT given a
 # Cache-Control here: the Workers default (max-age=0, must-revalidate + ETag)
 # is exactly right, and it is what picks up new deploys.
