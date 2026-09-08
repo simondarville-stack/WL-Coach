@@ -118,7 +118,7 @@ a real `<button aria-expanded>`, chevron label `Open ⌄` / `Collapse ⌃`.
 | --- | --- | --- | --- |
 | 1 | `This lift · rep n` | grade letter | rep pills with each rep's stored peak; three big stats — Top speed (Vmax, at S_vmax) / Bar height (S_max) / Turnover (t_turn), 40 px mono; the verdict callout; reference / model toggles |
 | 2 | `Velocity over time` | `peak 1,82 m/s` | the curves with phase tints behind them, the second-series picker, `vs time / vs height`, playhead synced to the video; caption *the playhead is the same one as the video*, `0,00 s … 5,80 s` |
-| 3 | `All metrics` | `17 of 21` | the existing metrics panel: velocity, bar mass, the BVDG analyzer block, phases |
+| 3 | `All metrics` | `17 of 21 · vs 22/07` | the existing metrics panel — velocity, bar mass, the BVDG analyzer block, phases — with a **Δ vs last make** column: each number against the same earlier lift the verdict is judged by, a direction word per row (`+0,04 ↑ better`, `+0,03 ↓ worse`, `+1,1 ↑ higher`, `−2,8 ↓ earlier in the pull`), and `same` inside the metric's threshold (`lib/metricDeltas.ts`) |
 | 4 | `Tracking & correction` | `3 frames flagged` (danger) / `tracked · 218 frames` / `12 marks by hand` / `not tracked` | path geometry, track / re-track / track the set / marker, the flagged-frame queue (each row a jump), then *How far to trust this*: the grade's conditions, camera, stabilise, re-centre |
 | 5 | `Calibration` | `45,0 cm · θ 28,4°` / `not calibrated` (warning) | the existing calibration panel: find, outline, plate, the two scales, the lens tier |
 | 6 | `History & comparison` | `Snatch · last 6` | table Date / Load / Vmax / S_vmax / grade, current row selected, ★ on the reference; a row opens the comparison on it; `Compare with DD/MM`, `Trend over time` |
@@ -182,9 +182,11 @@ event markers, and the phase colours from `DEFAULT_PHASE_SET`. Panels use a
 **Built:** the three-column layout with the landscape fallback (a wider video
 column for a landscape clip); the collapsible rail with headlines, the three
 depths and per-athlete memory; the bar-path column in all three modes; the
-phase timeline under the video; the verdict; the history table; the
-flagged-frame queue; the design bench (`verify/viewer-preview.html`) showing
-the split pieces.
+phase timeline under the video; the verdict; the Δ-vs-last-make column in
+All metrics, gated per metric on the catalogue's threshold and, for
+velocities, the grade's margin, so it never contradicts the verdict; the
+history table; the flagged-frame queue; the design bench
+(`verify/viewer-preview.html`) showing the split pieces.
 
 **Open, in the order they are worth deciding:**
 
@@ -193,21 +195,15 @@ the split pieces.
    full-width with everything stacked. Not built — the mobile athlete app
    is the phone surface, and whether a coach ever opens the study room on a
    phone is an open product question.
-2. **Δ vs last make in All metrics.** The wireframe's metric table carries a
-   third column, `Δ vs last make`, with a direction word per row. The data is
-   there (`historyRows` reads the cache column); the column is not. It
-   belongs with the existing `MetricsPanel`, whose rows would each need the
-   catalogue's `significant` threshold applied the way the verdict applies
-   the grade margin.
-3. **Tracker confidence strip.** Panel 4 in the wireframe has a 12 px strip
+2. **Tracker confidence strip.** Panel 4 in the wireframe has a 12 px strip
    over all frames (green / amber / red). The viewer knows *which* frames
    were flagged, not a per-frame confidence, so the transport's strip marks
    them and the panel lists them. A confidence per frame is an engine
    change (`engine/tracker.ts`), not a layout one.
-4. **The `vs height` toggle on the velocity chart** now duplicates the
+3. **The `vs height` toggle on the velocity chart** now duplicates the
    bar-path column. Kept for now (nothing shipped is deleted without
    instruction); retire it once the column has been used for a few weeks.
-5. **Overlay chips on the clip** (`bar path` / `grid` / `pose`). The stage
+4. **Overlay chips on the clip** (`bar path` / `grid` / `pose`). The stage
    always draws the path; there is no grid and no pose. Not built.
-6. **Depth as a coach setting** — the presets are hardcoded
+5. **Depth as a coach setting** — the presets are hardcoded
    (`DEPTH_PRESETS`); parameterise when the three names settle.

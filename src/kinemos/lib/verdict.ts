@@ -8,7 +8,7 @@
  * otherwise — and never renders a directional claim for a delta inside the
  * margin. Pure, so the rule can be tested without a screen.
  */
-import { fromStoredMetrics, metricById } from '../engine/metricCatalogue';
+import { fromStoredMetrics, metricById, type StoredMetrics } from '../engine/metricCatalogue';
 import type { ComparisonCandidate } from './comparisonService';
 import { num } from './viewerFormat';
 import { formatDateShort } from '../../lib/dateUtils';
@@ -20,6 +20,8 @@ export interface EarlierLift {
   peakVelocityMs: number;
   /** The stored grade's error margin, if the row carried one. */
   errorMs: number | null;
+  /** Everything the cache column held, for the per-metric deltas. */
+  metrics: StoredMetrics;
 }
 
 export type VerdictKind = 'faster' | 'slower' | 'level' | 'none';
@@ -38,13 +40,13 @@ export interface Verdict {
   deltaMs: number | null;
 }
 
-/** The stored peak velocity of an earlier analysis, or null when the cache
- *  column does not carry one a reader can trust. */
-function storedPeak(candidate: ComparisonCandidate): number | null {
+/** The stored metrics of an earlier analysis with its peak velocity, or
+ *  null when the cache column does not carry one a reader can trust. */
+function storedLift(candidate: ComparisonCandidate): { metrics: StoredMetrics; peak: number } | null {
   const stored = fromStoredMetrics(candidate.analysis.metrics);
   if (!stored) return null;
   const v = stored.analyzer?.vmaxMs ?? stored.peakVelocityMs;
-  return v !== null && Number.isFinite(v) ? v : null;
+  return v !== null && Number.isFinite(v) ? { metrics: stored, peak: v } : null;
 }
 
 /**
@@ -61,15 +63,16 @@ export function findEarlierLift(
     .filter(c => c.sameExercise && !c.isModel)
     .filter(c => current.date === null || c.clip.date === null || c.clip.date < current.date)
     .map(c => {
-      const peak = storedPeak(c);
-      return peak === null
+      const stored = storedLift(c);
+      return stored === null
         ? null
         : {
             analysisId: c.analysis.id,
             date: c.clip.date,
             loadKg: c.clip.loadKg,
-            peakVelocityMs: peak,
+            peakVelocityMs: stored.peak,
             errorMs: c.analysis.grade_error_ms,
+            metrics: stored.metrics,
           };
     })
     .filter((c): c is EarlierLift => c !== null)

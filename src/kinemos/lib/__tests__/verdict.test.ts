@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { KinemosAnalysis } from '../../../lib/database.types';
+import type { StoredMetrics } from '../../engine/metricCatalogue';
 import type { ComparisonCandidate } from '../comparisonService';
 import type { LibraryVideo } from '../videoLibrary';
 import { findEarlierLift, verdictFor } from '../verdict';
@@ -78,6 +79,8 @@ describe('findEarlierLift', () => {
       current,
     );
     expect(found?.analysisId).toBe('old-same');
+    // The whole cache column comes along, for the per-metric deltas.
+    expect(found?.metrics.analyzer.vmaxMs).toBe(1.78);
   });
 
   it('falls back to the latest lift at any load, and says which', () => {
@@ -101,7 +104,14 @@ describe('findEarlierLift', () => {
 });
 
 describe('verdictFor', () => {
-  const earlier = { analysisId: 'e', date: '2026-07-22', loadKg: 112.5, peakVelocityMs: 1.78, errorMs: 0.02 };
+  const earlier = {
+    analysisId: 'e',
+    date: '2026-07-22',
+    loadKg: 112.5,
+    peakVelocityMs: 1.78,
+    errorMs: 0.02,
+    metrics: { schema: 2, phases: [], peakVelocityMs: 1.78, summary: null } as unknown as StoredMetrics,
+  };
 
   it('reports a difference larger than the margin as real, with its direction', () => {
     const v = verdictFor({ peakVelocityMs: 1.82, loadKg: 112.5, errorMs: 0.02 }, earlier);

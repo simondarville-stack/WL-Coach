@@ -14,8 +14,10 @@
  */
 import type { CSSProperties } from 'react';
 import { Input } from '../../components/ui';
+import type { ComputedLift } from '../engine/metricCatalogue';
 import type { LiftMetrics } from '../engine/phases';
 import type { RepSummary } from '../engine/kinematics';
+import { catalogueDelta, describeDelta, velocityThreshold, type MetricDelta } from '../lib/metricDeltas';
 import { num } from '../lib/viewerFormat';
 
 interface MetricsPanelProps {
@@ -29,6 +31,12 @@ interface MetricsPanelProps {
   /** The marked knee height, and the bar's velocity as it passed it on the
    *  way up — null velocity when it never got that high before Vmax. */
   knee?: { heightCm: number; t: number | null; velocityMs: number | null } | null;
+  /** The lift to show each number against — the same one the verdict is
+   *  judged by — and how to name it (`22/07`). Null: no Δ column. */
+  earlier?: { lift: ComputedLift; label: string } | null;
+  /** The grade's error margin on velocity, m/s: a velocity difference
+   *  inside it is "same" here as in the verdict. */
+  marginMs?: number | null;
 }
 
 export function MetricsPanel({
@@ -39,15 +47,40 @@ export function MetricsPanel({
   onMass,
   emptyReason,
   knee = null,
+  earlier = null,
+  marginMs = null,
 }: MetricsPanelProps) {
   const firstPull = metrics?.phases.find(p => p.phaseId === 'first_pull') ?? metrics?.phases[0];
   const secondPull = metrics?.phases.find(p => p.phaseId === 'second_pull') ?? metrics?.phases[2];
+
+  // The Δ column. Rows that are catalogue metrics go through the catalogue
+  // (its thresholds and its sense of better); the analyzer's own rows that
+  // are not in it are read directly with the same rules.
+  const current: ComputedLift | null = metrics ? { metrics, summary } : null;
+  const withDelta = earlier !== null && current !== null;
+  const d = (id: string, words?: [string, string]): MetricDelta | null =>
+    withDelta ? catalogueDelta(id, current, earlier.lift, marginMs, words) : null;
+  const dv = (read: (l: ComputedLift) => number | null, words?: [string, string], betterWhen: 'higher' | 'lower' | null = null) =>
+    withDelta
+      ? describeDelta(read(current), read(earlier.lift), {
+          decimals: 2,
+          betterWhen,
+          threshold: velocityThreshold(0.03, marginMs),
+          words,
+        })
+      : null;
+  const deltaHeader = withDelta ? `Δ vs ${earlier.label}` : null;
 
   return (
     <>
       <section style={section}>
         <header style={header}>
           <span style={label}>VELOCITY</span>
+          {deltaHeader && (
+            <span style={{ ...label, letterSpacing: 0 }} title="Each number against the same earlier lift the verdict is judged by. A difference inside the metric's threshold — for velocities, the grade's margin — reads as “same”.">
+              {deltaHeader}
+            </span>
+          )}
         </header>
 
         {!metrics || !summary ? (
@@ -58,31 +91,43 @@ export function MetricsPanel({
               term="First pull"
               value={metrics.phases.length ? unit(firstPull?.peakVelocityMs, 'm/s') : '—'}
               hint="Peak upward velocity through the first pull."
+              delta={d('firstPull', ['faster', 'slower'])}
+              withDelta={withDelta}
             />
             <Row
               term="Second pull"
               value={unit(secondPull?.peakVelocityMs, 'm/s')}
               hint="Peak upward velocity through the second pull."
+              delta={d('secondPull')}
+              withDelta={withDelta}
             />
             <Row
               term="Loss 1st → 2nd"
               value={transitionLoss(metrics.transitionVelocityLossMs)}
               hint="How much the bar slowed through the transition — the dip a double knee bend produces. A big loss is a coaching signal, not an error; no loss at all usually means a pull from the hang, or a lifter who does not scoop."
+              delta={d('transitionLoss')}
+              withDelta={withDelta}
             />
-            <Row term="Peak" value={unit(metrics.peakVelocityMs, 'm/s')} strong />
+            <Row term="Peak" value={unit(metrics.peakVelocityMs, 'm/s')} strong delta={d('peakVelocity')} withDelta={withDelta} />
             <Row
               term="Turnover"
               value={unit(metrics.turnoverVelocityMs, 'm/s')}
               hint="Mean vertical velocity while the bar is being pulled under."
+              delta={d('turnover')}
+              withDelta={withDelta}
             />
             <Row
               term="Peak power"
               value={metrics.peakPowerW === null ? '—' : `${num(metrics.peakPowerW, 0)} W`}
               hint="Barbell power: vertical force on the bar times vertical bar velocity. Not system power — the lifter's own mass is not in this model."
+              delta={d('peakPower')}
+              withDelta={withDelta}
             />
             <Row
               term="Peak height"
               value={summary.peakHeightCm ? `${num(summary.peakHeightCm, 1)} cm` : '—'}
+              delta={d('peakHeight')}
+              withDelta={withDelta}
             />
           </dl>
         )}
@@ -142,8 +187,8 @@ export function MetricsPanel({
             </span>
           </header>
           <dl style={list}>
-            <Row term="V1 · end of first pull" value={unit(metrics.analyzer.v1Ms, 'm/s')} hint="Peak vertical velocity at the end of the first pull." />
-            <Row term="V2 · knee passing" value={unit(metrics.analyzer.v2Ms, 'm/s')} hint="Minimum vertical velocity through the transition." />
+            <Row term="V1 · end of first pull" value={unit(metrics.analyzer.v1Ms, 'm/s')} hint="Peak vertical velocity at the end of the first pull." delta={dv(l => l.metrics.analyzer?.v1Ms ?? null, ['faster', 'slower'])} withDelta={withDelta} />
+            <Row term="V2 · knee passing" value={unit(metrics.analyzer.v2Ms, 'm/s')} hint="Minimum vertical velocity through the transition." delta={d('v2', ['faster', 'slower'])} withDelta={withDelta} />
             {knee && (
               <Row
                 term={`V at the knee · ${num(knee.heightCm, 0)} cm`}
@@ -155,24 +200,46 @@ export function MetricsPanel({
                 }
               />
             )}
-            <Row term="Vmax" value={unit(metrics.analyzer.vmaxMs, 'm/s')} strong />
-            <Row term="Vmin · drop under" value={unit(metrics.analyzer.vminMs, 'm/s')} hint="The lowest (negative) vertical velocity after Vmax." />
-            <Row term="t_turn · Vmax → Vmin" value={unit(metrics.analyzer.tTurnS, 's')} hint="Time from Vmax to Vmin — the speed of the lifter under the bar. Käks' third measure." />
-            <Row term="S_vmax · height at Vmax" value={cm(metrics.analyzer.sVmaxCm)} />
-            <Row term="S_max · top of flight" value={cm(metrics.analyzer.sMaxCm)} hint="The apex before the catch, above the start." />
-            <Row term="S_fly · flight" value={cm(metrics.analyzer.sFlyCm)} hint="S_max − S_vmax: how far the bar rises after peak velocity." />
+            <Row term="Vmax" value={unit(metrics.analyzer.vmaxMs, 'm/s')} strong delta={dv(l => l.metrics.analyzer?.vmaxMs ?? null, undefined, 'higher')} withDelta={withDelta} />
+            <Row term="Vmin · drop under" value={unit(metrics.analyzer.vminMs, 'm/s')} hint="The lowest (negative) vertical velocity after Vmax." delta={d('vmin')} withDelta={withDelta} />
+            <Row term="t_turn · Vmax → Vmin" value={unit(metrics.analyzer.tTurnS, 's')} hint="Time from Vmax to Vmin — the speed of the lifter under the bar. Käks' third measure." delta={d('tTurn')} withDelta={withDelta} />
+            <Row term="S_vmax · height at Vmax" value={cm(metrics.analyzer.sVmaxCm)} delta={d('sVmax', ['later in the pull', 'earlier in the pull'])} withDelta={withDelta} />
+            <Row
+              term="S_max · top of flight"
+              value={cm(metrics.analyzer.sMaxCm)}
+              hint="The apex before the catch, above the start."
+              delta={
+                withDelta
+                  ? describeDelta(metrics.analyzer.sMaxCm, earlier.lift.metrics.analyzer?.sMaxCm ?? null, { decimals: 1, betterWhen: null, threshold: 1 })
+                  : null
+              }
+              withDelta={withDelta}
+            />
+            <Row term="S_fly · flight" value={cm(metrics.analyzer.sFlyCm)} hint="S_max − S_vmax: how far the bar rises after peak velocity." delta={d('sFly', ['longer', 'shorter'])} withDelta={withDelta} />
             <Row
               term="S_remain · beyond ballistic"
               value={metrics.analyzer.sRemainPct === null ? '—' : `${num(metrics.analyzer.sRemainPct, 1)} % (${num(metrics.analyzer.sRemainCm ?? 0, 1)} cm)`}
               hint="The flight the impulse alone (Vmax²/2g) does not explain — what the arms and the pull-under added, as a share of S_max."
+              delta={d('sRemain', ['more', 'less'])}
+              withDelta={withDelta}
             />
-            <Row term="S_sit · catch height" value={cm(metrics.analyzer.sSitCm)} hint="The bar at the deepest point of the catch, above the start." />
-            <Row term="S_fall · into the catch" value={cm(metrics.analyzer.sFallCm)} hint="S_max − S_sit." />
-            <Row term="F1 · first pull" value={pct(metrics.analyzer.f1Pct)} hint="Peak vertical force on the bar, as a share of the load. From acceleration alone — no mass needed. 100 % holds the bar still." />
-            <Row term="F2 · knee passing" value={pct(metrics.analyzer.f2Pct)} hint="Minimum vertical force through the transition." />
-            <Row term="F3 · second pull" value={pct(metrics.analyzer.f3Pct)} hint="Peak vertical force in the second pull." />
-            <Row term="Fbr · catch" value={pct(metrics.analyzer.fbrPct)} hint="Peak vertical force braking the bar in the catch." />
-            <Row term="PSK · load × Vmax" value={metrics.analyzer.pskNs === null ? '—' : `${num(metrics.analyzer.pskNs, 0)} N·s`} hint="The analyzer's 'power': the bar's momentum at Vmax. Needs the bar mass." />
+            <Row term="S_sit · catch height" value={cm(metrics.analyzer.sSitCm)} hint="The bar at the deepest point of the catch, above the start." delta={d('sSit')} withDelta={withDelta} />
+            <Row term="S_fall · into the catch" value={cm(metrics.analyzer.sFallCm)} hint="S_max − S_sit." delta={d('sFall', ['further', 'less far'])} withDelta={withDelta} />
+            <Row term="F1 · first pull" value={pct(metrics.analyzer.f1Pct)} hint="Peak vertical force on the bar, as a share of the load. From acceleration alone — no mass needed. 100 % holds the bar still." delta={d('f1')} withDelta={withDelta} />
+            <Row term="F2 · knee passing" value={pct(metrics.analyzer.f2Pct)} hint="Minimum vertical force through the transition." delta={d('f2')} withDelta={withDelta} />
+            <Row term="F3 · second pull" value={pct(metrics.analyzer.f3Pct)} hint="Peak vertical force in the second pull." delta={d('f3')} withDelta={withDelta} />
+            <Row term="Fbr · catch" value={pct(metrics.analyzer.fbrPct)} hint="Peak vertical force braking the bar in the catch." delta={d('fbr')} withDelta={withDelta} />
+            <Row
+              term="PSK · load × Vmax"
+              value={metrics.analyzer.pskNs === null ? '—' : `${num(metrics.analyzer.pskNs, 0)} N·s`}
+              hint="The analyzer's 'power': the bar's momentum at Vmax. Needs the bar mass."
+              delta={
+                withDelta
+                  ? describeDelta(metrics.analyzer.pskNs, earlier.lift.metrics.analyzer?.pskNs ?? null, { decimals: 0, betterWhen: 'higher', threshold: 5 })
+                  : null
+              }
+              withDelta={withDelta}
+            />
           </dl>
         </section>
       )}
@@ -273,30 +340,69 @@ function Row({
   value,
   hint: title,
   strong,
+  delta = null,
+  withDelta = false,
 }: {
   term: string;
   value: string;
   hint?: string;
   strong?: boolean;
+  /** This number against the earlier lift's. */
+  delta?: MetricDelta | null;
+  /** Whether the Δ column exists on this table at all — a row with nothing
+   *  to say still keeps the column, so the values stay aligned. */
+  withDelta?: boolean;
 }) {
   return (
     <div
       title={title}
-      style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}
+      style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}
     >
-      <dt style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>{term}</dt>
+      <dt style={{ flexGrow: 1, minWidth: 0, fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>{term}</dt>
       <dd
         style={{
           margin: 0,
           fontSize: 'var(--text-label)',
           fontWeight: strong ? 600 : 400,
           fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap',
         }}
       >
         {value}
       </dd>
+      {withDelta && (
+        <dd
+          style={{
+            margin: 0,
+            width: 128,
+            flexShrink: 0,
+            textAlign: 'right',
+            fontSize: 'var(--text-caption)',
+            fontVariantNumeric: 'tabular-nums',
+            whiteSpace: 'nowrap',
+            color: deltaColor(delta?.tone ?? 'same'),
+          }}
+        >
+          {delta?.text ?? '—'}
+        </dd>
+      )}
     </div>
   );
+}
+
+/** Green for better, red for worse — and a word alongside, always, because
+ *  colour never carries the meaning alone. */
+function deltaColor(tone: MetricDelta['tone']): string {
+  switch (tone) {
+    case 'better':
+      return 'var(--color-success-text)';
+    case 'worse':
+      return 'var(--color-danger-text)';
+    case 'neutral':
+      return 'var(--color-text-secondary)';
+    default:
+      return 'var(--color-text-tertiary)';
+  }
 }
 
 const section: CSSProperties = {

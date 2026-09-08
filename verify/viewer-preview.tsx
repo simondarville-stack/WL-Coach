@@ -37,6 +37,7 @@ import {
 } from '../src/kinemos/engine/phases';
 import { gradeAnalysis, type CameraStability } from '../src/kinemos/engine/grade';
 import { DEFAULT_FILTER } from '../src/kinemos/engine/signal';
+import { toStoredMetrics } from '../src/kinemos/engine/metricCatalogue';
 import { useFrameServer } from '../src/kinemos/hooks/useFrameServer';
 import { PhaseTimeline, VelocityChart } from '../src/kinemos/components/AnalysisPanel';
 import { BarPathPanel } from '../src/kinemos/components/BarPathPanel';
@@ -442,6 +443,16 @@ function Bench() {
     [kinematics, spans],
   );
   const summary = useMemo(() => (kinematics ? summariseRep(kinematics) : null), [kinematics]);
+  // The reference track, computed the same way, stands in for the earlier
+  // lift the Δ column and the verdict are judged against.
+  const earlierLift = useMemo(() => {
+    const series = computeKinematics(referencePoints, calibration, { massKg, filter: DEFAULT_FILTER });
+    if (!series) return null;
+    const bounds = proposePhases(series)?.boundaries ?? [];
+    const earlierSpans = spansFrom(bounds, DEFAULT_PHASE_SET);
+    const earlierMetrics = earlierSpans.length ? computeLiftMetrics(series, earlierSpans) : null;
+    return earlierMetrics ? { metrics: earlierMetrics, summary: summariseRep(series) } : null;
+  }, [referencePoints, massKg]);
   const grade = useMemo(
     () =>
       gradeAnalysis({
@@ -463,7 +474,16 @@ function Bench() {
   const panels = useViewerPanels('bench');
   // A plausible earlier lift, so the verdict has something to say — and a
   // history for the table. Synthetic, like everything else on this page.
-  const earlier = { analysisId: 'earlier', date: '2026-08-19', loadKg: 102, peakVelocityMs: 1.79, errorMs: 0.03 };
+  const earlier = earlierLift
+    ? {
+        analysisId: 'earlier',
+        date: '2026-08-19',
+        loadKg: 102,
+        peakVelocityMs: earlierLift.metrics.analyzer.vmaxMs ?? earlierLift.metrics.peakVelocityMs ?? 0,
+        errorMs: 0.03,
+        metrics: toStoredMetrics(earlierLift.metrics, earlierLift.summary),
+      }
+    : null;
   const verdict = verdictFor(
     { peakVelocityMs: metrics?.analyzer.vmaxMs ?? null, loadKg: 102, errorMs: grade.expectedVelocityErrorMs },
     earlier,
@@ -811,6 +831,8 @@ function Bench() {
               massSource="logged"
               onMass={setMassKg}
               emptyReason={null}
+              earlier={earlierLift ? { lift: earlierLift, label: '19/08' } : null}
+              marginMs={grade.expectedVelocityErrorMs}
             />
           </RailPanel>
           <RailPanel

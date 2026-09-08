@@ -2569,7 +2569,11 @@ export function KinemosViewer() {
           <RailPanel
             title="All metrics"
             headline={
-              <HeadlineChip>{liftMetrics ? `${metricCount} of ${METRIC_CATALOGUE.length}` : 'no numbers yet'}</HeadlineChip>
+              <HeadlineChip>
+                {liftMetrics
+                  ? `${metricCount} of ${METRIC_CATALOGUE.length}${earlierLift?.date ? ` · vs ${formatDateShort(earlierLift.date)}` : ''}`
+                  : 'no numbers yet'}
+              </HeadlineChip>
             }
             open={panels.open.metrics}
             onToggle={() => panels.toggle('metrics')}
@@ -2586,6 +2590,15 @@ export function KinemosViewer() {
               }}
               emptyReason={metricsEmptyReason}
               knee={kneeReadout}
+              earlier={
+                earlierLift
+                  ? {
+                      lift: { metrics: earlierLift.metrics, summary: earlierLift.metrics.summary },
+                      label: earlierLift.date ? formatDateShort(earlierLift.date) : 'earlier',
+                    }
+                  : null
+              }
+              marginMs={grade.expectedVelocityErrorMs}
             />
           </RailPanel>
 
