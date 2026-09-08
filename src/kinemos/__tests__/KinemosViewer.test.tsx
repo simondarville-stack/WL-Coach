@@ -8,7 +8,7 @@
  * is refused with a reason rather than opened onto a black stage, and that the
  * rail says which unit its numbers are in.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryVideo } from '../lib/videoLibrary';
@@ -111,11 +111,53 @@ function renderViewer() {
   );
 }
 
+/** The rail is progressive disclosure by panel: most of it is collapsed on a
+ *  fresh screen, and a test that wants a panel's content opens it the way a
+ *  coach does — by its header. */
+function openPanel(title: RegExp) {
+  const header = screen
+    .getAllByRole('button', { expanded: false })
+    .find(b => title.test(b.textContent ?? ''));
+  if (!header) throw new Error(`No collapsed panel titled ${title}`);
+  fireEvent.click(header);
+}
+
 describe('KinemosViewer', () => {
   beforeEach(() => {
     clip.value = libraryVideo();
     frameServerState.status = 'ready';
     frameServerState.error = null;
+    localStorage.clear();
+  });
+
+  it('opens on the lift and its velocity curve, and says how much of the rail is open', async () => {
+    renderViewer();
+    await screen.findByText('Hang clean');
+    expect(screen.getByText('2 of 7 panels open')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /This lift · rep 1/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: /Tracking & correction/ })).toHaveAttribute('aria-expanded', 'false');
+    // The bar-path column is always on screen, whatever the rail shows.
+    expect(screen.getByRole('radiogroup', { name: 'Plot' })).toBeInTheDocument();
+  });
+
+  it('a depth opens every panel at once; a hand toggle makes the layout the coach’s own', async () => {
+    renderViewer();
+    await screen.findByText('Hang clean');
+    fireEvent.click(screen.getByRole('radio', { name: 'Work' }));
+    expect(screen.getByText('7 of 7 panels open')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Work' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /Calibration/ }));
+    expect(screen.getByText('6 of 7 panels open')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Work' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('Share opens the notes panel rather than a dialog', async () => {
+    renderViewer();
+    await screen.findByText('Hang clean');
+    expect(screen.getByRole('button', { name: /Notes & sharing/ })).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Share' }));
+    expect(screen.getByRole('button', { name: /Notes & sharing/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('SHARE')).toBeInTheDocument();
   });
 
   it('mounts with the clip’s context in the header', async () => {
@@ -133,18 +175,21 @@ describe('KinemosViewer', () => {
     expect(await screen.findByText('NOT GRADED')).toBeInTheDocument();
     // ...and the rail says what is missing, rather than showing a letter with
     // nothing behind it.
-    expect(screen.getByText('ungraded')).toBeInTheDocument();
+    openPanel(/Tracking & correction/);
+    expect(screen.getAllByText('ungraded').length).toBeGreaterThan(0);
     expect(screen.getByText(/no scale/i)).toBeInTheDocument();
   });
 
   it('explains why there are no velocities yet', async () => {
     renderViewer();
-    expect(await screen.findByText(/Calibrate against a plate to get velocities/i)).toBeInTheDocument();
+    // One line, said once per surface: the bar-path column, the chart, the lift.
+    expect((await screen.findAllByText('Calibrate a plate to get velocities.')).length).toBeGreaterThan(0);
   });
 
   it('offers the bar mass, and says what it is for', async () => {
     renderViewer();
     await screen.findByText('Hang clean');
+    openPanel(/All metrics/);
     expect(screen.getByText('BAR MASS')).toBeInTheDocument();
     expect(screen.getByText(/Power needs a mass/i)).toBeInTheDocument();
   });
@@ -152,6 +197,7 @@ describe('KinemosViewer', () => {
   it('offers tracking, and says what it needs first', async () => {
     renderViewer();
     await screen.findByText('Hang clean');
+    openPanel(/Tracking & correction/);
     // Nothing marked yet, so there is no anchor to track from — the button is
     // there but disabled, with the reason stated rather than implied.
     const button = screen.getByRole('button', { name: /Track the bar from here/i });
@@ -162,6 +208,7 @@ describe('KinemosViewer', () => {
   it('lets the coach state how the clip was filmed — half the error budget', async () => {
     renderViewer();
     await screen.findByText('Hang clean');
+    openPanel(/Tracking & correction/);
     expect(screen.getByText('HOW IT WAS FILMED')).toBeInTheDocument();
   });
 
@@ -181,7 +228,12 @@ describe('KinemosViewer', () => {
 
   it('says distances are in pixels until a plate is outlined', async () => {
     renderViewer();
-    expect(await screen.findByText(/Not calibrated/)).toBeInTheDocument();
+    await screen.findByText('Hang clean');
+    // Collapsed, the panel still says so in its headline...
+    expect(screen.getByText('not calibrated')).toBeInTheDocument();
+    // ...and open, it says what to do about it.
+    openPanel(/Calibration/);
+    expect(screen.getByText(/Not calibrated/)).toBeInTheDocument();
     expect(screen.getByText(/distances read in pixels/i)).toBeInTheDocument();
   });
 

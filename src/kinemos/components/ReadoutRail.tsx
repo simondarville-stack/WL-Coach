@@ -24,8 +24,18 @@ import { formatDateTimeShort } from '../../lib/dateUtils';
 import type { PathMetrics } from '../engine/calibration';
 import { distance, drift, num } from '../lib/viewerFormat';
 import type { ViewerTool } from './ViewerStage';
+import { TrackConfidenceStrip, type PhaseEdge } from './TrackConfidenceStrip';
+import type { FrameConfidence } from '../lib/trackedPoints';
+
+/** The rail's sections. The viewer's rail is composed of collapsible
+ *  panels, and these sections are dealt out among them: the rep picker to
+ *  "This lift", the path and tracking to "Tracking & correction", notes and
+ *  sharing to their own panel. Rendered whole when nothing is asked for. */
+export type RailPart = 'rep' | 'path' | 'measure' | 'share' | 'notes';
 
 interface ReadoutRailProps {
+  /** Which sections to render, in the rail's own order. */
+  parts?: RailPart[];
   repIndices: number[];
   repIndex: number;
   onRep: (rep: number) => void;
@@ -82,6 +92,13 @@ export interface TrackingState {
   /** Follow a high-contrast marker on the bar end instead of the plate —
    *  design §6.2's tighter tier. Absent until there is an anchor. */
   onTrackMarker?: () => void;
+  /** The frames the tracker flagged, as a queue: a press on one moves the
+   *  playhead there. The video, both charts and the timeline follow. */
+  uncertainIndices?: number[];
+  onJumpTo?: (index: number) => void;
+  /** The tracker's score on every frame, for the confidence strip. Absent
+   *  until there is a frame server to place the points on. */
+  confidence?: { frames: FrameConfidence[]; frameCount: number; currentIndex: number | null; edges?: PhaseEdge[] };
 }
 
 export interface ShareState {
@@ -118,6 +135,7 @@ export interface TalkoverState {
 }
 
 export function ReadoutRail({
+  parts,
   repIndices,
   repIndex,
   onRep,
@@ -156,10 +174,12 @@ export function ReadoutRail({
   }, [talkover?.recording]);
   const recordedS = talkover?.recording && talkover.startedAt !== null ? (performance.now() - talkover.startedAt) / 1000 : 0;
   const calibrated = metrics.calibrated;
+  const wants = (part: RailPart) => !parts || parts.includes(part);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {/* ── Reps ────────────────────────────────────────────────────────── */}
+      {wants('rep') && (
       <section style={section}>
         <header style={header}>
           <span style={label}>REP</span>
@@ -193,13 +213,11 @@ export function ReadoutRail({
             </button>
           ))}
         </div>
-        <p style={hint}>
-          One recording often holds several attempts; every rep keeps its own path and its own
-          numbers.
-        </p>
       </section>
+      )}
 
       {/* ── Path ────────────────────────────────────────────────────────── */}
+      {wants('path') && (
       <section style={section}>
         <header style={header}>
           <span style={label}>BAR PATH</span>
@@ -218,8 +236,8 @@ export function ReadoutRail({
         {metrics.pointCount < 2 ? (
           <p style={hint}>
             {metrics.pointCount === 0
-              ? 'No marks yet. Pick the Mark tool and click the bar end — the playhead steps forward on its own, so it is click, click, click.'
-              : 'One mark down. Keep going — a path needs at least two.'}
+              ? 'No marks. Mark tool (M): click the bar end; the playhead advances.'
+              : 'One mark. A path needs two.'}
           </p>
         ) : (
           <>
@@ -277,7 +295,7 @@ export function ReadoutRail({
                 />
               </div>
               <p style={hint}>
-                {`Following the bar — frame ${tracking.busy.done} of ${tracking.busy.total}.`}
+                {`Tracking · frame ${tracking.busy.done} / ${tracking.busy.total}`}
               </p>
             </>
           ) : (
@@ -294,10 +312,10 @@ export function ReadoutRail({
               </Button>
               <p style={hint}>
                 {!tracking.canTrack
-                  ? 'Mark the bar end once — the tracker follows it from there.'
+                  ? 'Mark the bar end once; the tracker follows.'
                   : tracking.tier === 'assisted'
-                    ? 'Correct a frame by marking it, then re-track: everything either side is redone from your point.'
-                    : 'One mark is the anchor. The tracker fills in the rest of the clip, forwards and backwards.'}
+                    ? 'Mark a wrong frame, then re-track from it.'
+                    : 'Tracks both ways from the mark.'}
               </p>
               {tracking.onTrackSet && (
                 <div style={{ marginTop: 'var(--space-sm)' }}>
@@ -305,7 +323,7 @@ export function ReadoutRail({
                     size="sm"
                     variant="secondary"
                     onClick={tracking.onTrackSet}
-                    title="Track the whole clip as a set: follow the plate through every rep, find it again after each drop, cut the track into reps at their rests, and make a rep of each with its own calibration. Loads OpenCV the first time, about 13 MB."
+                    title="Every rep in the clip, each with its own calibration · OpenCV, ~13 MB first time"
                   >
                     Track the set
                   </Button>
@@ -314,7 +332,7 @@ export function ReadoutRail({
                       size="sm"
                       variant="ghost"
                       onClick={tracking.onTrackMarker}
-                      title="Follow a high-contrast marker on the bar end instead of the plate. A sticker nothing else in the gym shares gives a centroid about twice as tight as the plate template — the tier the grade calls 0,4 px. Click the marker first, then this."
+                      title="Follow a high-contrast marker on the bar end · ~2× tighter than the plate · click the marker first"
                       style={{ marginLeft: 'var(--space-xs)' }}
                     >
                       Track a marker
@@ -331,7 +349,7 @@ export function ReadoutRail({
               <Row
                 term="Frames to check"
                 value={String(tracking.uncertainCount)}
-                hint="Frames the tracker was not confident about. They are marked on the scrub strip."
+                hint="Score under 0,55 · marked on the scrub strip"
               />
               <Row term="Corrections" value={String(tracking.correctionCount)} />
             </dl>
@@ -344,19 +362,44 @@ export function ReadoutRail({
               </Button>
             </div>
           )}
+
+          {/* Where the tracker was sure and where it was not, over the whole
+              clip on the transport's axis — read, not scrubbed. */}
+          {!tracking.busy && tracking.confidence && tracking.confidence.frames.length > 0 && tracking.onJumpTo && (
+            <div style={{ marginTop: 'var(--space-sm)' }}>
+              <TrackConfidenceStrip
+                frames={tracking.confidence.frames}
+                frameCount={tracking.confidence.frameCount}
+                currentIndex={tracking.confidence.currentIndex}
+                onSeek={tracking.onJumpTo}
+                edges={tracking.confidence.edges}
+              />
+            </div>
+          )}
+
+          {/* The flagged frames as a queue with an end — fix, next, done —
+              rather than an inspection of every frame. */}
+          {!tracking.busy && tracking.onJumpTo && (tracking.uncertainIndices?.length ?? 0) > 0 && (
+            <FlaggedFrames
+              indices={tracking.uncertainIndices ?? []}
+              scores={new Map(tracking.confidence?.frames.map(f => [f.index, f.c]) ?? [])}
+              onJumpTo={tracking.onJumpTo}
+            />
+          )}
         </div>
       </section>
+      )}
 
       {/* ── Knee height ─────────────────────────────────────────────────── */}
-      {tool === 'knee' && (
+      {wants('measure') && tool === 'knee' && (
         <section style={section}>
           <header style={header}>
             <span style={label}>KNEE</span>
           </header>
           <p style={hint}>
             {kneeMarked
-              ? 'Click again to move it. The line on the frame is the knee height; the charts mark where the bar crosses it.'
-              : 'Click the athlete’s knee on the start frame, with the bar on the floor. V1 and V2 are defined around the knee — this is how to check the phase edges against it.'}
+              ? 'Click again to move.'
+              : 'Click the knee on the start frame, bar on the floor.'}
           </p>
           <div
             style={{
@@ -365,13 +408,13 @@ export function ReadoutRail({
               color: 'var(--color-text-primary)',
             }}
           >
-            {kneeCm === null ? (kneeMarked ? 'marked — calibrate and mark the bar to measure it' : '—') : `${num(kneeCm, 1)} cm above the bar`}
+            {kneeCm === null ? (kneeMarked ? 'marked · calibrate and mark the bar to measure' : '—') : `${num(kneeCm, 1)} cm above the bar`}
           </div>
         </section>
       )}
 
       {/* ── Measurement ─────────────────────────────────────────────────── */}
-      {(tool === 'distance' || tool === 'angle') && (
+      {wants('measure') && (tool === 'distance' || tool === 'angle') && (
         <section style={section}>
           <header style={header}>
             <span style={label}>{tool === 'distance' ? 'DISTANCE' : 'ANGLE'}</span>
@@ -379,7 +422,7 @@ export function ReadoutRail({
           <p style={hint}>
             {tool === 'distance'
               ? 'Click two points on the frame.'
-              : 'Click the two arms and then the vertex, in that order.'}
+              : 'Click two arms, then the vertex.'}
           </p>
           <div
             style={{
@@ -410,15 +453,15 @@ export function ReadoutRail({
       )}
 
       {/* ── Share ───────────────────────────────────────────────────────── */}
-      {share && (
+      {wants('share') && share && (
         <section style={section}>
           <header style={header}>
             <span style={label}>SHARE</span>
           </header>
           {share.athleteName === null ? (
-            <p style={hint}>This clip has no athlete. Attach one in the library and the rep can be sent to them; the export below works either way.</p>
+            <p style={hint}>No athlete on this clip. Attach one in the library to send; export works without.</p>
           ) : !share.ready ? (
-            <p style={hint}>Track and calibrate the rep first — the athlete gets this frame with the bar path, and the numbers.</p>
+            <p style={hint}>Track and calibrate first.</p>
           ) : (
             <form
               onSubmit={e => {
@@ -442,8 +485,8 @@ export function ReadoutRail({
                 </Button>
                 <span style={{ ...hint, margin: 0 }}>
                   {share.talkoverIncluded
-                    ? 'This frame, the bar path, the numbers and the latest talkover, into their coach thread.'
-                    : 'This frame, the bar path and the numbers, into their coach thread.'}
+                    ? 'Frame, bar path, numbers, talkover → coach thread'
+                    : 'Frame, bar path, numbers → coach thread'}
                 </span>
               </div>
             </form>
@@ -463,7 +506,7 @@ export function ReadoutRail({
                 onChange={e => setColleagueId(e.target.value)}
                 className="emos-input"
                 style={{ height: 28, fontSize: 'var(--text-caption)', flexGrow: 1, minWidth: 0 }}
-                title="A colleague coach in this environment. The words above go with it; they find it on the video library under “Shared with you”."
+                title="A colleague coach · appears under “Shared with you”"
               >
                 <option value="">or a colleague…</option>
                 {share.colleagues.map(c => (
@@ -490,7 +533,7 @@ export function ReadoutRail({
                     }}
                   />
                 </div>
-                <p style={hint}>{`Writing the video — frame ${share.exporting.done} of ${share.exporting.total}.`}</p>
+                <p style={hint}>{`Exporting · frame ${share.exporting.done} / ${share.exporting.total}`}</p>
               </>
             ) : (
               <Button
@@ -498,7 +541,7 @@ export function ReadoutRail({
                 variant="secondary"
                 disabled={!share.ready}
                 onClick={share.onExport}
-                title="Download this clip with the bar path burned in — for a seminar, a post, anywhere outside EMOS. H.264 in MP4 where the browser can encode it, otherwise WebM."
+                title="Clip with the bar path burned in · MP4 (H.264) or WebM"
               >
                 Export video
               </Button>
@@ -518,7 +561,7 @@ export function ReadoutRail({
                       {s.athlete_read_at ? ` · opened ${formatDateTimeShort(new Date(s.athlete_read_at))}` : ' · not opened yet'}
                     </span>
                   </span>
-                  <button type="button" onClick={() => share.onDelete(s.id)} title="Take it back — removes the card from the athlete's thread" style={iconButton}>
+                  <button type="button" onClick={() => share.onDelete(s.id)} title="Take back" style={iconButton}>
                     <Trash2 size={12} />
                   </button>
                 </li>
@@ -529,6 +572,7 @@ export function ReadoutRail({
       )}
 
       {/* ── Annotations ─────────────────────────────────────────────────── */}
+      {wants('notes') && (
       <section style={section}>
         <header style={header}>
           <span style={label}>NOTES & SNAPSHOTS</span>
@@ -540,8 +584,8 @@ export function ReadoutRail({
                 disabled={talkover.busy}
                 title={
                   talkover.recording
-                    ? 'Stop the talkover and save it'
-                    : 'Record a talkover: your voice and the lift as you scrub it, saved with this rep'
+                    ? 'Stop and save'
+                    : 'Record a talkover over the lift'
                 }
                 style={{
                   ...iconButton,
@@ -572,11 +616,11 @@ export function ReadoutRail({
           </span>
         </header>
         {talkover?.recording && (
-          <p style={{ ...hint, color: 'var(--color-danger-text)' }}>Recording — scrub, step and talk. Press the square to stop.</p>
+          <p style={{ ...hint, color: 'var(--color-danger-text)' }}>Recording · ■ to stop</p>
         )}
         {talkover?.note && !talkover.recording && <p style={hint}>{talkover.note}</p>}
 
-        {annotations.length === 0 && <p style={hint}>Nothing saved for this rep yet.</p>}
+        {annotations.length === 0 && <p style={hint}>No notes.</p>}
         <ul
           style={{
             listStyle: 'none',
@@ -661,8 +705,62 @@ export function ReadoutRail({
           </Button>
         </form>
       </section>
+      )}
       {playingKey && (
         <VideoLightbox src={kinemosObjectUrl(playingKey)} caption="Talkover" onClose={() => setPlayingKey(null)} />
+      )}
+    </div>
+  );
+}
+
+/** The tracker's flagged frames, at most a dozen at a time, each a jump. */
+function FlaggedFrames({
+  indices,
+  scores,
+  onJumpTo,
+}: {
+  indices: number[];
+  scores: Map<number, number | null>;
+  onJumpTo: (index: number) => void;
+}) {
+  const shown = indices.slice(0, 12);
+  return (
+    <div style={{ marginTop: 'var(--space-sm)' }}>
+      <div style={{ ...label, marginBottom: 4 }}>{`FLAGGED · ${indices.length}`}</div>
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
+        {shown.map(i => (
+          <li key={i}>
+            <button
+              type="button"
+              onClick={() => onJumpTo(i)}
+              title="Jump to frame"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                padding: '3px 6px',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                background: 'transparent',
+                color: 'var(--color-text-primary)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--text-label)',
+                cursor: 'pointer',
+              }}
+              className="kinemos-flag-row"
+            >
+              <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{`f${String(i + 1).padStart(3, '0')}`}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                {num(scores.get(i) ?? null, 2)}
+              </span>
+              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-accent)' }}>→</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {indices.length > shown.length && (
+        <p style={hint}>{`+${indices.length - shown.length} more`}</p>
       )}
     </div>
   );

@@ -1375,6 +1375,10 @@ export interface KinemosTrackPoint {
   x: number;
   y: number;
   s?: 'm' | 't';
+  /** The tracker's confidence in this frame, two decimals, on a tracked
+   *  (`s: 't'`) point — see `src/kinemos/lib/trackedPoints.ts`. Absent on a
+   *  hand mark, and on points tracked before it was kept. */
+  c?: number;
 }
 
 /** The point series for one tracked thing on one rep. JSONB because it is read

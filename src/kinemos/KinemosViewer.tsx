@@ -14,8 +14,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Circle, Columns2, Crosshair, GraduationCap, Hand, Minus, Ruler, Star, TrendingUp, Triangle } from 'lucide-react';
-import { ErrorState, Spinner, confirmDialog } from '../components/ui';
+import { ChevronLeft, Circle, Crosshair, Hand, Minus, Ruler, Share2, Triangle } from 'lucide-react';
+import { Button, ErrorState, SegmentedControl, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
 import { getOwnerId } from '../lib/ownerContext';
 import type { KinemosAnnotation, KinemosShare, KinemosTrackPoint } from '../lib/database.types';
@@ -45,7 +45,7 @@ import {
 import { gradeAnalysis, type CameraStability, type TrackerTier } from './engine/grade';
 import { trackFromAnchor } from './engine/tracker';
 import type { AlignmentAnchor } from './engine/compare';
-import { toStoredMetrics } from './engine/metricCatalogue';
+import { METRIC_CATALOGUE, fromStoredMetrics, toStoredMetrics } from './engine/metricCatalogue';
 import { ComparisonView } from './components/ComparisonView';
 import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
@@ -72,11 +72,20 @@ import {
 import { trackerSourceFrom } from './lib/trackerSource';
 import { DEFAULT_FILTER } from './engine/signal';
 import { useFrameServer } from './hooks/useFrameServer';
-import { AnalysisPanel } from './components/AnalysisPanel';
+import { PhaseTimeline, VelocityChart } from './components/AnalysisPanel';
+import { BarPathPanel } from './components/BarPathPanel';
+import { HistoryPanel } from './components/HistoryPanel';
+import { historyRows } from './lib/history';
+import { LiftPanel } from './components/LiftPanel';
+import { HeadlineChip, RailPanel } from './components/RailPanel';
+import { useMediaQuery } from './hooks/useMediaQuery';
+import { DEPTH_LABELS, PANEL_KEYS, useViewerPanels, type ViewerDepth } from './hooks/useViewerPanels';
+import { findEarlierLift, verdictFor } from './lib/verdict';
+import { frameConfidences, lowConfidenceFrames, toTrackPoint } from './lib/trackedPoints';
 import { CalibrationPanel } from './components/CalibrationPanel';
 import { GradeChip, GradePanel } from './components/GradePanel';
 import { MetricsPanel } from './components/MetricsPanel';
-import { ReadoutRail } from './components/ReadoutRail';
+import { ReadoutRail, type TrackingState } from './components/ReadoutRail';
 import { ViewerStage, type ViewerTool } from './components/ViewerStage';
 import { ViewerTransport } from './components/ViewerTransport';
 import {
@@ -154,6 +163,9 @@ export function KinemosViewer() {
     return Number.isInteger(rep) && rep >= 1 ? rep : 1;
   });
   const [repIndices, setRepIndices] = useState<number[]>([1]);
+  /** Each rep's stored peak velocity, for the rep pills — what the cache
+   *  column says, so the pills need no second pipeline run. */
+  const [repPeaks, setRepPeaks] = useState<Record<number, number | null>>({});
 
   const [points, setPoints] = useState<KinemosTrackPoint[]>([]);
   const [ellipse, setEllipse] = useState<PlateEllipse | null>(null);
@@ -191,6 +203,9 @@ export function KinemosViewer() {
    *  how a coach finds the frames worth checking without scrubbing all of
    *  them — the design brief's third open question. */
   const [uncertainIndices, setUncertainIndices] = useState<number[]>([]);
+  /** Set when a rep is loaded: the flagged frames come from the stored
+   *  scores, and placing them needs the frame server. */
+  const rebuildUncertainRef = useRef(false);
   /** Where the activity scan found the lifts (P7 plan): shown on the
    *  scrub strip before anything is tracked, and what TRACK THE SET works
    *  inside. Null until the scan has run (or was found cached). */
@@ -291,6 +306,19 @@ export function KinemosViewer() {
 
   const currentT = server ? (server.timestamps[index] ?? null) : null;
 
+  useEffect(() => {
+    if (!rebuildUncertainRef.current || status !== 'ready' || !server) return;
+    rebuildUncertainRef.current = false;
+    setUncertainIndices(lowConfidenceFrames(points, server.nearestIndex));
+  }, [points, status, server]);
+
+  /** Every stored point on its frame with the tracker's score — the
+   *  confidence strip's data. */
+  const frameScores = useMemo(
+    () => (server && status === 'ready' ? frameConfidences(points, server.nearestIndex) : []),
+    [points, server, status],
+  );
+
   // ── The lifts in the clip ─────────────────────────────────────────────────
   //
   // The activity scan (P7 plan) runs once per clip, in the background on its
@@ -373,6 +401,12 @@ export function KinemosViewer() {
         if (cancelled) return;
         const indices = reps.map(r => r.rep_index);
         setRepIndices(indices.length > 0 ? indices : [1]);
+        const peaks: Record<number, number | null> = {};
+        for (const r of reps) {
+          const stored = fromStoredMetrics(r.metrics);
+          peaks[r.rep_index] = stored?.analyzer.vmaxMs ?? stored?.peakVelocityMs ?? null;
+        }
+        setRepPeaks(peaks);
       })
       .catch(() => undefined);
     return () => {
@@ -408,6 +442,9 @@ export function KinemosViewer() {
         if (cancelled || !bundle) return;
         analysisIdRef.current = bundle.analysis.id;
         setPoints(bundle.track?.points ?? []);
+        // The flagged list is read back from the stored scores once the
+        // frame server can place the points on frames — below.
+        rebuildUncertainRef.current = true;
         setAnnotations(bundle.annotations);
         // Shares are an extra: a missing table (the migration not yet
         // applied) must not stop the rep from loading.
@@ -564,23 +601,8 @@ export function KinemosViewer() {
     [kinematics, server, calibration, camera, points.length, trackerTier, correctionCount, stability, lensSource],
   );
 
-  /**
-   * Why there are no curves, in the coach's terms — long for the empty chart
-   * area, which has the room and is the more likely place to be read cold.
-   */
-  const analysisEmptyReason = useMemo(() => {
-    if (!calibration)
-      return 'Calibrate against a plate to get velocities — without a scale there is no velocity to measure.';
-    if (calibration.confidence === 'degenerate')
-      return 'The plate outline is too small to carry a scale worth measuring against.';
-    if (points.length < 8)
-      return `Mark the bar through the lift — ${points.length} of at least 8 points so far.`;
-    return null;
-  }, [calibration, points.length]);
-
-  /** The same fact, terse, for the rail. The long sentence is already on screen
-   *  in the chart area; repeating it verbatim in a 304 px column reads as a
-   *  duplicated warning rather than as one condition stated once. */
+  /** Why there are no numbers, in one line — the bar-path column, the
+   *  chart and the lift panel all say this one thing. */
   const metricsEmptyReason = useMemo(() => {
     if (!calibration) return 'Calibrate a plate to get velocities.';
     if (calibration.confidence === 'degenerate')
@@ -592,6 +614,50 @@ export function KinemosViewer() {
   /** What the stage says over a Stream embed: that the reps below came
    *  from the athlete's phone, or that there are none (P8 plan §4). */
   const embedNote = embedded ? (points.length > 0 ? EMBED_ANALYSED_NOTE : EMBED_UNANALYSED_NOTE) : null;
+
+  // ── The rail's composition ────────────────────────────────────────────────
+  const panels = useViewerPanels(clip?.athleteId ?? null);
+  const notesPanelRef = useRef<HTMLElement | null>(null);
+  /** Below this the panel rail drops under the plots instead of shrinking
+   *  beside them (docs/KINEMOS_VIEWER_LAYOUT.md, Responsive). */
+  const wide = useMediaQuery('(min-width: 1200px)');
+
+  /** The lift this one is judged against, and the sentence that judgement
+   *  makes — gated on the grade's margin. */
+  const peakForVerdict = liftMetrics?.analyzer.vmaxMs ?? liftMetrics?.peakVelocityMs ?? null;
+  const earlierLift = useMemo(
+    () => findEarlierLift(candidates, { date: clip?.date ?? null, loadKg: clip?.loadKg ?? null }),
+    [candidates, clip?.date, clip?.loadKg],
+  );
+  const verdict = useMemo(
+    () =>
+      verdictFor(
+        { peakVelocityMs: peakForVerdict, loadKg: clip?.loadKg ?? null, errorMs: grade.expectedVelocityErrorMs },
+        earlierLift,
+      ),
+    [peakForVerdict, clip?.loadKg, grade.expectedVelocityErrorMs, earlierLift],
+  );
+  const history = useMemo(
+    () =>
+      historyRows(candidates, {
+        analysisId: analysisIdRef.current,
+        date: clip?.date ?? null,
+        loadKg: clip?.loadKg ?? null,
+        peakVelocityMs: peakForVerdict,
+        sVmaxCm: liftMetrics?.analyzer.sVmaxCm ?? null,
+        grade: grade.grade,
+        current: true,
+        isReference,
+      }),
+    // `analysisIdRef` is a ref; the row's id is read when the inputs change,
+    // which is after the first save at the latest.
+    [candidates, clip?.date, clip?.loadKg, peakForVerdict, liftMetrics, grade.grade, isReference],
+  );
+  /** How many of the catalogue's measures this lift has a value for. */
+  const metricCount = useMemo(
+    () => (liftMetrics ? METRIC_CATALOGUE.filter(m => m.read({ metrics: liftMetrics, summary: repSummary }) !== null).length : 0),
+    [liftMetrics, repSummary],
+  );
 
   // ── Persistence ───────────────────────────────────────────────────────────
   const ensureId = useCallback(async (): Promise<string | null> => {
@@ -765,21 +831,21 @@ export function KinemosViewer() {
   }, []);
 
   // ── Comparison ────────────────────────────────────────────────────────────
+  //
+  // The athlete's other analysed lifts are read as soon as the clip is open,
+  // not only when the comparison view is: "This lift" judges the rep against
+  // the last one at this load, and "History & comparison" lists them. Two
+  // list reads; the heavy part — another clip's bundle — waits for a choice.
   useEffect(() => {
-    if (!comparing || !source || !id) return;
+    if (!source || !id || !clip?.athleteId) return;
     let cancelled = false;
     findComparable(
       { kind: source, id, repIndex },
-      clip?.athleteId ?? null,
-      clip?.exerciseName ?? null,
+      clip.athleteId,
+      clip.exerciseName ?? null,
     )
       .then(found => {
-        if (cancelled) return;
-        setCandidates(found);
-        // Nothing chosen yet: open on the athlete's reference for this
-        // exercise, which is what the reference is for.
-        const reference = found.find(c => c.sameExercise && c.isReference);
-        if (reference) setComparisonId(current => current ?? reference.analysis.id);
+        if (!cancelled) setCandidates(found);
       })
       .catch(() => {
         if (!cancelled) setCandidates([]);
@@ -787,10 +853,18 @@ export function KinemosViewer() {
     return () => {
       cancelled = true;
     };
-  }, [comparing, source, id, repIndex, clip?.athleteId, clip?.exerciseName]);
+  }, [source, id, repIndex, clip?.athleteId, clip?.exerciseName]);
 
   useEffect(() => {
-    if (!comparisonId) {
+    if (!comparing) return;
+    // Nothing chosen yet: open on the athlete's reference for this
+    // exercise, which is what the reference is for.
+    const reference = candidates.find(c => c.sameExercise && c.isReference);
+    if (reference) setComparisonId(current => current ?? reference.analysis.id);
+  }, [comparing, candidates]);
+
+  useEffect(() => {
+    if (!comparisonId || !comparing) {
       setComparisonSubject(null);
       return;
     }
@@ -811,7 +885,7 @@ export function KinemosViewer() {
     return () => {
       cancelled = true;
     };
-  }, [comparisonId, candidates]);
+  }, [comparisonId, candidates, comparing]);
 
   // ── Assisted tracking ─────────────────────────────────────────────────────
   //
@@ -877,7 +951,7 @@ export function KinemosViewer() {
           }
         }
         const keptIndex = new Set(kept.map(p => p.index));
-        setPoints(kept.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })));
+        setPoints(kept.map(toTrackPoint));
         setUncertainIndices(result.lowConfidenceIndices.filter(i => keptIndex.has(i)));
         setTrackerTier('assisted');
         const notes: string[] = [];
@@ -1904,15 +1978,103 @@ export function KinemosViewer() {
   };
 
   const title = clip.exerciseName ?? 'Clip';
-  const subtitle = [
-    clip.athleteName,
-    clip.loadKg !== null
-      ? `${num(clip.loadKg, 0)} kg${clip.loadIsTopSet ? ' (top set)' : ''}`
-      : null,
-    clip.date ? formatDateShort(clip.date) : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const loadLabel =
+    clip.loadKg !== null ? `${num(clip.loadKg, clip.loadKg % 1 === 0 ? 0 : 1)} kg${clip.loadIsTopSet ? ' (top set)' : ''}` : null;
+
+  /**
+   * The video column's width follows the clip: a portrait phone clip needs
+   * about 28 % of a 1440 px viewport and frees the rest for reading, which is
+   * the bet the layout makes; a landscape clip would be a stamp at that width,
+   * so it gets the wider column and the rail gives up the difference.
+   */
+  const portrait = server
+    ? server.displayHeight >= server.displayWidth
+    : (clip.height ?? 0) >= (clip.width ?? 0);
+  const videoWidth = portrait ? 392 : 600;
+
+  const openShare = () => {
+    panels.show('notes');
+    window.setTimeout(() => notesPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 0);
+  };
+
+  const openComparison = (analysisId: string | null) => {
+    setTrending(false);
+    if (analysisId) setComparisonId(analysisId);
+    setComparing(true);
+  };
+
+  const gradeTone = grade.grade === 'A' ? 'success' : grade.grade === 'B' ? 'warning' : grade.grade === 'C' ? 'danger' : 'neutral';
+
+  const trackingHeadline = trackProgress ? (
+    <HeadlineChip mono>{`frame ${trackProgress.done} / ${trackProgress.total}`}</HeadlineChip>
+  ) : uncertainIndices.length > 0 ? (
+    <HeadlineChip tone="danger">{`${uncertainIndices.length} frames flagged`}</HeadlineChip>
+  ) : trackerTier !== 'manual' && points.length > 0 ? (
+    <HeadlineChip tone="success">{`tracked · ${points.length} frames`}</HeadlineChip>
+  ) : points.length > 0 ? (
+    <HeadlineChip>{`${points.length} marks by hand`}</HeadlineChip>
+  ) : (
+    <HeadlineChip>not tracked</HeadlineChip>
+  );
+
+  const calibrationHeadline = calibration ? (
+    <HeadlineChip mono title="plate · viewing angle">
+      {`${num(calibration.plateDiameterCm, 1)} cm · θ ${num(calibration.viewingAngleDeg, 1)}°`}
+    </HeadlineChip>
+  ) : (
+    <HeadlineChip tone="warning">not calibrated</HeadlineChip>
+  );
+
+  const earlierCount = history.filter(r => !r.current).length;
+  const historyHeadline = (
+    <HeadlineChip>{earlierCount > 0 ? `${title} · last ${earlierCount}` : 'no history yet'}</HeadlineChip>
+  );
+
+  const notesHeadline = (
+    <HeadlineChip>
+      {[
+        `${annotations.length} ${annotations.length === 1 ? 'note' : 'notes'}`,
+        shares.length > 0 ? `shared ${shares.length}×` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')}
+    </HeadlineChip>
+  );
+
+  const stageReady = analysable && status === 'ready' && server;
+  const showingOverlay = trending || (comparing && comparable);
+
+  /** What the panels say when there is nothing to show. The stage carries the
+   *  full embed note; the panels say the short thing once each — the long
+   *  sentence lives in the bar-path column, the terse one in the rail. */
+  const embedEmpty = embedded && !kinematics ? 'No stored rep — analysed on the athlete’s phone.' : null;
+  const railEmptyReason = embedEmpty ?? metricsEmptyReason;
+
+  /** Everything the rail needs to offer, and report on, assisted tracking —
+   *  built once, because two panels (the tracking panel and the tool
+   *  readout under the stage) render the rail's sections. */
+  const trackingState: TrackingState = {
+    canTrack: points.length > 0 && status === 'ready',
+    busy: trackProgress,
+    tier: trackerTier === 'manual' ? 'manual' : 'assisted',
+    uncertainCount: uncertainIndices.length,
+    correctionCount,
+    onTrack: () => void runTrack(),
+    onNextUncertain: jumpToNextUncertain,
+    onTrackSet: points.length > 0 && status === 'ready' && ellipse ? () => void trackSetNow() : undefined,
+    setNote,
+    onTrackMarker: points.length > 0 && status === 'ready' ? () => void runMarkerTrack() : undefined,
+    uncertainIndices,
+    onJumpTo: seek,
+    confidence: server
+      ? {
+          frames: frameScores,
+          frameCount: server.frameCount,
+          currentIndex: index,
+          edges: spans.map(s => ({ index: server.nearestIndex(s.fromT), label: s.definition.label })),
+        }
+      : undefined,
+  };
 
   return (
     <div
@@ -1931,193 +2093,98 @@ export function KinemosViewer() {
       <header
         style={{
           flexShrink: 0,
-          height: 52,
+          minHeight: 49,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           gap: 'var(--space-md)',
           padding: '0 var(--space-lg)',
           background: 'var(--color-bg-primary)',
-          borderBottom: '1px solid var(--color-border-secondary)',
+          borderBottom: '0.5px solid var(--color-border-primary)',
         }}
       >
-        <div
+        <Link
+          to="/kinemos"
+          title="Back to the library"
+          style={{ display: 'inline-flex', color: 'var(--color-text-secondary)' }}
+        >
+          <ChevronLeft size={18} />
+        </Link>
+        <span
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-md)',
-            minWidth: 0,
+            fontSize: 'var(--text-page-title)',
+            fontWeight: 600,
+            letterSpacing: 'var(--tracking-page-title)',
+            lineHeight: 'var(--leading-page-title)',
+            whiteSpace: 'nowrap',
           }}
         >
-          <Link
-            to="/kinemos"
-            title="Back to the library"
-            style={{
-              display: 'inline-flex',
-              color: 'var(--color-text-secondary)',
-            }}
-          >
-            <ChevronLeft size={18} />
-          </Link>
-          <span style={{ fontSize: 'var(--text-section)', fontWeight: 600 }}>{title}</span>
-          <span
-            style={{
-              fontSize: 'var(--text-label)',
-              color: 'var(--color-text-secondary)',
-            }}
-          >
-            {subtitle}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-          <button
-            type="button"
-            onClick={() => {
-              setTrending(false);
-              setComparing(current => !current);
-            }}
-            title={
-              comparable
-                ? 'Compare this lift with another of the same athlete'
-                : 'Comparison needs a calibrated, marked lift'
-            }
-            disabled={!comparable}
-            aria-pressed={comparing}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              height: 24,
-              padding: '0 9px',
-              border: '1px solid var(--color-border-secondary)',
-              borderRadius: 'var(--radius-sm)',
-              background: comparing ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
-              color: comparable
-                ? comparing
-                  ? 'var(--color-accent)'
-                  : 'var(--color-text-primary)'
-                : 'var(--color-text-tertiary)',
-              fontSize: 'var(--text-micro)',
-              fontFamily: 'inherit',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              cursor: comparable ? 'pointer' : 'not-allowed',
-            }}
-          >
-            <Columns2 size={12} />
-            COMPARE
-          </button>
-          <button
-            type="button"
-            onClick={() => void toggleReference()}
-            disabled={!comparable || referenceBusy}
-            aria-pressed={isReference}
-            title={
-              !comparable
-                ? 'A reference needs a calibrated, marked lift'
-                : isReference
-                  ? `This is ${clip.athleteName ?? 'the athlete'}’s reference ${clip.exerciseName ?? 'lift'}. Comparison opens on it and the trend view draws it as a line. Press to unmark.`
-                  : `Make this ${clip.athleteName ?? 'the athlete'}’s reference ${clip.exerciseName ?? 'lift'} — the one the others are judged against. Replaces any current reference for this exercise.`
-            }
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              height: 24,
-              padding: '0 9px',
-              border: '1px solid var(--color-border-secondary)',
-              borderRadius: 'var(--radius-sm)',
-              background: isReference ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
-              color: comparable
-                ? isReference
-                  ? 'var(--color-accent)'
-                  : 'var(--color-text-primary)'
-                : 'var(--color-text-tertiary)',
-              fontSize: 'var(--text-micro)',
-              fontFamily: 'inherit',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              cursor: comparable ? 'pointer' : 'not-allowed',
-            }}
-          >
-            <Star size={12} fill={isReference ? 'currentColor' : 'none'} />
-            {isReference ? 'REFERENCE' : 'SET REFERENCE'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void toggleModel()}
-            disabled={!comparable || referenceBusy}
-            aria-pressed={isModel}
-            title={
-              !comparable
-                ? 'A model lift needs a calibrated, marked lift'
-                : isModel
-                  ? `A model lift for the whole club${modelLabel ? `: “${modelLabel}”` : ''}. It is offered when comparing any athlete. Press to unmark.`
-                  : 'Make this a model lift for the whole club — an exemplar offered when comparing any athlete, not only this one.'
-            }
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              height: 24,
-              padding: '0 9px',
-              border: '1px solid var(--color-border-secondary)',
-              borderRadius: 'var(--radius-sm)',
-              background: isModel ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
-              color: comparable
-                ? isModel
-                  ? 'var(--color-accent)'
-                  : 'var(--color-text-primary)'
-                : 'var(--color-text-tertiary)',
-              fontSize: 'var(--text-micro)',
-              fontFamily: 'inherit',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              cursor: comparable ? 'pointer' : 'not-allowed',
-            }}
-          >
-            <GraduationCap size={12} />
-            {isModel ? 'MODEL' : 'SET MODEL'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setComparing(false);
-              setTrending(current => !current);
-            }}
-            title={
-              clip.athleteId
-                ? `${clip.athleteName ?? 'This athlete'}’s analysed lifts over time and against load`
-                : 'Trends need an athlete on the clip'
-            }
-            disabled={!clip.athleteId}
-            aria-pressed={trending}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              height: 24,
-              padding: '0 9px',
-              border: '1px solid var(--color-border-secondary)',
-              borderRadius: 'var(--radius-sm)',
-              background: trending ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
-              color: clip.athleteId
-                ? trending
-                  ? 'var(--color-accent)'
-                  : 'var(--color-text-primary)'
-                : 'var(--color-text-tertiary)',
-              fontSize: 'var(--text-micro)',
-              fontFamily: 'inherit',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              cursor: clip.athleteId ? 'pointer' : 'not-allowed',
-            }}
-          >
-            <TrendingUp size={12} />
-            TRENDS
-          </button>
-          <GradeChip grade={grade} />
-        </div>
+          KinEMOS
+        </span>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'baseline',
+            gap: 6,
+            minWidth: 0,
+            fontSize: 'var(--text-label)',
+            color: 'var(--color-text-secondary)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {clip.athleteName && (
+            <>
+              <span>{clip.athleteName}</span>
+              <span aria-hidden>·</span>
+            </>
+          )}
+          <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{title}</span>
+          {clip.date && (
+            <>
+              <span aria-hidden>·</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{formatDateShort(clip.date)}</span>
+            </>
+          )}
+          {loadLabel && (
+            <>
+              <span aria-hidden>·</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{loadLabel}</span>
+            </>
+          )}
+        </span>
+        <GradeChip grade={grade} />
+        <span style={{ flexGrow: 1 }} />
+        <span
+          aria-live="polite"
+          style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}
+        >
+          {`${panels.openCount} of ${PANEL_KEYS.length} panels open`}
+        </span>
+        <span
+          style={{
+            fontSize: 'var(--text-micro)',
+            fontWeight: 500,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: 'var(--color-text-tertiary)',
+          }}
+        >
+          Depth
+        </span>
+        <SegmentedControl<ViewerDepth>
+          ariaLabel="Depth"
+          value={panels.depth}
+          onChange={panels.setDepth}
+          options={(Object.keys(DEPTH_LABELS) as ViewerDepth[]).map(depth => ({
+            id: depth,
+            label: DEPTH_LABELS[depth],
+            title: depth === 'look' ? 'Lift only' : depth === 'read' ? 'Lift, velocity, metrics, history' : 'Everything',
+          }))}
+        />
+        <Button size="sm" variant="primary" icon={<Share2 size={12} />} onClick={openShare} title="Send, or export with the bar path">
+          Share
+        </Button>
       </header>
 
       {saveError && (
@@ -2178,17 +2245,27 @@ export function KinemosViewer() {
         />
       )}
 
+      {/* Three columns: the clip, the bar path, the panel rail. The first two
+          are fixed and full height; the rail takes the rest and is the only
+          thing that scrolls. On a narrow window the rail drops under them. */}
       <div
         style={{
           flexGrow: 1,
-          display: trending || (comparing && comparable) ? 'none' : 'flex',
+          display: showingOverlay ? 'none' : 'flex',
+          flexWrap: wide ? 'nowrap' : 'wrap',
+          alignItems: 'stretch',
+          alignContent: 'flex-start',
+          gap: 'var(--space-md)',
+          padding: 'var(--space-md)',
           minHeight: 0,
+          overflowY: wide ? 'hidden' : 'auto',
         }}
       >
         {/* Tool rail */}
         <nav
+          aria-label="Tools"
           style={{
-            width: 48,
+            width: 40,
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
@@ -2196,7 +2273,9 @@ export function KinemosViewer() {
             gap: 4,
             padding: 'var(--space-sm) 0',
             background: 'var(--color-bg-primary)',
-            borderRight: '1px solid var(--color-border-tertiary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-lg)',
+            alignSelf: 'flex-start',
           }}
         >
           {TOOLS.map(({ id: toolId, label, icon: Icon, key }) => (
@@ -2214,8 +2293,8 @@ export function KinemosViewer() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: 32,
-                height: 32,
+                width: 30,
+                height: 30,
                 border: 'none',
                 borderRadius: 'var(--radius-md)',
                 cursor: 'pointer',
@@ -2228,75 +2307,88 @@ export function KinemosViewer() {
           ))}
         </nav>
 
-        {/* Stage */}
-        <main
+        {/* Column 1 — the clip */}
+        <section
+          aria-label="Video"
           style={{
-            flexGrow: 1,
-            minWidth: 0,
+            width: videoWidth,
+            flexShrink: 0,
+            minHeight: wide ? 0 : 560,
             display: 'flex',
             flexDirection: 'column',
-            gap: 'var(--space-sm)',
-            padding: 'var(--space-md)',
-            background: 'var(--color-bg-tertiary)',
+            background: 'var(--color-bg-primary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
           }}
         >
-          {embedded && clip && (
-            <>
-              <p
+          <div
+            style={{
+              flexGrow: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-sm)',
+              padding: 'var(--space-sm)',
+            }}
+          >
+            {embedded && (
+              <>
+                <p
+                  style={{
+                    margin: 0,
+                    padding: 'var(--space-sm) var(--space-md)',
+                    fontSize: 'var(--text-caption)',
+                    color: 'var(--color-text-secondary)',
+                    background: 'var(--color-bg-secondary)',
+                    borderRadius: 'var(--radius-md)',
+                  }}
+                >
+                  {embedNote}
+                </p>
+                {/* The same player the library's modal uses: pixels to look at
+                    while reading the numbers, not frames to measure. */}
+                <div style={{ background: '#000', borderRadius: 'var(--radius-md)', overflow: 'hidden', flexGrow: 1, minHeight: 0 }}>
+                  <iframe
+                    src={clip.playbackUrl}
+                    title={title}
+                    allow="accelerometer; encrypted-media; picture-in-picture;"
+                    allowFullScreen
+                    style={{ display: 'block', width: '100%', height: '100%', border: 0 }}
+                  />
+                </div>
+              </>
+            )}
+
+            {analysable && status === 'error' && (
+              <ErrorState message={frameError ?? 'Unknown error.'} />
+            )}
+
+            {analysable && (status === 'opening' || status === 'idle') && (
+              <div style={{ display: 'grid', placeItems: 'center', flexGrow: 1 }}>
+                <Spinner />
+              </div>
+            )}
+
+            {/* A frame that would not decode. The stage is blank behind this —
+                deliberately, because a stale frame under a live transport is how
+                a mark gets stored against a timestamp it does not belong to. */}
+            {analysable && status === 'ready' && decodeError && (
+              <div
                 style={{
-                  margin: 0,
+                  flexShrink: 0,
                   padding: 'var(--space-sm) var(--space-md)',
+                  background: 'var(--color-warning-bg)',
+                  color: 'var(--color-warning-text)',
                   fontSize: 'var(--text-caption)',
-                  color: 'var(--color-text-secondary)',
-                  background: 'var(--color-bg-primary)',
                   borderRadius: 'var(--radius-md)',
                 }}
               >
-                {embedNote}
-              </p>
-              {/* The same player the library's modal uses: pixels to look at
-                  while reading the numbers, not frames to measure. */}
-              <div style={{ background: '#000', borderRadius: 'var(--radius-md)', overflow: 'hidden', flexGrow: 1, minHeight: 0 }}>
-                <iframe
-                  src={clip.playbackUrl}
-                  title={title}
-                  allow="accelerometer; encrypted-media; picture-in-picture;"
-                  allowFullScreen
-                  style={{ display: 'block', width: '100%', height: '100%', border: 0 }}
-                />
+                {`${decodeError} Nothing is shown rather than the frame before it — step past it, or re-import the clip if it persists.`}
               </div>
-            </>
-          )}
+            )}
 
-          {analysable && status === 'error' && (
-            <ErrorState message={frameError ?? 'Unknown error.'} />
-          )}
-
-          {analysable && (status === 'opening' || status === 'idle') && (
-            <div style={{ display: 'grid', placeItems: 'center', flexGrow: 1 }}>
-              <Spinner />
-            </div>
-          )}
-
-          {/* A frame that would not decode. The stage is blank behind this —
-              deliberately, because a stale frame under a live transport is how
-              a mark gets stored against a timestamp it does not belong to. */}
-          {analysable && status === 'ready' && decodeError && (
-            <div
-              style={{
-                flexShrink: 0,
-                padding: 'var(--space-sm) var(--space-lg)',
-                background: 'var(--color-warning-bg)',
-                color: 'var(--color-warning-text)',
-                fontSize: 'var(--text-caption)',
-              }}
-            >
-              {`${decodeError} Nothing is shown rather than the frame before it — step past it, or re-import the clip if it persists.`}
-            </div>
-          )}
-
-          {analysable && status === 'ready' && server && (
-            <>
+            {stageReady && (
               <ViewerStage
                 canvas={frame?.canvas ?? null}
                 width={server.displayWidth}
@@ -2316,6 +2408,19 @@ export function KinemosViewer() {
                 knee={kneePoint}
                 onKnee={p => void markKnee(p)}
               />
+            )}
+          </div>
+
+          <div
+            style={{
+              flexShrink: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-sm)',
+              padding: '0 var(--space-md) var(--space-md)',
+            }}
+          >
+            {stageReady && (
               <ViewerTransport
                 index={index}
                 frameCount={server.frameCount}
@@ -2332,169 +2437,342 @@ export function KinemosViewer() {
                 onTogglePlay={togglePlay}
                 onSpeed={setSpeed}
               />
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 'var(--text-caption)',
-                  color: 'var(--color-text-tertiary)',
+            )}
+            {(stageReady || (embedded && kinematics)) && (
+              <PhaseTimeline
+                series={kinematics}
+                spans={spans}
+                boundaries={boundaries}
+                onBoundaryDrag={dragBoundary}
+                onBoundaryCommit={commitBoundary}
+                currentT={currentT}
+                onSeekT={t => {
+                  if (server) seek(server.nearestIndex(t));
                 }}
-              >
-                ← → step a frame · ⇧ steps ten · space plays · V/C/M/D/A pick a tool · R resets
-                phase edges · shift-drag pans
+                emptyReason={railEmptyReason}
+              />
+            )}
+            {stageReady && (
+              <p style={{ margin: 0, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                ← → frame · ⇧ ×10 · space play · V C M D A K tools · ⇧-drag pan
               </p>
-            </>
-          )}
-        </main>
+            )}
+          </div>
 
-        {/* Rail */}
-        <aside
+          {/* The active tool's readout — a distance, an angle, the knee —
+              sits with the stage it is read off. */}
+          {stageReady && (tool === 'distance' || tool === 'angle' || tool === 'knee') && (
+            <div style={{ flexShrink: 0, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+              <ReadoutRail
+                parts={['measure']}
+                repIndices={repIndices}
+                repIndex={repIndex}
+                onRep={setRepIndex}
+                onAddRep={addRep}
+                metrics={metrics}
+                markedHere={false}
+                onDeleteMark={deleteMarkHere}
+                onClearMarks={() => void clearMarks()}
+                tool={tool}
+                measureValue={measureValue}
+                kneeCm={kneeCm}
+                kneeMarked={kneePoint !== null}
+                measureComplete={measureComplete}
+                onSaveMeasurement={() => void saveMeasurement()}
+                onClearMeasurement={() => setMeasurePoints([])}
+                annotations={annotations}
+                onAddNote={body => void addNote(body)}
+                onSnapshot={() => void takeSnapshot()}
+                onDeleteAnnotation={annotationId => void removeAnnotation(annotationId)}
+                snapshotBusy={snapshotBusy}
+                tracking={trackingState}
+              />
+            </div>
+          )}
+        </section>
+
+        {/* Column 2 — the bar path and velocity-over-height, one height axis */}
+        <div style={{ width: 322, flexShrink: 0, minHeight: wide ? 0 : 560, display: 'flex', flexDirection: 'column' }}>
+          <BarPathPanel
+            series={kinematics}
+            spans={spans}
+            analyzer={liftMetrics?.analyzer ?? null}
+            summary={repSummary}
+            currentT={currentT}
+            onSeekT={t => {
+              if (server) seek(server.nearestIndex(t));
+            }}
+            emptyReason={railEmptyReason}
+            kneeCm={kneeCm}
+          />
+        </div>
+
+        {/* Column 3 — the panel rail; the only thing that scrolls */}
+        <div
           style={{
-            width: 304,
-            flexShrink: 0,
+            flexGrow: 1,
+            flexBasis: wide ? 0 : '100%',
+            minWidth: wide ? 280 : 0,
+            minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            background: 'var(--color-bg-primary)',
-            borderLeft: '1px solid var(--color-border-tertiary)',
-            overflowY: 'auto',
+            gap: 'var(--space-md)',
+            overflowY: wide ? 'auto' : 'visible',
           }}
         >
-          <CalibrationPanel
-            ellipse={ellipse}
-            calibration={calibration}
-            plateDiameterCm={plateDiameterCm}
-            active={tool === 'calibrate'}
-            onPlateDiameter={cm => {
-              dirtyRef.current = true;
-              setPlateDiameterCm(cm);
-            }}
-            onActivate={() => setTool('calibrate')}
-            onClear={() => void clearCalibrationNow()}
-            onFind={() => void findPlateHere()}
-            onSnap={() => void snapHere()}
-            assist={assist}
-            shape={plateShape}
-            onShape={setPlateShape}
-            lens={{
-              source: lensSource,
-              k1: lensK1,
-              device: [clip.deviceMake, clip.deviceModel].filter(Boolean).join(' ') || null,
-              busy: lensBusy,
-              note: lensNote,
-              onMeasure: () => void measureLens(),
-              onClear: clearLens,
-            }}
-          />
-          <ReadoutRail
-            repIndices={repIndices}
-            repIndex={repIndex}
-            onRep={setRepIndex}
-            onAddRep={addRep}
-            metrics={metrics}
-            markedHere={currentT !== null && points.some(p => Math.abs(p.t - currentT) < 1e-6)}
-            onDeleteMark={deleteMarkHere}
-            onClearMarks={() => void clearMarks()}
-            tool={tool}
-            measureValue={measureValue}
-            kneeCm={kneeCm}
-            kneeMarked={kneePoint !== null}
-            share={{
-              athleteName: clip.athleteId ? clip.athleteName ?? 'the athlete' : null,
-              shares,
-              busy: shareBusy,
-              note: shareNote,
-              ready: points.length > 1 && calibration !== null && repSummary !== null,
-              onShare: message => void shareNow(message),
-              onDelete: shareId => void removeShare(shareId),
-              onExport: () => void exportNow(),
-              exporting,
-              exportNote,
-              talkoverIncluded: latestTalkover !== null,
-              colleagues,
-              onShareWithCoach: (coachId, message) => void shareWithCoach(coachId, message),
-            }}
-            talkover={
-              talkoverMimeType() === null
-                ? null
-                : {
-                    recording: talkover !== null,
-                    startedAt: talkover?.startedAt ?? null,
-                    busy: talkoverBusy,
-                    note: talkoverNote,
-                    onToggle: () => void toggleTalkover(),
-                  }
-            }
-            measureComplete={measureComplete}
-            onSaveMeasurement={() => void saveMeasurement()}
-            onClearMeasurement={() => setMeasurePoints([])}
-            annotations={annotations}
-            onAddNote={body => void addNote(body)}
-            onSnapshot={() => void takeSnapshot()}
-            onDeleteAnnotation={annotationId => void removeAnnotation(annotationId)}
-            snapshotBusy={snapshotBusy}
-            tracking={{
-              canTrack: points.length > 0 && status === 'ready',
-              busy: trackProgress,
-              tier: trackerTier === 'manual' ? 'manual' : 'assisted',
-              uncertainCount: uncertainIndices.length,
-              correctionCount,
-              onTrack: () => void runTrack(),
-              onNextUncertain: jumpToNextUncertain,
-              onTrackSet: points.length > 0 && status === 'ready' && ellipse ? () => void trackSetNow() : undefined,
-              setNote,
-              onTrackMarker: points.length > 0 && status === 'ready' ? () => void runMarkerTrack() : undefined,
-            }}
-          />
-          <MetricsPanel
-            metrics={liftMetrics}
-            summary={repSummary}
-            massKg={massKg}
-            massSource={massSource}
-            onMass={kg => {
-              dirtyRef.current = true;
-              setMassKg(kg !== null && Number.isFinite(kg) ? kg : null);
-              setMassSource(kg === null ? null : 'manual');
-            }}
-            emptyReason={metricsEmptyReason}
-            knee={kneeReadout}
-          />
-          <GradePanel
-            grade={grade}
-            camera={camera}
-            onCamera={next => {
-              dirtyRef.current = true;
-              setCamera(next);
-            }}
-            stabilise={
-              points.length >= 8
-                ? { onRun: () => void stabiliseNow(), progress: stabiliseProgress, note: stabiliseNote }
-                : undefined
-            }
-            recentre={
-              points.length >= 8 && ellipse
-                ? { onRun: () => void recentreNow(), progress: recentreProgress, note: recentreNote }
-                : undefined
-            }
-          />
-        </aside>
-      </div>
+          <RailPanel
+            title={`This lift · rep ${repIndex}`}
+            headline={<HeadlineChip tone={gradeTone}>{grade.grade ?? 'ungraded'}</HeadlineChip>}
+            open={panels.open.lift}
+            onToggle={() => panels.toggle('lift')}
+          >
+            <LiftPanel
+              repIndices={repIndices}
+              repIndex={repIndex}
+              repPeaks={repPeaks}
+              onRep={setRepIndex}
+              onAddRep={addRep}
+              metrics={liftMetrics}
+              summary={repSummary}
+              emptyReason={railEmptyReason}
+              verdict={verdict}
+              marks={{
+                comparable,
+                busy: referenceBusy,
+                isReference,
+                onToggleReference: () => void toggleReference(),
+                isModel,
+                modelLabel,
+                onToggleModel: () => void toggleModel(),
+                athleteName: clip.athleteName,
+                exerciseName: clip.exerciseName,
+              }}
+            />
+          </RailPanel>
 
-      {/* For an embed the panel draws the stored series with no playhead:
-          `currentT` is null and a seek has no server to go to. */}
-      {((analysable && status === 'ready') || (embedded && kinematics)) && !comparing && (
-        <AnalysisPanel
-          series={kinematics}
-          spans={spans}
-          boundaries={boundaries}
-          onBoundaryDrag={dragBoundary}
-          onBoundaryCommit={commitBoundary}
-          currentT={currentT}
-          onSeekT={t => {
-            if (server) seek(server.nearestIndex(t));
-          }}
-          emptyReason={analysisEmptyReason}
-          kneeCm={kneeCm}
-        />
-      )}
+          <RailPanel
+            title="Velocity over time"
+            headline={
+              <HeadlineChip mono>
+                {peakForVerdict !== null ? `peak ${num(peakForVerdict, 2)} m/s` : '—'}
+              </HeadlineChip>
+            }
+            open={panels.open.velocity}
+            onToggle={() => panels.toggle('velocity')}
+          >
+            <VelocityChart
+              series={kinematics}
+              spans={spans}
+              boundaries={boundaries}
+              currentT={currentT}
+              onSeekT={t => {
+                if (server) seek(server.nearestIndex(t));
+              }}
+              emptyReason={railEmptyReason}
+              kneeCm={kneeCm}
+            />
+          </RailPanel>
+
+          <RailPanel
+            title="All metrics"
+            headline={
+              <HeadlineChip>
+                {liftMetrics
+                  ? `${metricCount} of ${METRIC_CATALOGUE.length}${earlierLift?.date ? ` · vs ${formatDateShort(earlierLift.date)}` : ''}`
+                  : 'no numbers yet'}
+              </HeadlineChip>
+            }
+            open={panels.open.metrics}
+            onToggle={() => panels.toggle('metrics')}
+          >
+            <MetricsPanel
+              metrics={liftMetrics}
+              summary={repSummary}
+              massKg={massKg}
+              massSource={massSource}
+              onMass={kg => {
+                dirtyRef.current = true;
+                setMassKg(kg !== null && Number.isFinite(kg) ? kg : null);
+                setMassSource(kg === null ? null : 'manual');
+              }}
+              emptyReason={metricsEmptyReason}
+              knee={kneeReadout}
+              earlier={
+                earlierLift
+                  ? {
+                      lift: { metrics: earlierLift.metrics, summary: earlierLift.metrics.summary },
+                      label: earlierLift.date ? formatDateShort(earlierLift.date) : 'earlier',
+                    }
+                  : null
+              }
+              marginMs={grade.expectedVelocityErrorMs}
+            />
+          </RailPanel>
+
+          <RailPanel
+            title="Tracking & correction"
+            headline={trackingHeadline}
+            open={panels.open.tracking}
+            onToggle={() => panels.toggle('tracking')}
+          >
+            <ReadoutRail
+              parts={['path']}
+              repIndices={repIndices}
+              repIndex={repIndex}
+              onRep={setRepIndex}
+              onAddRep={addRep}
+              metrics={metrics}
+              markedHere={currentT !== null && points.some(p => Math.abs(p.t - currentT) < 1e-6)}
+              onDeleteMark={deleteMarkHere}
+              onClearMarks={() => void clearMarks()}
+              tool={tool}
+              measureValue={measureValue}
+              kneeCm={kneeCm}
+              kneeMarked={kneePoint !== null}
+              measureComplete={measureComplete}
+              onSaveMeasurement={() => void saveMeasurement()}
+              onClearMeasurement={() => setMeasurePoints([])}
+              annotations={annotations}
+              onAddNote={body => void addNote(body)}
+              onSnapshot={() => void takeSnapshot()}
+              onDeleteAnnotation={annotationId => void removeAnnotation(annotationId)}
+              snapshotBusy={snapshotBusy}
+              tracking={trackingState}
+            />
+            <GradePanel
+              grade={grade}
+              camera={camera}
+              onCamera={next => {
+                dirtyRef.current = true;
+                setCamera(next);
+              }}
+              stabilise={
+                points.length >= 8
+                  ? { onRun: () => void stabiliseNow(), progress: stabiliseProgress, note: stabiliseNote }
+                  : undefined
+              }
+              recentre={
+                points.length >= 8 && ellipse
+                  ? { onRun: () => void recentreNow(), progress: recentreProgress, note: recentreNote }
+                  : undefined
+              }
+            />
+          </RailPanel>
+
+          <RailPanel
+            title="Calibration"
+            headline={calibrationHeadline}
+            open={panels.open.calibration}
+            onToggle={() => panels.toggle('calibration')}
+          >
+            <CalibrationPanel
+              hideTitle
+              ellipse={ellipse}
+              calibration={calibration}
+              plateDiameterCm={plateDiameterCm}
+              active={tool === 'calibrate'}
+              onPlateDiameter={cm => {
+                dirtyRef.current = true;
+                setPlateDiameterCm(cm);
+              }}
+              onActivate={() => setTool('calibrate')}
+              onClear={() => void clearCalibrationNow()}
+              onFind={() => void findPlateHere()}
+              onSnap={() => void snapHere()}
+              assist={assist}
+              shape={plateShape}
+              onShape={setPlateShape}
+              lens={{
+                source: lensSource,
+                k1: lensK1,
+                device: [clip.deviceMake, clip.deviceModel].filter(Boolean).join(' ') || null,
+                busy: lensBusy,
+                note: lensNote,
+                onMeasure: () => void measureLens(),
+                onClear: clearLens,
+              }}
+            />
+          </RailPanel>
+
+          <RailPanel
+            title="History & comparison"
+            headline={historyHeadline}
+            open={panels.open.history}
+            onToggle={() => panels.toggle('history')}
+          >
+            <HistoryPanel
+              rows={history}
+              exerciseName={clip.exerciseName}
+              comparable={comparable}
+              onCompare={openComparison}
+              canTrend={clip.athleteId !== null}
+              onTrends={() => {
+                setComparing(false);
+                setTrending(true);
+              }}
+            />
+          </RailPanel>
+
+          <RailPanel
+            ref={notesPanelRef}
+            title="Notes & sharing"
+            headline={notesHeadline}
+            open={panels.open.notes}
+            onToggle={() => panels.toggle('notes')}
+          >
+            <ReadoutRail
+              parts={['share', 'notes']}
+              repIndices={repIndices}
+              repIndex={repIndex}
+              onRep={setRepIndex}
+              onAddRep={addRep}
+              metrics={metrics}
+              markedHere={false}
+              onDeleteMark={deleteMarkHere}
+              onClearMarks={() => void clearMarks()}
+              tool={tool}
+              measureValue={measureValue}
+              kneeCm={kneeCm}
+              kneeMarked={kneePoint !== null}
+              share={{
+                athleteName: clip.athleteId ? clip.athleteName ?? 'the athlete' : null,
+                shares,
+                busy: shareBusy,
+                note: shareNote,
+                ready: points.length > 1 && calibration !== null && repSummary !== null,
+                onShare: message => void shareNow(message),
+                onDelete: shareId => void removeShare(shareId),
+                onExport: () => void exportNow(),
+                exporting,
+                exportNote,
+                talkoverIncluded: latestTalkover !== null,
+                colleagues,
+                onShareWithCoach: (coachId, message) => void shareWithCoach(coachId, message),
+              }}
+              talkover={
+                talkoverMimeType() === null
+                  ? null
+                  : {
+                      recording: talkover !== null,
+                      startedAt: talkover?.startedAt ?? null,
+                      busy: talkoverBusy,
+                      note: talkoverNote,
+                      onToggle: () => void toggleTalkover(),
+                    }
+              }
+              measureComplete={measureComplete}
+              onSaveMeasurement={() => void saveMeasurement()}
+              onClearMeasurement={() => setMeasurePoints([])}
+              annotations={annotations}
+              onAddNote={body => void addNote(body)}
+              onSnapshot={() => void takeSnapshot()}
+              onDeleteAnnotation={annotationId => void removeAnnotation(annotationId)}
+              snapshotBusy={snapshotBusy}
+              tracking={trackingState}
+            />
+          </RailPanel>
+        </div>
+      </div>
     </div>
   );
 }

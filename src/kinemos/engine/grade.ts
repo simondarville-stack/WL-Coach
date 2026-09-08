@@ -232,9 +232,8 @@ export function gradeAnalysis(inputs: GradeInputs): QualityGrade {
       grade: null,
       expectedVelocityErrorMs: null,
       factors,
-      summary:
-        'Not graded — without a plate calibration there is no scale, and no velocity to be accurate about.',
-      improvements: ['Outline a plate to calibrate the clip.'],
+      summary: 'Not graded · no scale without a plate calibration.',
+      improvements: ['Outline a plate.'],
     };
   }
 
@@ -273,21 +272,21 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
           : cal.confidence === 'wide'
             ? 'fair'
             : 'weak',
-      why: 'The plate gives the pixels-to-centimetres scale. Past 30° off perpendicular the flat-plate model starts to slip.',
+      why: 'Pixels to centimetres · past 30° off perpendicular the flat-plate model slips.',
     },
     {
       id: 'resolution',
       label: 'Spatial resolution',
       value: mmPerPx === null ? '—' : `${fmt(mmPerPx, 1)} mm/px`,
       verdict: mmPerPx === null ? 'weak' : mmPerPx <= 2.5 ? 'good' : mmPerPx <= 5 ? 'fair' : 'weak',
-      why: 'How much real distance one pixel covers. This is the single biggest term in the error budget — filming closer beats every other improvement.',
+      why: 'Real distance per pixel · the biggest term in the error budget.',
     },
     {
       id: 'rate',
       label: 'Sample rate',
       value: `${fmt(inputs.sampleRateHz, 0)} Hz${inputs.vfr ? ', variable' : ''}`,
       verdict: inputs.sampleRateHz >= 50 ? 'good' : inputs.sampleRateHz >= 28 ? 'fair' : 'weak',
-      why: 'Frame rate buys temporal detail — a 30 fps clip cannot resolve a turnover. It does not buy precision: differentiating over shorter intervals amplifies the same pixel noise more.',
+      why: 'Temporal detail · 30 fps cannot resolve a turnover.',
     },
     {
       id: 'tracking',
@@ -303,7 +302,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
               ? 'Automatic'
               : 'Assisted',
       verdict: tier === 'marker' ? 'good' : tier === 'manual' ? 'fair' : 'good',
-      why: 'What placed the points, and how precisely. A marker on the bar end is the tightest tier; a hand-placed click is about 1,5 px.',
+      why: 'What placed the points · marker tightest, a hand click ~1,5 px.',
     },
     {
       id: 'filter',
@@ -312,7 +311,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
         ? `${fmt(inputs.filter.cutoffHz, 0)} Hz Butterworth`
         : 'None — raw differentiation',
       verdict: inputs.filtered ? 'good' : 'weak',
-      why: 'Differentiating raw marks amplifies every pixel of tremor. Without the low-pass the velocity curve is mostly noise.',
+      why: 'Without the low-pass the velocity curve is mostly noise.',
     },
     {
       id: 'camera',
@@ -326,7 +325,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
               ? 'Handheld'
               : 'Not recorded',
       verdict: inputs.camera === 'tripod' ? 'good' : inputs.camera === 'stabilised' ? 'fair' : 'weak',
-      why: 'A moving camera moves the bar in frame. Stabilisation removes most of it; a tripod removes all of it.',
+      why: 'A moving camera moves the bar in frame · tripod removes all of it.',
     },
     {
       id: 'lens',
@@ -343,7 +342,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
           : inputs.distortionSource === 'model'
             ? 'fair'
             : 'weak',
-      why: 'Lens distortion bends straight lines near the frame edge. Filming from a distance keeps it small; a measured profile removes it.',
+      why: 'Distortion bends lines near the frame edge · a measured profile removes it.',
     },
   ];
 
@@ -354,7 +353,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
       label: 'Frame timing',
       value: `${repairs} frame${repairs === 1 ? '' : 's'} repaired`,
       verdict: repairs <= 2 ? 'fair' : 'weak',
-      why: 'A frame that reads as an impossible acceleration — stamped with the wrong time, or placed wrong by the tracker on a blurred plate. The engine re-timed or dropped these before differentiating; the clip is not otherwise to be trusted frame by frame.',
+      why: 'Frames re-timed or dropped as impossible accelerations · the clip’s timing is not otherwise trusted.',
     });
   }
 
@@ -366,7 +365,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
       label: 'Peak stability',
       value: `±${fmt(pct / 2, 1)} % across cutoffs`,
       verdict: pct <= PEAK_SPREAD_FAIR * 100 ? 'good' : pct <= PEAK_SPREAD_WEAK * 100 ? 'fair' : 'weak',
-      why: 'How much the peak moves when the filter cutoff is changed by a third either way. A real second-pull peak is a plateau and holds still; a peak that moves has a one-frame lurch under it — a blurred plate, the bar whipping — and is partly the filter’s number.',
+      why: 'How far the peak moves at ±⅓ cutoff · a real peak is a plateau.',
     });
   }
 
@@ -376,7 +375,7 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
       label: 'Estimated error',
       value: `±${fmt(error, 3)} m/s`,
       verdict: error <= GRADE_A_MAX_ERROR_MS ? 'good' : error <= GRADE_B_MAX_ERROR_MS ? 'fair' : 'weak',
-      why: 'One standard deviation on peak velocity, from the conditions above. A snatch that makes it at 1,80 and misses at 1,77 needs this under 0,03.',
+      why: 'One σ on peak velocity · under 0,03 tells a make from a miss.',
     });
   }
 
@@ -386,15 +385,15 @@ function buildFactors(inputs: GradeInputs, error: number | null): GradeFactor[] 
 function summarise(grade: 'A' | 'B' | 'C', error: number, inputs: GradeInputs): string {
   const err = `±${fmt(error, 2)} m/s`;
   if (!inputs.filtered) {
-    return `Grade C — the velocity here is unsmoothed, so it carries the full marking noise. Turn the filter on before quoting a number.`;
+    return `Grade C · unsmoothed, so it carries the full marking noise. Filter before quoting a number.`;
   }
   if (grade === 'A') {
-    return `Grade A — good to about ${err} on peak velocity, tight enough to separate a 1,80 from a 1,77.`;
+    return `Grade A · ${err} on peak velocity · separates 1,80 from 1,77.`;
   }
   if (grade === 'B') {
-    return `Grade B — good to about ${err}. Fine for tracking a lifter's trend; too coarse to call a three-centimetre-per-second difference.`;
+    return `Grade B · ${err} · fine for a trend, too coarse for 0,03 m/s.`;
   }
-  return `Grade C — about ${err}. Read the shape of the curve, not the digits.`;
+  return `Grade C · ${err} · read the curve’s shape, not the digits.`;
 }
 
 /** Ordered by how much each would actually move the number. */
@@ -403,26 +402,26 @@ function improvementsFor(inputs: GradeInputs, error: number): string[] {
   const cal = inputs.calibration;
 
   if (!inputs.filtered) {
-    out.push('Turn on smoothing, or lower the cutoff until the clip’s frame rate can carry it.');
+    out.push('Smooth, or lower the cutoff to what the frame rate carries.');
   }
   if (cal && cal.cmPerPxV * 10 > 2.5) {
     out.push(
-      `Film closer or at higher resolution — one pixel currently covers ${fmt(cal.cmPerPxV * 10, 1)} mm, and this term dominates the budget.`,
+      `Film closer or at higher resolution · 1 px = ${fmt(cal.cmPerPxV * 10, 1)} mm`,
     );
   }
   if (inputs.trackerTier !== 'marker') {
-    out.push('Put a high-contrast marker on the bar end — it roughly quarters the position noise.');
+    out.push('Marker on the bar end · ~¼ the position noise.');
   }
   if (inputs.camera !== 'tripod') {
-    out.push('Film from a tripod or a bench rather than by hand.');
+    out.push('Tripod or bench, not handheld.');
   }
   if (cal && cal.viewingAngleDeg > 30) {
     out.push(
-      `Move the camera closer to perpendicular — it is ${fmt(cal.viewingAngleDeg, 0)}° off, past what the flat-plate model covers.`,
+      `Camera nearer perpendicular · ${fmt(cal.viewingAngleDeg, 0)}° off, past 30°`,
     );
   }
   if (inputs.distortionSource === 'none') {
-    out.push('Store a lens profile for this device.');
+    out.push('Lens profile for this phone.');
   }
   return error <= GRADE_A_MAX_ERROR_MS ? out.slice(0, 1) : out;
 }

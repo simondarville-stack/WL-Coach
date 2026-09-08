@@ -94,7 +94,7 @@ export function GradePanel({ grade, camera, onCamera, stabilise, recentre }: Gra
         }}
       >
         {showFactors ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        {showFactors ? 'Hide the conditions' : `What it is built from (${grade.factors.length})`}
+        {showFactors ? 'Hide conditions' : `Conditions (${grade.factors.length})`}
       </button>
 
       <dl style={{ margin: 0, display: showFactors ? 'grid' : 'none', gap: 2 }}>
@@ -149,7 +149,7 @@ export function GradePanel({ grade, camera, onCamera, stabilise, recentre }: Gra
             variant="secondary"
             onClick={stabilise.onRun}
             disabled={stabilise.progress !== null}
-            title="Estimate how the phone moved from the wall, the rack and the floor behind the lifter, and take that motion out of the track. The video is untouched; only the bar path changes. Loads OpenCV the first time, about 13 MB."
+            title="Take the camera’s motion out of the track · video untouched · OpenCV, ~13 MB first time"
           >
             {stabilise.progress
               ? `Stabilising ${stabilise.progress.done} / ${stabilise.progress.total}…`
@@ -166,7 +166,7 @@ export function GradePanel({ grade, camera, onCamera, stabilise, recentre }: Gra
             variant="secondary"
             onClick={recentre.onRun}
             disabled={recentre.progress !== null}
-            title="Re-fit the plate's outline on every frame, starting from the tracked point, and move the point to the outline's centre. The tracker follows the plate's face, which turns and blurs; the outline is the plate itself. Loads OpenCV the first time, about 13 MB."
+            title="Move every point to the plate outline’s centre · OpenCV, ~13 MB first time"
           >
             {recentre.progress
               ? `Re-centring ${recentre.progress.done} / ${recentre.progress.total}…`
@@ -192,7 +192,7 @@ export function GradePanel({ grade, camera, onCamera, stabilise, recentre }: Gra
 
       {grade.improvements.length > 0 && (
         <>
-          <p style={{ ...hint, marginBottom: 4 }}>What would move it:</p>
+          <p style={{ ...hint, marginBottom: 4 }}>To improve:</p>
           <ul style={{ margin: 0, paddingLeft: 16, display: 'grid', gap: 3 }}>
             {grade.improvements.map(text => (
               <li

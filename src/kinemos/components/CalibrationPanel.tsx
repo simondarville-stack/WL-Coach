@@ -42,6 +42,8 @@ interface CalibrationPanelProps {
   /** The lens tier: which correction this clip is being measured through,
    *  and how to measure one. */
   lens: LensState;
+  /** Inside a rail panel that already carries the title. */
+  hideTitle?: boolean;
 }
 
 export interface LensState {
@@ -72,11 +74,12 @@ export function CalibrationPanel({
   assist,
   shape,
   onShape,
+  hideTitle = false,
 }: CalibrationPanelProps) {
   const shapeToggle = (
     <label
       style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'var(--space-sm)', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
-      title="A round plate filmed square-on is a circle: fitting one instead of a free ellipse leaves nothing for the shadow below or the rim's thickness above to tilt, and the radius is the scale directly. Leave it off when the camera is off to one side — the plate really is an ellipse then. Applies to the next find or snap."
+      title="Fit a circle, not an ellipse · for a plate filmed square-on · applies to the next find or snap"
     >
       <input
         type="checkbox"
@@ -90,8 +93,8 @@ export function CalibrationPanel({
 
   return (
     <section style={sectionStyle}>
-      <header style={headerStyle}>
-        <span style={labelStyle}>CALIBRATION</span>
+      <header style={{ ...headerStyle, ...(hideTitle && !ellipse ? { display: 'none' } : {}) }}>
+        <span style={labelStyle}>{hideTitle ? '' : 'CALIBRATION'}</span>
         {ellipse && (
           <button type="button" onClick={onClear} title="Remove the calibration" style={iconButton}>
             <Trash2 size={13} />
@@ -101,16 +104,14 @@ export function CalibrationPanel({
 
       {!ellipse && (
         <>
-          <p style={hintStyle}>
-            Not calibrated — distances read in pixels. Outline a plate to get centimetres.
-          </p>
+          <p style={hintStyle}>Not calibrated · distances read in pixels.</p>
           <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
             <Button
               size="sm"
               variant="primary"
               onClick={onFind}
               disabled={assist.busy !== null}
-              title="Find the plate on this frame, outline it to the pixel and track the bar from it — no clicking. Loads OpenCV the first time, about 13 MB."
+              title="Find and outline the plate, then track · OpenCV, ~13 MB first time"
             >
               {assist.busy === 'find' ? 'Finding the plate…' : 'Find the plate'}
             </Button>
@@ -149,22 +150,22 @@ export function CalibrationPanel({
             <Row
               term="Scale — vertical"
               value={`${mmPerPx(calibration.cmPerPxV)} mm/px`}
-              hint="Along the bar's travel: read straight off the plate's long axis."
+              hint="Along the bar’s travel"
             />
             <Row
               term="Scale — horizontal"
               value={`${mmPerPx(calibration.cmPerPxH)} mm/px`}
-              hint="Across the frame: wider, because the view foreshortens it."
+              hint="Across the frame · wider by foreshortening"
             />
             <Row
               term="Camera angle"
               value={`${num(calibration.viewingAngleDeg, 0)}° off perpendicular`}
-              hint="Derived from how much narrower the plate looks than it is tall."
+              hint="From the plate’s width ÷ height"
             />
             <Row
               term="Outline orientation"
               value={`${num(calibration.tiltDeg, 1)}°`}
-              hint="Which way the outline's long axis leans. It says how the two scales are shared between the image axes — not which way is up. Up is the image vertical, from the tripod."
+              hint="Lean of the outline’s long axis · not which way is up"
             />
           </dl>
 
@@ -197,7 +198,7 @@ export function CalibrationPanel({
                 variant="secondary"
                 onClick={onSnap}
                 disabled={assist.busy !== null}
-                title="Move the outline onto the plate's real edge, to a fraction of a pixel, using the edges in the frame. Says how much of the rim it found."
+                title="Snap the outline to the plate edge, sub-pixel"
               >
                 {assist.busy === 'snap' ? 'Snapping…' : 'Snap to the edge'}
               </Button>
@@ -209,10 +210,7 @@ export function CalibrationPanel({
           {!active && shapeToggle}
           {assist.note && !active && <p style={hintStyle}>{assist.note}</p>}
           {active && (
-            <p style={hintStyle}>
-              Drag the outer handle to size and rotate the plate, the side handle to squash it onto
-              the plate edge, the centre to move it.
-            </p>
+            <p style={hintStyle}>Outer handle: size + rotate · side handle: squash · centre: move</p>
           )}
 
           {/* ── The lens ───────────────────────────────────────────────── */}
@@ -228,8 +226,8 @@ export function CalibrationPanel({
               }
               hint={
                 lens.source === 'none'
-                  ? 'Distortion bends straight lines near the frame edge, and with them the bar path. Filming from a distance on a main lens keeps it small — which is why this is optional — but measuring it removes what is left.'
-                  : 'The clip is measured through this lens: the track and the plate outline are both corrected before anything is computed from them.'
+                  ? 'Bends straight lines near the frame edge · optional, measurable'
+                  : 'Track and outline are corrected through it'
               }
             />
             <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap', marginTop: 'var(--space-xs)' }}>
@@ -238,22 +236,19 @@ export function CalibrationPanel({
                 variant="secondary"
                 onClick={lens.onMeasure}
                 disabled={lens.busy || assist.busy !== null}
-                title="Measure this clip's lens from the straight edges already in shot — a rack upright, a door frame, the line where the wall meets the floor. Whatever correction makes the most of them straightest is the lens. Stored against the phone, so every later clip from it is corrected too."
+                title="Fit the lens to straight edges in shot · stored per phone"
               >
                 {lens.busy ? 'Measuring the lens…' : lens.source === 'none' ? 'Measure the lens' : 'Measure again'}
               </Button>
               {lens.source !== 'none' && (
-                <Button size="sm" variant="ghost" onClick={lens.onClear} title="Forget this phone's lens and go back to no correction">
+                <Button size="sm" variant="ghost" onClick={lens.onClear} title="Back to no correction">
                   Forget it
                 </Button>
               )}
             </div>
             {lens.note && <p style={hintStyle}>{lens.note}</p>}
             {!lens.device && lens.source === 'none' && (
-              <p style={hintStyle}>
-                This clip does not say which phone shot it, so a measurement here cannot be stored for
-                the next one — log clips arrive stripped of that. A direct import usually keeps it.
-              </p>
+              <p style={hintStyle}>No phone model on this clip · a measurement cannot be stored for the next one.</p>
             )}
           </div>
         </>

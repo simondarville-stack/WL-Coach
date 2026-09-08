@@ -183,6 +183,19 @@ All modules are **active** — nothing is currently disabled or hidden:
   pipeline, the library shows such reps and the viewer shows them over
   the Stream player. The server-side worker is designed and costed in the
   plan's §5, not built.
+  From 0.96.0 (`docs/KINEMOS_VIEWER_LAYOUT.md`, the wireframe handoff of
+  08/09/2026 — **direction, not final**): the viewer is **portrait-first,
+  three columns** — the clip (392 px, 600 for a landscape clip) with the
+  transport and a clickable **phase timeline** under it, the **bar-path
+  column** (`components/BarPathPanel.tsx`: bar path, velocity-over-height
+  and their overlay on one height axis, ticks inside the viewBox), and a
+  **panel rail** of seven collapsible panels (`components/RailPanel.tsx`,
+  `hooks/useViewerPanels.ts`) each carrying a headline when collapsed, with
+  **Look / Read / Work** depth presets and the composition remembered per
+  athlete. "This lift" states a **verdict gated on the grade's margin**
+  (`lib/verdict.ts`): a delta inside the margin is "level with", never
+  faster or slower. The doc's §6 lists what the wireframe asked for that is
+  not built yet.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on
