@@ -12,7 +12,7 @@
  * That is a product rule, not copy dressing.
  */
 import { GraduationCap, Plus, Star } from 'lucide-react';
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { Button } from '../../components/ui';
 import type { RepSummary } from '../engine/kinematics';
 import type { LiftMetrics } from '../engine/phases';
@@ -49,7 +49,7 @@ interface LiftPanelProps {
   };
 }
 
-export function LiftPanel({
+function LiftPanelImpl({
   repIndices,
   repIndex,
   repPeaks,
@@ -280,3 +280,5 @@ const addButton: CSSProperties = {
   fontSize: 'var(--text-caption)',
   cursor: 'pointer',
 };
+
+export const LiftPanel = memo(LiftPanelImpl);

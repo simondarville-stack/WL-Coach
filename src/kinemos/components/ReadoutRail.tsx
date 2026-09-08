@@ -17,7 +17,7 @@ import { Camera, Mic, Play, Plus, Square, Trash2 } from 'lucide-react';
 import { VideoLightbox } from '../../components/planner/VideoLightbox';
 import { kinemosObjectUrl } from '../lib/kinemosStorage';
 import { formatTalkoverLength } from '../lib/talkover';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useState, type CSSProperties } from 'react';
 import { Button } from '../../components/ui';
 import type { KinemosAnnotation, KinemosShare } from '../../lib/database.types';
 import { formatDateTimeShort } from '../../lib/dateUtils';
@@ -134,7 +134,7 @@ export interface TalkoverState {
   onToggle: () => void;
 }
 
-export function ReadoutRail({
+function ReadoutRailImpl({
   parts,
   repIndices,
   repIndex,
@@ -834,3 +834,5 @@ const iconButton: CSSProperties = {
   color: 'var(--color-text-tertiary)',
   cursor: 'pointer',
 };
+
+export const ReadoutRail = memo(ReadoutRailImpl);

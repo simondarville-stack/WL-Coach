@@ -8,7 +8,7 @@
  * the eye lands on it first.
  */
 import { Columns2, TrendingUp } from 'lucide-react';
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { Button } from '../../components/ui';
 import { formatDateShort } from '../../lib/dateUtils';
 import type { HistoryRow } from '../lib/history';
@@ -25,7 +25,7 @@ interface HistoryPanelProps {
   onTrends: () => void;
 }
 
-export function HistoryPanel({ rows, exerciseName, comparable, onCompare, canTrend, onTrends }: HistoryPanelProps) {
+function HistoryPanelImpl({ rows, exerciseName, comparable, onCompare, canTrend, onTrends }: HistoryPanelProps) {
   const earlier = rows.filter(r => !r.current && r.analysisId);
   const reference = earlier.find(r => r.isReference) ?? null;
   const latest = earlier[0] ?? null;
@@ -152,3 +152,5 @@ const hint: CSSProperties = {
   lineHeight: 1.4,
   color: 'var(--color-text-tertiary)',
 };
+
+export const HistoryPanel = memo(HistoryPanelImpl);

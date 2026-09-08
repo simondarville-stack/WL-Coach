@@ -12,7 +12,7 @@
  * matters twice over: "weak" and "good" are not obvious from hue alone to a
  * coach glancing at a rail on a bright platform.
  */
-import { useState, type CSSProperties } from 'react';
+import { memo, useState, type CSSProperties } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button, Select } from '../../components/ui';
 import type { CameraStability, QualityGrade } from '../engine/grade';
@@ -45,7 +45,7 @@ const CAMERA_OPTIONS: Array<{ value: CameraStability; label: string }> = [
   { value: 'handheld', label: 'Handheld' },
 ];
 
-export function GradePanel({ grade, camera, onCamera, stabilise, recentre }: GradePanelProps) {
+function GradePanelImpl({ grade, camera, onCamera, stabilise, recentre }: GradePanelProps) {
   // Collapsed by default. The verdict and what to do about it are what a coach
   // reads; the seven conditions behind it are what they read once, when the
   // verdict surprises them. Four panels stacked in a 304 px rail put the
@@ -292,3 +292,5 @@ const hint: CSSProperties = {
   lineHeight: 1.4,
   color: 'var(--color-text-tertiary)',
 };
+
+export const GradePanel = memo(GradePanelImpl);

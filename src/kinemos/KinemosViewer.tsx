@@ -78,14 +78,15 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { historyRows } from './lib/history';
 import { LiftPanel } from './components/LiftPanel';
 import { HeadlineChip, RailPanel } from './components/RailPanel';
+import { useEvent } from './hooks/useEvent';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { DEPTH_LABELS, PANEL_KEYS, useViewerPanels, type ViewerDepth } from './hooks/useViewerPanels';
 import { findEarlierLift, verdictFor } from './lib/verdict';
 import { frameConfidences, lowConfidenceFrames, toTrackPoint } from './lib/trackedPoints';
-import { CalibrationPanel } from './components/CalibrationPanel';
+import { CalibrationPanel, type LensState } from './components/CalibrationPanel';
 import { GradeChip, GradePanel } from './components/GradePanel';
 import { MetricsPanel } from './components/MetricsPanel';
-import { ReadoutRail, type TrackingState } from './components/ReadoutRail';
+import { ReadoutRail, type ShareState, type TalkoverState, type TrackingState } from './components/ReadoutRail';
 import { ViewerStage, type ViewerTool } from './components/ViewerStage';
 import { ViewerTransport } from './components/ViewerTransport';
 import {
@@ -1909,25 +1910,8 @@ export function KinemosViewer() {
     return () => window.removeEventListener('keydown', onKey);
   }, [step, togglePlay, seek, server, resetBoundaries]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  if (loadingClip) {
-    return (
-      <div style={{ display: 'grid', placeItems: 'center', height: '60vh' }}>
-        <Spinner />
-      </div>
-    );
-  }
-
-  if (clipError || !clip) {
-    return (
-      <div style={{ padding: 'var(--space-xl)' }}>
-        <ErrorState message={clipError ?? 'Clip not found.'} onRetry={() => navigate('/kinemos')} />
-      </div>
-    );
-  }
-
   const toggleReference = async () => {
-    if (referenceBusy) return;
+    if (referenceBusy || !clip) return;
     const next = !isReference;
     setReferenceBusy(true);
     try {
@@ -1952,7 +1936,7 @@ export function KinemosViewer() {
    * several models of one lift, and the label is what tells them apart.
    */
   const toggleModel = async () => {
-    if (referenceBusy) return;
+    if (referenceBusy || !clip) return;
     const next = !isModel;
     setReferenceBusy(true);
     try {
@@ -1977,6 +1961,201 @@ export function KinemosViewer() {
     }
   };
 
+
+  // ── Stable handlers and prop objects ─────────────────────────────────────
+  //
+  // The viewer re-renders on every frame. The rail's panels are memoised and
+  // take these — the same identity from one frame to the next — so a frame
+  // step re-renders the stage, the transport, the timeline and the two plots,
+  // and nothing else.
+  const seekT = useCallback(
+    (t: number) => {
+      if (server) seek(server.nearestIndex(t));
+    },
+    [server, seek],
+  );
+  const on = {
+    ellipseChange: useEvent((next: PlateEllipse) => {
+      dirtyRef.current = true;
+      setEllipse(next);
+    }),
+    knee: useEvent((p: PxPoint) => void markKnee(p)),
+    deleteMark: useEvent(() => deleteMarkHere()),
+    clearMarks: useEvent(() => void clearMarks()),
+    saveMeasurement: useEvent(() => void saveMeasurement()),
+    clearMeasurement: useEvent(() => setMeasurePoints([])),
+    addNote: useEvent((body: string) => void addNote(body)),
+    snapshot: useEvent(() => void takeSnapshot()),
+    deleteAnnotation: useEvent((annotationId: string) => void removeAnnotation(annotationId)),
+    track: useEvent(() => void runTrack()),
+    trackSet: useEvent(() => void trackSetNow()),
+    trackMarker: useEvent(() => void runMarkerTrack()),
+    mass: useEvent((kg: number | null) => {
+      dirtyRef.current = true;
+      setMassKg(kg !== null && Number.isFinite(kg) ? kg : null);
+      setMassSource(kg === null ? null : 'manual');
+    }),
+    camera: useEvent((next: CameraStability) => {
+      dirtyRef.current = true;
+      setCamera(next);
+    }),
+    stabilise: useEvent(() => void stabiliseNow()),
+    recentre: useEvent(() => void recentreNow()),
+    plateDiameter: useEvent((cm: number) => {
+      dirtyRef.current = true;
+      setPlateDiameterCm(cm);
+    }),
+    calibrate: useEvent(() => setTool('calibrate')),
+    clearCalibration: useEvent(() => void clearCalibrationNow()),
+    findPlate: useEvent(() => void findPlateHere()),
+    snap: useEvent(() => void snapHere()),
+    measureLens: useEvent(() => void measureLens()),
+    share: useEvent((message: string) => void shareNow(message)),
+    removeShare: useEvent((shareId: string) => void removeShare(shareId)),
+    export: useEvent(() => void exportNow()),
+    shareWithCoach: useEvent((coachId: string, message: string) => void shareWithCoach(coachId, message)),
+    toggleTalkover: useEvent(() => void toggleTalkover()),
+    toggleReference: useEvent(() => void toggleReference()),
+    toggleModel: useEvent(() => void toggleModel()),
+    compare: useEvent((analysisId: string | null) => {
+      setTrending(false);
+      if (analysisId) setComparisonId(analysisId);
+      setComparing(true);
+    }),
+    trends: useEvent(() => {
+      setComparing(false);
+      setTrending(true);
+    }),
+    openShare: useEvent(() => {
+      panels.show('notes');
+      window.setTimeout(() => notesPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 0);
+    }),
+  };
+
+  const markedTimes = useMemo(() => points.map(p => p.t), [points]);
+  const kneeMarked = kneePoint !== null;
+
+  const trackingBase = useMemo<TrackingState>(
+    () => ({
+      canTrack: points.length > 0 && status === 'ready',
+      busy: trackProgress,
+      tier: trackerTier === 'manual' ? 'manual' : 'assisted',
+      uncertainCount: uncertainIndices.length,
+      correctionCount,
+      onTrack: on.track,
+      onNextUncertain: jumpToNextUncertain,
+      onTrackSet: points.length > 0 && status === 'ready' && ellipse ? on.trackSet : undefined,
+      setNote,
+      onTrackMarker: points.length > 0 && status === 'ready' ? on.trackMarker : undefined,
+      uncertainIndices,
+      onJumpTo: seek,
+    }),
+    [points.length, status, trackProgress, trackerTier, uncertainIndices, correctionCount, ellipse, setNote, seek, jumpToNextUncertain, on.track, on.trackSet, on.trackMarker],
+  );
+  const phaseEdges = useMemo(
+    () => (server ? spans.map(s => ({ index: server.nearestIndex(s.fromT), label: s.definition.label })) : []),
+    [server, spans],
+  );
+  /** The tracking panel's state carries the playhead for the strip, so it
+   *  — and only it — follows the frame. */
+  const trackingWithConfidence = useMemo<TrackingState>(
+    () => ({
+      ...trackingBase,
+      confidence: server ? { frames: frameScores, frameCount: server.frameCount, currentIndex: index, edges: phaseEdges } : undefined,
+    }),
+    [trackingBase, server, frameScores, index, phaseEdges],
+  );
+
+  const shareState = useMemo<ShareState | null>(
+    () =>
+      clip
+        ? {
+            athleteName: clip.athleteId ? clip.athleteName ?? 'the athlete' : null,
+            shares,
+            busy: shareBusy,
+            note: shareNote,
+            ready: points.length > 1 && calibration !== null && repSummary !== null,
+            onShare: on.share,
+            onDelete: on.removeShare,
+            onExport: on.export,
+            exporting,
+            exportNote,
+            talkoverIncluded: latestTalkover !== null,
+            colleagues,
+            onShareWithCoach: on.shareWithCoach,
+          }
+        : null,
+    [clip, shares, shareBusy, shareNote, points.length, calibration, repSummary, exporting, exportNote, latestTalkover, colleagues, on.share, on.removeShare, on.export, on.shareWithCoach],
+  );
+  const talkoverState = useMemo<TalkoverState | null>(
+    () =>
+      talkoverMimeType() === null
+        ? null
+        : { recording: talkover !== null, startedAt: talkover?.startedAt ?? null, busy: talkoverBusy, note: talkoverNote, onToggle: on.toggleTalkover },
+    [talkover, talkoverBusy, talkoverNote, on.toggleTalkover],
+  );
+  const liftMarks = useMemo(
+    () => ({
+      comparable,
+      busy: referenceBusy,
+      isReference,
+      onToggleReference: on.toggleReference,
+      isModel,
+      modelLabel,
+      onToggleModel: on.toggleModel,
+      athleteName: clip?.athleteName ?? null,
+      exerciseName: clip?.exerciseName ?? null,
+    }),
+    [comparable, referenceBusy, isReference, isModel, modelLabel, clip?.athleteName, clip?.exerciseName, on.toggleReference, on.toggleModel],
+  );
+  const earlierForMetrics = useMemo(
+    () =>
+      earlierLift
+        ? {
+            lift: { metrics: earlierLift.metrics, summary: earlierLift.metrics.summary },
+            label: earlierLift.date ? formatDateShort(earlierLift.date) : 'earlier',
+          }
+        : null,
+    [earlierLift],
+  );
+  const lensState = useMemo<LensState>(
+    () => ({
+      source: lensSource,
+      k1: lensK1,
+      device: [clip?.deviceMake, clip?.deviceModel].filter(Boolean).join(' ') || null,
+      busy: lensBusy,
+      note: lensNote,
+      onMeasure: on.measureLens,
+      onClear: clearLens,
+    }),
+    [lensSource, lensK1, clip?.deviceMake, clip?.deviceModel, lensBusy, lensNote, clearLens, on.measureLens],
+  );
+  const stabiliseState = useMemo(
+    () => (points.length >= 8 ? { onRun: on.stabilise, progress: stabiliseProgress, note: stabiliseNote } : undefined),
+    [points.length, stabiliseProgress, stabiliseNote, on.stabilise],
+  );
+  const recentreState = useMemo(
+    () => (points.length >= 8 && ellipse ? { onRun: on.recentre, progress: recentreProgress, note: recentreNote } : undefined),
+    [points.length, ellipse, recentreProgress, recentreNote, on.recentre],
+  );
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  if (loadingClip) {
+    return (
+      <div style={{ display: 'grid', placeItems: 'center', height: '60vh' }}>
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (clipError || !clip) {
+    return (
+      <div style={{ padding: 'var(--space-xl)' }}>
+        <ErrorState message={clipError ?? 'Clip not found.'} onRetry={() => navigate('/kinemos')} />
+      </div>
+    );
+  }
+
   const title = clip.exerciseName ?? 'Clip';
   const loadLabel =
     clip.loadKg !== null ? `${num(clip.loadKg, clip.loadKg % 1 === 0 ? 0 : 1)} kg${clip.loadIsTopSet ? ' (top set)' : ''}` : null;
@@ -1991,17 +2170,6 @@ export function KinemosViewer() {
     ? server.displayHeight >= server.displayWidth
     : (clip.height ?? 0) >= (clip.width ?? 0);
   const videoWidth = portrait ? 392 : 600;
-
-  const openShare = () => {
-    panels.show('notes');
-    window.setTimeout(() => notesPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 0);
-  };
-
-  const openComparison = (analysisId: string | null) => {
-    setTrending(false);
-    if (analysisId) setComparisonId(analysisId);
-    setComparing(true);
-  };
 
   const gradeTone = grade.grade === 'A' ? 'success' : grade.grade === 'B' ? 'warning' : grade.grade === 'C' ? 'danger' : 'neutral';
 
@@ -2049,32 +2217,6 @@ export function KinemosViewer() {
    *  sentence lives in the bar-path column, the terse one in the rail. */
   const embedEmpty = embedded && !kinematics ? 'No stored rep — analysed on the athlete’s phone.' : null;
   const railEmptyReason = embedEmpty ?? metricsEmptyReason;
-
-  /** Everything the rail needs to offer, and report on, assisted tracking —
-   *  built once, because two panels (the tracking panel and the tool
-   *  readout under the stage) render the rail's sections. */
-  const trackingState: TrackingState = {
-    canTrack: points.length > 0 && status === 'ready',
-    busy: trackProgress,
-    tier: trackerTier === 'manual' ? 'manual' : 'assisted',
-    uncertainCount: uncertainIndices.length,
-    correctionCount,
-    onTrack: () => void runTrack(),
-    onNextUncertain: jumpToNextUncertain,
-    onTrackSet: points.length > 0 && status === 'ready' && ellipse ? () => void trackSetNow() : undefined,
-    setNote,
-    onTrackMarker: points.length > 0 && status === 'ready' ? () => void runMarkerTrack() : undefined,
-    uncertainIndices,
-    onJumpTo: seek,
-    confidence: server
-      ? {
-          frames: frameScores,
-          frameCount: server.frameCount,
-          currentIndex: index,
-          edges: spans.map(s => ({ index: server.nearestIndex(s.fromT), label: s.definition.label })),
-        }
-      : undefined,
-  };
 
   return (
     <div
@@ -2182,7 +2324,7 @@ export function KinemosViewer() {
             title: depth === 'look' ? 'Lift only' : depth === 'read' ? 'Lift, velocity, metrics, history' : 'Everything',
           }))}
         />
-        <Button size="sm" variant="primary" icon={<Share2 size={12} />} onClick={openShare} title="Send, or export with the bar path">
+        <Button size="sm" variant="primary" icon={<Share2 size={12} />} onClick={on.openShare} title="Send, or export with the bar path">
           Share
         </Button>
       </header>
@@ -2398,15 +2540,12 @@ export function KinemosViewer() {
                 currentT={currentT}
                 showPath
                 ellipse={ellipse}
-                onEllipseChange={next => {
-                  dirtyRef.current = true;
-                  setEllipse(next);
-                }}
+                onEllipseChange={on.ellipseChange}
                 measurePoints={measurePoints}
                 onMeasurePoint={addMeasurePoint}
                 onMark={handleMark}
                 knee={kneePoint}
-                onKnee={p => void markKnee(p)}
+                onKnee={on.knee}
               />
             )}
           </div>
@@ -2427,7 +2566,7 @@ export function KinemosViewer() {
                 timestamps={server.timestamps}
                 playing={playing}
                 speed={speed}
-                markedTimes={points.map(p => p.t)}
+                markedTimes={markedTimes}
                 uncertainIndices={uncertainIndices}
                 liftSpans={liftSpans}
                 fps={server.averageFps}
@@ -2446,9 +2585,7 @@ export function KinemosViewer() {
                 onBoundaryDrag={dragBoundary}
                 onBoundaryCommit={commitBoundary}
                 currentT={currentT}
-                onSeekT={t => {
-                  if (server) seek(server.nearestIndex(t));
-                }}
+                onSeekT={seekT}
                 emptyReason={railEmptyReason}
               />
             )}
@@ -2471,21 +2608,21 @@ export function KinemosViewer() {
                 onAddRep={addRep}
                 metrics={metrics}
                 markedHere={false}
-                onDeleteMark={deleteMarkHere}
-                onClearMarks={() => void clearMarks()}
+                onDeleteMark={on.deleteMark}
+                onClearMarks={on.clearMarks}
                 tool={tool}
                 measureValue={measureValue}
                 kneeCm={kneeCm}
-                kneeMarked={kneePoint !== null}
+                kneeMarked={kneeMarked}
                 measureComplete={measureComplete}
-                onSaveMeasurement={() => void saveMeasurement()}
-                onClearMeasurement={() => setMeasurePoints([])}
+                onSaveMeasurement={on.saveMeasurement}
+                onClearMeasurement={on.clearMeasurement}
                 annotations={annotations}
-                onAddNote={body => void addNote(body)}
-                onSnapshot={() => void takeSnapshot()}
-                onDeleteAnnotation={annotationId => void removeAnnotation(annotationId)}
+                onAddNote={on.addNote}
+                onSnapshot={on.snapshot}
+                onDeleteAnnotation={on.deleteAnnotation}
                 snapshotBusy={snapshotBusy}
-                tracking={trackingState}
+                tracking={trackingBase}
               />
             </div>
           )}
@@ -2499,9 +2636,7 @@ export function KinemosViewer() {
             analyzer={liftMetrics?.analyzer ?? null}
             summary={repSummary}
             currentT={currentT}
-            onSeekT={t => {
-              if (server) seek(server.nearestIndex(t));
-            }}
+            onSeekT={seekT}
             emptyReason={railEmptyReason}
             kneeCm={kneeCm}
           />
@@ -2536,17 +2671,7 @@ export function KinemosViewer() {
               summary={repSummary}
               emptyReason={railEmptyReason}
               verdict={verdict}
-              marks={{
-                comparable,
-                busy: referenceBusy,
-                isReference,
-                onToggleReference: () => void toggleReference(),
-                isModel,
-                modelLabel,
-                onToggleModel: () => void toggleModel(),
-                athleteName: clip.athleteName,
-                exerciseName: clip.exerciseName,
-              }}
+              marks={liftMarks}
             />
           </RailPanel>
 
@@ -2565,9 +2690,7 @@ export function KinemosViewer() {
               spans={spans}
               boundaries={boundaries}
               currentT={currentT}
-              onSeekT={t => {
-                if (server) seek(server.nearestIndex(t));
-              }}
+              onSeekT={seekT}
               emptyReason={railEmptyReason}
               kneeCm={kneeCm}
             />
@@ -2590,21 +2713,10 @@ export function KinemosViewer() {
               summary={repSummary}
               massKg={massKg}
               massSource={massSource}
-              onMass={kg => {
-                dirtyRef.current = true;
-                setMassKg(kg !== null && Number.isFinite(kg) ? kg : null);
-                setMassSource(kg === null ? null : 'manual');
-              }}
+              onMass={on.mass}
               emptyReason={metricsEmptyReason}
               knee={kneeReadout}
-              earlier={
-                earlierLift
-                  ? {
-                      lift: { metrics: earlierLift.metrics, summary: earlierLift.metrics.summary },
-                      label: earlierLift.date ? formatDateShort(earlierLift.date) : 'earlier',
-                    }
-                  : null
-              }
+              earlier={earlierForMetrics}
               marginMs={grade.expectedVelocityErrorMs}
             />
           </RailPanel>
@@ -2623,40 +2735,23 @@ export function KinemosViewer() {
               onAddRep={addRep}
               metrics={metrics}
               markedHere={currentT !== null && points.some(p => Math.abs(p.t - currentT) < 1e-6)}
-              onDeleteMark={deleteMarkHere}
-              onClearMarks={() => void clearMarks()}
+              onDeleteMark={on.deleteMark}
+              onClearMarks={on.clearMarks}
               tool={tool}
               measureValue={measureValue}
               kneeCm={kneeCm}
-              kneeMarked={kneePoint !== null}
+              kneeMarked={kneeMarked}
               measureComplete={measureComplete}
-              onSaveMeasurement={() => void saveMeasurement()}
-              onClearMeasurement={() => setMeasurePoints([])}
+              onSaveMeasurement={on.saveMeasurement}
+              onClearMeasurement={on.clearMeasurement}
               annotations={annotations}
-              onAddNote={body => void addNote(body)}
-              onSnapshot={() => void takeSnapshot()}
-              onDeleteAnnotation={annotationId => void removeAnnotation(annotationId)}
+              onAddNote={on.addNote}
+              onSnapshot={on.snapshot}
+              onDeleteAnnotation={on.deleteAnnotation}
               snapshotBusy={snapshotBusy}
-              tracking={trackingState}
+              tracking={trackingWithConfidence}
             />
-            <GradePanel
-              grade={grade}
-              camera={camera}
-              onCamera={next => {
-                dirtyRef.current = true;
-                setCamera(next);
-              }}
-              stabilise={
-                points.length >= 8
-                  ? { onRun: () => void stabiliseNow(), progress: stabiliseProgress, note: stabiliseNote }
-                  : undefined
-              }
-              recentre={
-                points.length >= 8 && ellipse
-                  ? { onRun: () => void recentreNow(), progress: recentreProgress, note: recentreNote }
-                  : undefined
-              }
-            />
+            <GradePanel grade={grade} camera={camera} onCamera={on.camera} stabilise={stabiliseState} recentre={recentreState} />
           </RailPanel>
 
           <RailPanel
@@ -2671,26 +2766,15 @@ export function KinemosViewer() {
               calibration={calibration}
               plateDiameterCm={plateDiameterCm}
               active={tool === 'calibrate'}
-              onPlateDiameter={cm => {
-                dirtyRef.current = true;
-                setPlateDiameterCm(cm);
-              }}
-              onActivate={() => setTool('calibrate')}
-              onClear={() => void clearCalibrationNow()}
-              onFind={() => void findPlateHere()}
-              onSnap={() => void snapHere()}
+              onPlateDiameter={on.plateDiameter}
+              onActivate={on.calibrate}
+              onClear={on.clearCalibration}
+              onFind={on.findPlate}
+              onSnap={on.snap}
               assist={assist}
               shape={plateShape}
               onShape={setPlateShape}
-              lens={{
-                source: lensSource,
-                k1: lensK1,
-                device: [clip.deviceMake, clip.deviceModel].filter(Boolean).join(' ') || null,
-                busy: lensBusy,
-                note: lensNote,
-                onMeasure: () => void measureLens(),
-                onClear: clearLens,
-              }}
+              lens={lensState}
             />
           </RailPanel>
 
@@ -2704,12 +2788,9 @@ export function KinemosViewer() {
               rows={history}
               exerciseName={clip.exerciseName}
               comparable={comparable}
-              onCompare={openComparison}
+              onCompare={on.compare}
               canTrend={clip.athleteId !== null}
-              onTrends={() => {
-                setComparing(false);
-                setTrending(true);
-              }}
+              onTrends={on.trends}
             />
           </RailPanel>
 
@@ -2728,47 +2809,23 @@ export function KinemosViewer() {
               onAddRep={addRep}
               metrics={metrics}
               markedHere={false}
-              onDeleteMark={deleteMarkHere}
-              onClearMarks={() => void clearMarks()}
+              onDeleteMark={on.deleteMark}
+              onClearMarks={on.clearMarks}
               tool={tool}
               measureValue={measureValue}
               kneeCm={kneeCm}
-              kneeMarked={kneePoint !== null}
-              share={{
-                athleteName: clip.athleteId ? clip.athleteName ?? 'the athlete' : null,
-                shares,
-                busy: shareBusy,
-                note: shareNote,
-                ready: points.length > 1 && calibration !== null && repSummary !== null,
-                onShare: message => void shareNow(message),
-                onDelete: shareId => void removeShare(shareId),
-                onExport: () => void exportNow(),
-                exporting,
-                exportNote,
-                talkoverIncluded: latestTalkover !== null,
-                colleagues,
-                onShareWithCoach: (coachId, message) => void shareWithCoach(coachId, message),
-              }}
-              talkover={
-                talkoverMimeType() === null
-                  ? null
-                  : {
-                      recording: talkover !== null,
-                      startedAt: talkover?.startedAt ?? null,
-                      busy: talkoverBusy,
-                      note: talkoverNote,
-                      onToggle: () => void toggleTalkover(),
-                    }
-              }
+              kneeMarked={kneeMarked}
+              share={shareState}
+              talkover={talkoverState}
               measureComplete={measureComplete}
-              onSaveMeasurement={() => void saveMeasurement()}
-              onClearMeasurement={() => setMeasurePoints([])}
+              onSaveMeasurement={on.saveMeasurement}
+              onClearMeasurement={on.clearMeasurement}
               annotations={annotations}
-              onAddNote={body => void addNote(body)}
-              onSnapshot={() => void takeSnapshot()}
-              onDeleteAnnotation={annotationId => void removeAnnotation(annotationId)}
+              onAddNote={on.addNote}
+              onSnapshot={on.snapshot}
+              onDeleteAnnotation={on.deleteAnnotation}
               snapshotBusy={snapshotBusy}
-              tracking={trackingState}
+              tracking={trackingBase}
             />
           </RailPanel>
         </div>

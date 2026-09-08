@@ -22,6 +22,7 @@
  * drawn directly than configured through a library.
  */
 import {
+  memo,
   useCallback,
   useMemo,
   useRef,
@@ -149,7 +150,7 @@ function capturePointer(element: Element, pointerId: number): void {
  * chart in the rail, so phases read across the video, the timeline and the
  * chart identically.
  */
-export function PhaseTimeline({
+function PhaseTimelineImpl({
   series,
   spans,
   boundaries,
@@ -368,7 +369,7 @@ function Key({ children }: { children: string }) {
  * slot is theirs to choose. The playhead on it is the same one as the video's:
  * the frame number is single-source, and a press on the plot moves it.
  */
-export function VelocityChart({
+function VelocityChartImpl({
   series,
   spans,
   boundaries,
@@ -823,8 +824,13 @@ function Curves({
   currentT: number | null;
   onSeekT: (t: number) => void;
 }) {
-  const vPath = pathFor(series.t, series.vyMs, fractionOf, W, H, TOP);
-  const sPath = secondaryValues ? pathFor(series.t, secondaryValues, fractionOf, W, H, TOP) : null;
+  // The path strings are the cost of this chart; the playhead is not. Built
+  // once per series, not once per frame.
+  const vPath = useMemo(() => pathFor(series.t, series.vyMs, fractionOf, W, H, TOP), [series, fractionOf]);
+  const sPath = useMemo(
+    () => (secondaryValues ? pathFor(series.t, secondaryValues, fractionOf, W, H, TOP) : null),
+    [series, secondaryValues, fractionOf],
+  );
 
   // Where zero velocity sits, so "the bar is coming back down" is visible as a
   // crossing rather than having to be read off an axis.
@@ -1083,3 +1089,6 @@ const captionStyle = {
   fontSize: 'var(--text-caption)',
   color: 'var(--color-text-tertiary)',
 };
+
+export const PhaseTimeline = memo(PhaseTimelineImpl);
+export const VelocityChart = memo(VelocityChartImpl);

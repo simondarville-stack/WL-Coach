@@ -5,7 +5,7 @@
 Design exploration of 08/09/2026 (four turns, fifteen options; the chosen
 screen is `4a`). The wireframes were greybox at real EMOS density and are
 binding on **structure, behaviour, information hierarchy and wording**, and
-advisory on styling. §6 says what 0.96.0 built and what is still open.
+advisory on styling. §6 says what 0.96.0 and 0.97.0 built and what is still open.
 
 ## 1. What the revision settles
 
@@ -98,6 +98,13 @@ ratio. Three modes:
 | Bar x tick row | y 518 | – | y 518 |
 | Velocity tick row | – | y 518 | **y 532** |
 | Legend chips | bar-path row | velocity row | **both rows** |
+
+The bar path is drawn **1:1 with the height axis** — a centimetre sideways
+is as long as a centimetre up, so the loop on screen is the loop the bar
+made — with a `×1 | ×2 | ×4` control that exaggerates the horizontal only;
+the tick labels stay in real centimetres and the plot says `x ×2`
+(`lib/barPathGeometry.ts`). Velocity has no shared scale with height and
+takes the plot's width.
 
 Marker *shape* separates the series in Combined, because marker *colour*
 encodes the event and is reused across both. Two tick rows and two legend

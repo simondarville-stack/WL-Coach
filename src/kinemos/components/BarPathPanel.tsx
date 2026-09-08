@@ -17,9 +17,24 @@
  * The plot is portrait — `0 0 200 540` — because the clip it sits beside is
  * portrait and the axis it shares with it is height.
  */
-import { useCallback, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import type { KinematicSeries, RepSummary } from '../engine/kinematics';
 import { locateAnalyzerEvents, valueAt, type AnalyzerEvent, type AnalyzerMetrics, type PhaseSpan } from '../engine/phases';
+import {
+  BASE,
+  EXAGGERATIONS,
+  LABEL_X,
+  TICK_ROW_1,
+  TICK_ROW_2,
+  TOP,
+  VB_H,
+  VB_W,
+  X_MAX,
+  X_MIN,
+  barPathGeometry,
+  type BarPathGeometry,
+  type Exaggeration,
+} from '../lib/barPathGeometry';
 import { num } from '../lib/viewerFormat';
 
 export type PathMode = 'path' | 'velocity' | 'both';
@@ -47,29 +62,13 @@ const EVENT_COLORS = {
   vmin: '#D85A30',
 } as const;
 
-// ── ViewBox geometry ───────────────────────────────────────────────────────
-const VB_W = 200;
-const VB_H = 540;
-/** The plot's vertical extent: the shared height axis runs from BASE (0 cm
- *  at the bottom) up to TOP. */
-const TOP = 34;
-const BASE = 500;
-/** The curves' horizontal extent; the right of it is the label gutter for
- *  the height reference lines. */
-const X_MIN = 24;
-const X_MAX = 136;
-const LABEL_X = 150;
-/** Where the tick rows print. In Combined mode the two rows stack. */
-const TICK_ROW_1 = 518;
-const TICK_ROW_2 = 532;
-
 const MODES: Array<{ id: PathMode; label: string; title: string }> = [
   { id: 'path', label: 'Bar path', title: 'x vs height' },
   { id: 'velocity', label: 'Velocity path', title: 'v vs height' },
   { id: 'both', label: 'Combined', title: 'Both on one height axis' },
 ];
 
-export function BarPathPanel({
+function BarPathPanelImpl({
   series,
   spans,
   analyzer,
@@ -80,11 +79,12 @@ export function BarPathPanel({
   kneeCm = null,
 }: BarPathPanelProps) {
   const [mode, setMode] = useState<PathMode>('path');
+  const [exaggeration, setExaggeration] = useState<Exaggeration>(1);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const showPath = mode !== 'velocity';
   const showVelocity = mode !== 'path';
 
-  const geometry = useMemo(() => (series ? geometryFor(series) : null), [series]);
+  const geometry = useMemo(() => (series ? barPathGeometry(series, exaggeration) : null), [series, exaggeration]);
   const events = useMemo(() => (series ? locateAnalyzerEvents(series, spans) : null), [series, spans]);
   const here = useMemo(
     () => (series && currentT !== null ? nearestIndex(series.t, currentT) : null),
@@ -138,21 +138,40 @@ export function BarPathPanel({
         <span style={caption}>height on y</span>
       </header>
 
-      <div role="radiogroup" aria-label="Plot" style={{ display: 'flex', gap: 4, padding: '8px 10px 0', flexShrink: 0 }}>
-        {MODES.map(option => (
-          <button
-            key={option.id}
-            type="button"
-            role="radio"
-            aria-checked={mode === option.id}
-            title={option.title}
-            onClick={() => setMode(option.id)}
-            disabled={!series}
-            style={pill(mode === option.id, !series)}
-          >
-            {option.label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 10px 0', flexShrink: 0, flexWrap: 'wrap' }}>
+        <div role="radiogroup" aria-label="Plot" style={{ display: 'flex', gap: 4 }}>
+          {MODES.map(option => (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={mode === option.id}
+              title={option.title}
+              onClick={() => setMode(option.id)}
+              disabled={!series}
+              style={pill(mode === option.id, !series)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {showPath && (
+          <div role="radiogroup" aria-label="Horizontal scale" title="Horizontal scale · ×1 is 1:1 with height" style={{ display: 'flex', gap: 2, marginLeft: 'auto' }}>
+            {EXAGGERATIONS.map(factor => (
+              <button
+                key={factor}
+                type="button"
+                role="radio"
+                aria-checked={exaggeration === factor}
+                onClick={() => setExaggeration(factor)}
+                disabled={!series}
+                style={{ ...pill(exaggeration === factor, !series), padding: '2px 6px', fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)' }}
+              >
+                {`×${factor}`}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', justifyContent: 'center', padding: '8px 10px 4px' }}>
@@ -189,6 +208,7 @@ export function BarPathPanel({
                 tickRow={TICK_ROW_1}
                 labelOrigin={mode === 'both'}
                 here={here}
+                exaggeration={exaggeration}
               />
             )}
           </svg>
@@ -224,58 +244,6 @@ export function BarPathPanel({
   );
 }
 
-// ── Geometry ───────────────────────────────────────────────────────────────
-
-interface Geometry {
-  yOf: (cm: number) => number;
-  xOfPath: (cm: number) => number;
-  xOfVelocity: (ms: number) => number;
-  /** Tick values, in the series' own units. */
-  pathTicks: number[];
-  velocityTicks: number[];
-  /** Whether the origin of each horizontal axis is inside the plot. */
-  pathZeroX: number;
-  velocityZeroX: number;
-}
-
-function geometryFor(series: KinematicSeries): Geometry {
-  const height = rangeOf(series.yCm);
-  const pad = height.span * 0.03;
-  const lo = height.min - pad;
-  const hi = height.max + pad;
-  const yOf = (cm: number) => BASE - ((cm - lo) / (hi - lo || 1)) * (BASE - TOP);
-
-  // Bar path: centred on x = 0 (the start), symmetric, so a loop-back to the
-  // left and a drift to the right read against the same origin.
-  const maxAbsX = Math.max(1, ...series.xCm.filter(Number.isFinite).map(Math.abs));
-  const centre = (X_MIN + X_MAX) / 2;
-  const kx = ((X_MAX - X_MIN) / 2 - 4) / maxAbsX;
-  const xOfPath = (cm: number) => centre + cm * kx;
-  // One tick either side of the origin, at the largest "nice" step that is
-  // still inside the loop — a tick past the data would be filtered off the
-  // plot and leave a lone zero.
-  const pathStep = [50, 20, 10, 5, 2, 1].find(step => step <= maxAbsX * 0.95) ?? 1;
-  const pathTicks = [-pathStep, 0, pathStep];
-
-  // Velocity: the range the lift actually covered, zero always inside it so
-  // "the bar is coming back down" is a crossing rather than an off-plot fact.
-  const v = rangeOf(series.vyMs);
-  const vLo = Math.min(0, v.min) - v.span * 0.04;
-  const vHi = Math.max(0, v.max) + v.span * 0.04;
-  const kv = (X_MAX - X_MIN) / (vHi - vLo || 1);
-  const xOfVelocity = (ms: number) => X_MIN + (ms - vLo) * kv;
-  // A label is ~20 viewBox units wide; the step is the smallest of 0,5 / 1 /
-  // 2 m/s that keeps neighbours apart, so a 2,5 m/s range gets three ticks
-  // rather than six that overprint.
-  const velocityStep = [0.5, 1, 2].find(step => step * kv >= 26) ?? 2;
-  const velocityTicks: number[] = [];
-  for (let tick = Math.ceil(vLo / velocityStep) * velocityStep; tick <= vHi + 1e-9; tick += velocityStep) {
-    velocityTicks.push(Number(tick.toFixed(2)));
-  }
-
-  return { yOf, xOfPath, xOfVelocity, pathTicks, velocityTicks, pathZeroX: xOfPath(0), velocityZeroX: xOfVelocity(0) };
-}
-
 // ── Layers ─────────────────────────────────────────────────────────────────
 
 function PathLayer({
@@ -285,13 +253,15 @@ function PathLayer({
   tickRow,
   labelOrigin,
   here,
+  exaggeration,
 }: {
   series: KinematicSeries;
-  geometry: Geometry;
+  geometry: BarPathGeometry;
   events: ReturnType<typeof locateAnalyzerEvents> | null;
   tickRow: number;
   labelOrigin: boolean;
   here: number | null;
+  exaggeration: Exaggeration;
 }) {
   const d = useMemo(() => {
     let path = '';
@@ -360,6 +330,11 @@ function PathLayer({
           x = 0
         </text>
       )}
+      {exaggeration > 1 && (
+        <text x={X_MIN} y={VB_H - 4} style={tickText(BAR_PATH_COLOR)}>
+          {`x ×${exaggeration}`}
+        </text>
+      )}
       {here !== null && (
         <circle
           cx={geometry.xOfPath(series.xCm[here])}
@@ -383,7 +358,7 @@ function VelocityLayer({
   here,
 }: {
   series: KinematicSeries;
-  geometry: Geometry;
+  geometry: BarPathGeometry;
   events: ReturnType<typeof locateAnalyzerEvents> | null;
   tickRow: number;
   labelOrigin: boolean;
@@ -461,7 +436,7 @@ function HeightLine({
   label,
   color,
 }: {
-  geometry: Geometry;
+  geometry: BarPathGeometry;
   cm: number | null;
   label: string;
   color?: string;
@@ -520,18 +495,6 @@ function LegendChip({ color, children }: { color: string; children: string }) {
 
 function cm(value: number | null | undefined): string {
   return value === null || value === undefined || !Number.isFinite(value) ? '—' : `${num(value, 1)} cm`;
-}
-
-function rangeOf(values: readonly number[]): { min: number; max: number; span: number } {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const v of values) {
-    if (!Number.isFinite(v)) continue;
-    min = Math.min(min, v);
-    max = Math.max(max, v);
-  }
-  if (!Number.isFinite(min)) return { min: 0, max: 1, span: 1 };
-  return { min, max, span: max - min || 1 };
 }
 
 function nearestIndex(t: readonly number[], at: number): number {
@@ -623,3 +586,5 @@ const caption: CSSProperties = {
   lineHeight: 1.4,
   color: 'var(--color-text-tertiary)',
 };
+
+export const BarPathPanel = memo(BarPathPanelImpl);
