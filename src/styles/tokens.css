@@ -443,6 +443,11 @@ samp {
   font-weight: 500;
   opacity: 0.8;
 }
+/* A line planned above the athlete's PR at that rep count (lib/prLimits):
+   load and reps go bold, the set count stays as it is. */
+.pgrid-beyond-pr .pgrid-btn:not(.pgrid-btn-sets) {
+  font-weight: 700;
+}
 /* Attention pulse for a PR cell deep-linked from a dashboard activity. */
 @keyframes pr-cell-blink {
   0%, 100% { box-shadow: 0 0 0 0 transparent; }

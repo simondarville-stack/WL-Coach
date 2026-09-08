@@ -69,9 +69,12 @@ interface PRTrackingPanelProps {
   /** When set (from a dashboard PR activity), scroll to and blink this cell. */
   highlightExerciseId?: string | null;
   highlightRepCount?: number | null;
+  /** Pre-fills the search box — the planner opens the table on the lift
+   *  being planned. The coach clears it to see the whole table. */
+  initialSearch?: string;
 }
 
-export function PRTrackingPanel({ athlete, onClose, highlightExerciseId, highlightRepCount }: PRTrackingPanelProps) {
+export function PRTrackingPanel({ athlete, onClose, highlightExerciseId, highlightRepCount, initialSearch }: PRTrackingPanelProps) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [history, setHistory] = useState<AthletePRHistory[]>([]);
   const [mode, setMode] = usePREstimationMode();
@@ -87,7 +90,7 @@ export function PRTrackingPanel({ athlete, onClose, highlightExerciseId, highlig
   const [error, setError] = useState<string | null>(null);
 
   // Filter + sort state
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearch ?? '');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   // Sort key is 'name' (alpha), 'category' (alpha), a RepCount number
   // (sort by current cell value), or 'e1RM' (sort by the implied 1RM

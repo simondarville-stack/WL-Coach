@@ -2,12 +2,16 @@
 // TODO: Consider extracting media gallery into ExerciseMediaGallery sub-component
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { unitOf, unitSuffix, type MacroTargetUnit } from '../../lib/macroTargetUnit';
-import { X, ArrowLeft, Video, Upload, Replace } from 'lucide-react';
+import { X, ArrowLeft, Video, Upload, Replace, Trophy } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
-  PlannedExercise, Exercise,
+  PlannedExercise, Exercise, Athlete,
   AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry,
 } from '../../lib/database.types';
+import type { PRLimitSet } from '../../lib/prLimits';
+import { parsePrescription } from '../../lib/prescriptionParser';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
+import { PRTrackingPanel } from './PRTrackingPanel';
 import type { MacroContext } from './WeeklyPlanner';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { plannedNote } from '../../lib/plannedNote';
@@ -70,6 +74,14 @@ interface ExerciseDetailProps {
   athleteId: string;
   macroContext: MacroContext | null;
   athletePRs: AthletePR[];
+  /** The athlete's PR limits for this row (lib/prLimits): a line above them
+   *  renders bold in the grid and in "other days". Null on a group plan. */
+  prLimits?: PRLimitSet | null;
+  /** The athlete being planned — the PR table opens for them. Null on a
+   *  group plan, which hides the trophy. */
+  athlete?: Athlete | null;
+  /** The PR table was open and may have changed a PR — reload the limits. */
+  onPRsChanged?: () => void;
   dayLabels: Record<number, string>;
   settings: GeneralSettings | null;
   allExercises: Exercise[];
@@ -102,6 +114,9 @@ export function ExerciseDetail({
   weekStart,
   athleteId,
   macroContext,
+  prLimits = null,
+  athlete = null,
+  onPRsChanged,
   dayLabels,
   allExercises,
   onClose,
@@ -194,6 +209,8 @@ export function ExerciseDetail({
   const comboNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSwapPicker, setShowSwapPicker] = useState(false);
   const [showComboEditor, setShowComboEditor] = useState(false);
+  /** The athlete's PR table, opened on the lift being viewed. */
+  const [showPRs, setShowPRs] = useState(false);
 
   const debouncedRefresh = useCallback(() => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -405,6 +422,22 @@ export function ExerciseDetail({
     ? members.map(m => m.exercise.name).join(' + ') || 'Combo'
     : plannedExercise?.exercise.name ?? 'Exercise';
 
+  /** The lift the PR table opens on: the viewed member of a complex, else the
+   *  row's own exercise (a complex's row points at its first member). */
+  const prExerciseName =
+    allExercises.find(e => e.id === viewExerciseId)?.name
+    ?? members.find(m => m.exerciseId === viewExerciseId)?.exercise.name
+    ?? plannedExercise?.exercise.name
+    ?? 'this lift';
+  /** The cell to blink: the rep count of the first planned line, so the
+   *  table lands on the xRM the plan is testing. A complex has no single rep
+   *  count — its 1RM cell stands in. */
+  const prHighlightRep = (() => {
+    if (!plannedExercise || isCombo || plannedExercise.unit === 'free_text_reps') return 1;
+    const first = parsePrescription(plannedExercise.prescription_raw ?? '')[0];
+    return first && first.reps >= 1 && first.reps <= 10 ? first.reps : 1;
+  })();
+
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '6px 8px', fontSize: 13,
     border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)',
@@ -509,6 +542,21 @@ export function ExerciseDetail({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {plannedExercise && !sentinel && athlete && (
+            <button
+              onClick={() => setShowPRs(true)}
+              title={`PR table — ${prExerciseName}`}
+              style={{
+                padding: 4, borderRadius: 'var(--radius-sm)', border: 'none',
+                background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)',
+                display: 'flex', alignItems: 'center',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; (e.currentTarget as HTMLButtonElement).style.color = '#F59E0B'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
+            >
+              <Trophy size={14} />
+            </button>
+          )}
           {plannedExercise && !sentinel && (
             <button
               onClick={() => {
@@ -924,6 +972,7 @@ export function ExerciseDetail({
                 defaultLoad={defaultPrescriptionLoad}
                 isCombo={isCombo}
                 comboPartCount={isCombo ? (members.length || 2) : undefined}
+                prLimits={prLimits}
                 onSave={(raw, unitOverride) => {
                   const effective = (unitOverride ?? unit) as DefaultUnit;
                   if (unitOverride && unitOverride !== unit) setUnit(unitOverride);
@@ -985,7 +1034,7 @@ export function ExerciseDetail({
                             </span>
                           )}
                           {d.prescriptionRaw
-                            ? <StackedNotation raw={d.prescriptionRaw} unit={d.unit} isCombo={d.isCombo} />
+                            ? <StackedNotation raw={d.prescriptionRaw} unit={d.unit} isCombo={d.isCombo} prLimits={d.isCombo === isCombo ? prLimits : null} />
                             : <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>not yet planned</span>}
                         </td>
                         <td style={{ padding: '6px 0', verticalAlign: 'top', color: 'var(--color-text-secondary)', textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -1086,6 +1135,37 @@ export function ExerciseDetail({
           no explicit Save button. Media uploads persist immediately. */}
 
       {/* Combo edit modal — reopens the same creator UI pre-filled */}
+      {showPRs && plannedExercise && athlete && (
+        <AdaptiveDialog
+          onClose={() => { setShowPRs(false); onPRsChanged?.(); }}
+          maxWidth={1040}
+          panel="bare"
+          ariaLabel={`Personal records · ${athlete.name}`}
+        >
+          {/* Keys stay inside the table: Enter here logs a PR, and must not
+              reach the exercise detail, whose Enter closes it. Escape from a
+              cell editor cancels the edit; anywhere else it closes the table. */}
+          <div
+            className="animate-dialog-in"
+            style={{ width: '100%', maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-md)' }}
+            onKeyDown={e => {
+              if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement)) {
+                setShowPRs(false);
+                onPRsChanged?.();
+              }
+              e.stopPropagation();
+            }}
+          >
+            <PRTrackingPanel
+              athlete={athlete}
+              onClose={() => { setShowPRs(false); onPRsChanged?.(); }}
+              highlightExerciseId={viewExerciseId}
+              highlightRepCount={prHighlightRep}
+              initialSearch={prExerciseName}
+            />
+          </div>
+        </AdaptiveDialog>
+      )}
       {showComboEditor && plannedExercise && isCombo && (
         <ComboCreatorModal
           mode="edit"

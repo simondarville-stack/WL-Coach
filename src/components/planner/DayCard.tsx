@@ -10,6 +10,7 @@ import { ComboCreatorModal } from './ComboCreatorModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { RestBadge } from './RestBadge';
 import { PrescriptionGrid } from './PrescriptionGrid';
+import type { PRLimitSet } from '../../lib/prLimits';
 import { GppBlockEditor } from './GppBlockEditor';
 import { SourceBadge } from './SourceBadge';
 import { AnalysisColumn, FeatureChips, type FeatureMenuItem } from './ExerciseFeatureControls';
@@ -100,6 +101,9 @@ interface DayCardProps {
   /** True when the current view is an individual plan linked to a group plan.
    *  G/I source badges are only meaningful in that case. */
   isLinkedToGroupPlan?: boolean;
+  /** The athlete's PR limits for a row (lib/prLimits); a line above them
+   *  renders bold in the grid. */
+  prLimitsFor?: (ex: PlannedExercise & { exercise: Exercise }) => PRLimitSet | null;
 }
 
 export function DayCard({
@@ -139,6 +143,7 @@ export function DayCard({
   clickIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
+  prLimitsFor,
 }: DayCardProps) {
   const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -848,6 +853,7 @@ export function DayCard({
                               isCombo
                               comboPartCount={(members?.length) || 2}
                               compact
+                              prLimits={prLimitsFor?.(ex)}
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                               presets={presets}
                               onApplyPreset={p => void applyPresetToRow(ex, p)}
@@ -886,6 +892,7 @@ export function DayCard({
                               defaultLoad={defaultPrescriptionLoad}
                               isCombo={false}
                               compact
+                              prLimits={prLimitsFor?.(ex)}
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                               presets={presets}
                               onApplyPreset={p => void applyPresetToRow(ex, p)}

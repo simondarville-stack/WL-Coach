@@ -7,6 +7,7 @@ import type {
   ComboMemberEntry,
 } from '../../lib/database.types';
 import { DayCard } from './DayCard';
+import type { PRLimitSet } from '../../lib/prLimits';
 import { calculateRestInfo, buildWeekdayCells } from '../../lib/restCalculation';
 import type { ScheduleEntry } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
@@ -171,6 +172,9 @@ interface WeekOverviewProps {
   clickIncrement?: number;
   defaultPrescriptionLoad: number;
   isLinkedToGroupPlan?: boolean;
+  /** The athlete's PR limits for a row (lib/prLimits); a line above them
+   *  renders bold. Absent on a group plan, which has no athlete. */
+  prLimitsFor?: (ex: PlannedExercise & { exercise: Exercise }) => PRLimitSet | null;
 }
 
 export function WeekOverview({
@@ -210,6 +214,7 @@ export function WeekOverview({
   clickIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
+  prLimitsFor,
 }: WeekOverviewProps) {
   const activeSlots = visibleDays.map(d => d.index);
   const schedule = (daySchedule && Object.keys(daySchedule).length > 0)
@@ -342,6 +347,7 @@ export function WeekOverview({
       clickIncrement={clickIncrement}
       defaultPrescriptionLoad={defaultPrescriptionLoad}
       isLinkedToGroupPlan={isLinkedToGroupPlan}
+      prLimitsFor={prLimitsFor}
     />
   );
 

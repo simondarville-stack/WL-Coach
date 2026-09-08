@@ -27,6 +27,21 @@ Its props are `{ raw, unit, isCombo }` — the same three values every planned
 row already carries. It returns `null` for a null `raw`, so it is safe to drop
 in unconditionally. There is a sibling `LoggedStackedNotation` for logged sets.
 
+**Bold means "beyond the athlete's PR".** A set line whose load is above the
+athlete's PR *at that rep count* renders load and reps in bold (weight 700
+against the notation's 500), with the verdict as the column's tooltip
+(`Would be a new 3RM — Snatch: 92,5 kg above 3RM 90 kg`). The set count is
+never bold. The judgement lives in `src/lib/prLimits.ts` and is per rep
+count — 3 × 100 is measured against the 3RM, not the 1RM; a real entry wins,
+otherwise the PR table's own phantom estimate (`~95`) stands in, and a lift
+with no PR at all is never marked. A load range is checked at its top, a rep
+range at its bottom, a percentage through the cached 1RM, and a complex
+member by member at its own part of the tuple. Both `StackedNotation` and the
+editable `PrescriptionGrid` take the limits as an optional `prLimits` prop;
+a surface that has no athlete (a group plan, a template preview) passes
+nothing and shows no bold. Do not use bold in a prescription for anything
+else — it now carries meaning.
+
 **Never** render a prescription as inline `load×reps×sets` text
 (`"80×3×5"`, `"100×1 · 85×3"`). That form is for **input and storage**
 (`prescription_raw`), never for display. If you find yourself calling

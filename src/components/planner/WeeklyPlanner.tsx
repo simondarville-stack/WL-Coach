@@ -16,6 +16,7 @@ import { formatDateRange, formatDateShort } from '../../lib/dateUtils';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
 import { resolveMacroWeek } from '../../lib/plannerMacro';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
+import { buildPRLimits, type PRLimitSet } from '../../lib/prLimits';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
 import type { DefaultUnit, PlannedExercise, Exercise, WeekPlan } from '../../lib/database.types';
@@ -144,7 +145,8 @@ export function WeeklyPlanner() {
     setPlannedExercises,
     comboMembers,
     athletePRs,
-    setAthletePRs,
+    athletePRHistory,
+    clearAthletePRs,
     macroWeekTarget,
     setMacroWeekTarget,
     setMacroWeekTypeText,
@@ -365,14 +367,14 @@ export function WeeklyPlanner() {
       if (planSelection.athlete) {
         loadAthletePRs(planSelection.athlete.id);
       } else {
-        setAthletePRs([]);
+        clearAthletePRs();
       }
     } else {
       setCurrentWeekPlan(null);
       setPlannedExercises({});
       setMacroWeekTarget(null);
       setMacroWeekTypeText(null);
-      setAthletePRs([]);
+      clearAthletePRs();
       setMacroContext(null);
     }
     // Reset panel on week/athlete change
@@ -450,6 +452,35 @@ export function WeeklyPlanner() {
     if (contextOwnerId) void fetchContextExercises(contextOwnerId);
   };
   const loadAthletePRs = (athleteId: string) => fetchAthletePRs(athleteId);
+
+  /** One limit per exercise the athlete has a PR for; a row is checked against
+   *  its own lift, or for a combo against each member (lib/prLimits). Built
+   *  once per PR load so every grid on the week shares the same objects. */
+  const prLimits = useMemo(
+    () => buildPRLimits(athletePRHistory, athletePRs, id => allExercises.find(e => e.id === id)?.name ?? 'this lift'),
+    [athletePRHistory, athletePRs, allExercises],
+  );
+  const prLimitsFor = useMemo(() => {
+    if (prLimits.size === 0) return undefined;
+    // An exercise that derives its % from another lift's PR is checked
+    // against that lift when it has no PRs of its own — the same fallback the
+    // percentage resolver uses.
+    const limitFor = (exerciseId: string) => {
+      const own = prLimits.get(exerciseId);
+      if (own) return own;
+      const refId = allExercises.find(e => e.id === exerciseId)?.pr_reference_exercise_id;
+      return (refId && prLimits.get(refId)) || null;
+    };
+    return (ex: PlannedExercise & { exercise: Exercise }): PRLimitSet | null => {
+      if (ex.is_combo) {
+        const members = (comboMembers[ex.id] ?? []).slice().sort((a, b) => a.position - b.position);
+        if (members.length === 0) return null;
+        return { self: null, members: members.map(m => limitFor(m.exerciseId)) };
+      }
+      const self = limitFor(ex.exercise_id);
+      return self ? { self } : null;
+    };
+  }, [prLimits, allExercises, comboMembers]);
 
   const loadWeekPlan = async () => {
     const plan = await fetchOrCreateWeekPlan(selectedDate, planSelection);
@@ -1942,6 +1973,7 @@ export function WeeklyPlanner() {
                 clickIncrement={settings?.grid_click_increment ?? 1}
                 defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
                 isLinkedToGroupPlan={planSelection.type === 'individual' && !!currentWeekPlan?.source_group_plan_id}
+                prLimitsFor={prLimitsFor}
               />
             )}
 
@@ -1960,6 +1992,7 @@ export function WeeklyPlanner() {
                     exercises={plannedExercises[selectedDayIndex] || []}
                     comboMembers={comboMembers}
                     athletePRs={athletePRs}
+                    prLimitsFor={prLimitsFor}
                     settings={settings}
                     macroContext={macroContext}
                     allExercises={allExercises}
@@ -1999,6 +2032,9 @@ export function WeeklyPlanner() {
                     athleteId={planSelection.athlete?.id ?? ''}
                     macroContext={macroContext}
                     athletePRs={athletePRs}
+                    prLimits={prLimitsFor?.(selectedExercise) ?? null}
+                    athlete={planSelection.athlete}
+                    onPRsChanged={() => { if (planSelection.athlete) void loadAthletePRs(planSelection.athlete.id); }}
                     dayLabels={dayLabels}
                     settings={settings}
                     allExercises={allExercises}

@@ -63,7 +63,12 @@ All modules are **active** — nothing is currently disabled or hidden:
 
 - Athlete and training-group definition
 - Macro cycle planning
-- Weekly programme writing (`src/components/planner/*`, `WeeklyPlanner.tsx`)
+- Weekly programme writing (`src/components/planner/*`, `WeeklyPlanner.tsx`).
+  From 0.99.0 a set line planned **above the athlete's PR at that rep
+  count** renders bold in the grid and the stacked notation
+  (`src/lib/prLimits.ts`, the rule in `docs/DISPLAY_CONVENTIONS.md` §1), and
+  the exercise detail's trophy opens the athlete's PR table inline, filtered
+  to the lift and blinking the xRM cell the plan is testing.
 - Printing weekly programmes
 - Training Log — coach **Log mode** toggle on the Weekly Planner
   (`src/components/planner/log/*`) plus the mobile athlete app

@@ -17,6 +17,7 @@ import { AutoGrowTextarea } from '../ui';
 import type { CoachPreset } from '../../lib/database.types';
 import { StackedNotation } from './StackedNotation';
 import { formatSeconds } from '../../lib/exerciseFeatures';
+import { checkLineBeyondPR, describePRVerdict, type PRLimitSet, type PRVerdict } from '../../lib/prLimits';
 
 interface GridColumn {
   id: string;
@@ -69,6 +70,10 @@ interface PrescriptionGridProps {
    *  committing the text as a value. */
   presets?: CoachPreset[];
   onApplyPreset?: (preset: CoachPreset) => void;
+  /** The athlete's PRs for this row (lib/prLimits). A column whose load is
+   *  above the PR at its rep count renders bold, with the verdict in the
+   *  load cell's tooltip. Absent → nothing is marked. */
+  prLimits?: PRLimitSet | null;
 }
 
 let colIdCounter = 0;
@@ -156,6 +161,7 @@ export function PrescriptionGrid({
   compact = false,
   presets,
   onApplyPreset,
+  prLimits,
 }: PrescriptionGridProps) {
   const isFreeTextReps = unit === 'free_text_reps';
   const isFreeText = unit === 'free_text';
@@ -164,6 +170,27 @@ export function PrescriptionGrid({
 
   const [columns, setColumns] = useState<GridColumn[]>(() => parseToColumns(prescriptionRaw, isCombo, unit));
   const [editing, setEditing] = useState<EditingCell | null>(null);
+  /** Columns planned above the athlete's PR at their rep count. Judged on
+   *  the grid's own columns, not the stored raw, so a stepped load answers
+   *  on the click and not a save later. */
+  const beyondById = useMemo(() => {
+    const out = new Map<string, PRVerdict>();
+    if (!prLimits || isFreeTextReps) return out;
+    for (const col of columns) {
+      const v = checkLineBeyondPR(
+        { load: col.load, loadMax: col.loadMax, reps: col.reps, repsText: col.repsText, multiplier: col.multiplier },
+        unit, isCombo, prLimits,
+      );
+      if (v) out.set(col.id, v);
+    }
+    return out;
+  }, [columns, prLimits, unit, isCombo, isFreeTextReps]);
+  /** The verdict first, then what the cell does — a bold number should say why. */
+  const withVerdict = (col: GridColumn, title: string) => {
+    const v = beyondById.get(col.id);
+    return v ? `${describePRVerdict(v)}
+${title}` : title;
+  };
   const [focusedColId, setFocusedColId] = useState<string | null>(null);
   /** Highlighted row of the "#" preset dropdown while editing a cell. */
   const [presetIndex, setPresetIndex] = useState(0);
@@ -1077,7 +1104,7 @@ export function PrescriptionGrid({
             onContextMenu={e => e.preventDefault()}
             tabIndex={-1}
             disabled={disabled}
-            title={boxTitle('min')}
+            title={withVerdict(col, boxTitle('min'))}
             className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
             style={{ minWidth: '1.25rem', padding: '0 2px' }}
           >
@@ -1089,7 +1116,7 @@ export function PrescriptionGrid({
             onContextMenu={e => e.preventDefault()}
             tabIndex={-1}
             disabled={disabled}
-            title={boxTitle('max')}
+            title={withVerdict(col, boxTitle('max'))}
             className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
             style={{ minWidth: '1.25rem', padding: '0 2px' }}
           >
@@ -1106,7 +1133,7 @@ export function PrescriptionGrid({
           onContextMenu={e => e.preventDefault()}
           tabIndex={-1}
           disabled={disabled}
-          title={loadCellTitle}
+          title={withVerdict(col, loadCellTitle)}
           className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
         >
           <span>{loadDisplay}</span>
@@ -1121,7 +1148,7 @@ export function PrescriptionGrid({
           onContextMenu={e => e.preventDefault()}
           tabIndex={-1}
           disabled={disabled}
-          title={loadCellTitle}
+          title={withVerdict(col, loadCellTitle)}
           className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
         >
           <span>{loadDisplay}</span>
@@ -1227,7 +1254,7 @@ export function PrescriptionGrid({
         return (
           <div
             key={col.id}
-            className="pgrid-col"
+            className={`pgrid-col${beyondById.has(col.id) ? ' pgrid-beyond-pr' : ''}`}
             style={{
               display: 'flex', alignItems: 'center', gap: 2, borderRadius: 'var(--radius-sm)',
               background: isDeleting ? 'var(--color-danger-bg)' : 'transparent',

@@ -14,6 +14,7 @@ import { getOrCreateSentinel } from './sentinelService';
 import { targetMaxRaw } from '../../lib/plannerMacro';
 import { StackedNotation } from './StackedNotation';
 import { PrescriptionGrid } from './PrescriptionGrid';
+import type { PRLimitSet } from '../../lib/prLimits';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { GppBlockEditor } from './GppBlockEditor';
@@ -45,6 +46,9 @@ interface DayEditorProps {
   exercises: (PlannedExercise & { exercise: Exercise })[];
   comboMembers: Record<string, ComboMemberEntry[]>;
   athletePRs: AthletePR[];
+  /** The athlete's PR limits for a row (lib/prLimits); a line above them
+   *  renders bold in the grid. */
+  prLimitsFor?: (ex: PlannedExercise & { exercise: Exercise }) => PRLimitSet | null;
   settings: GeneralSettings | null;
   macroContext: MacroContext | null;
   allExercises: Exercise[];
@@ -78,6 +82,7 @@ export function DayEditor({
   dayName,
   exercises,
   comboMembers,
+  prLimitsFor,
   settings,
   macroContext,
   allExercises,
@@ -619,6 +624,7 @@ export function DayEditor({
                         defaultLoad={defaultPrescriptionLoad}
                         isCombo={ex.is_combo}
                         comboPartCount={ex.is_combo ? ((comboMembers[ex.id] ?? []).length || 2) : undefined}
+                        prLimits={prLimitsFor?.(ex)}
                         onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                       />
                     </div>

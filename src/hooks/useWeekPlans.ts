@@ -5,6 +5,7 @@ import { getOwnerId } from '../lib/ownerContext';
 import type {
   Athlete,
   AthletePR,
+  AthletePRHistory,
   ComboMemberEntry,
   DefaultUnit,
   Exercise,
@@ -41,6 +42,10 @@ export function useWeekPlans() {
   const pendingWriteRef = useRef<Map<string, () => Promise<void>>>(new Map());
   const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [athletePRs, setAthletePRs] = useState<AthletePR[]>([]);
+  /** Per-rep-count PR entries, newest first — what the planner checks a
+   *  prescription line against (lib/prLimits). `athletePRs` above is the
+   *  1RM cache that percentages resolve through. */
+  const [athletePRHistory, setAthletePRHistory] = useState<AthletePRHistory[]>([]);
   const [macroWeekTarget, setMacroWeekTarget] = useState<number | null>(null);
   const [macroWeekTypeText, setMacroWeekTypeText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -248,15 +253,33 @@ export function useWeekPlans() {
 
   const fetchAthletePRs = async (athleteId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('athlete_prs')
-        .select('*')
-        .eq('athlete_id', athleteId);
+      const [{ data, error }, { data: hist, error: histError }] = await Promise.all([
+        supabase
+          .from('athlete_prs')
+          .select('*')
+          .eq('athlete_id', athleteId),
+        // Same ordering the PR table uses, so the first entry per rep count
+        // is the current PR.
+        supabase
+          .from('athlete_pr_history')
+          .select('*')
+          .eq('athlete_id', athleteId)
+          .order('achieved_date', { ascending: false })
+          .order('created_at', { ascending: false }),
+      ]);
       if (error) throw error;
       setAthletePRs(data || []);
+      setAthletePRHistory(histError ? [] : ((hist as AthletePRHistory[] | null) ?? []));
     } catch (err) {
       setAthletePRs([]);
+      setAthletePRHistory([]);
     }
+  };
+
+  /** Forget the athlete's PRs — a group plan has no athlete to check against. */
+  const clearAthletePRs = () => {
+    setAthletePRs([]);
+    setAthletePRHistory([]);
   };
 
   const deletePlannedExercise = async (id: string) => {
@@ -1525,6 +1548,8 @@ export function useWeekPlans() {
     setComboMembers,
     athletePRs,
     setAthletePRs,
+    athletePRHistory,
+    clearAthletePRs,
     macroWeekTarget,
     setMacroWeekTarget,
     macroWeekTypeText,

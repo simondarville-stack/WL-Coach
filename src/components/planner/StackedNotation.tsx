@@ -24,11 +24,16 @@ import {
   LOAD_CMP_GLYPH,
 } from '../../lib/prescriptionParser';
 import type { TrainingLogSet } from '../../lib/database.types';
+import { checkLineBeyondPR, describePRVerdict, type PRLimitSet } from '../../lib/prLimits';
 
 interface StackedNotationProps {
   raw: string | null;
   unit: string | null;
   isCombo?: boolean;
+  /** The athlete's PRs for this row (lib/prLimits). A column whose load is
+   *  above the PR at its rep count renders bold, with the verdict as its
+   *  tooltip. Absent → nothing is marked. */
+  prLimits?: PRLimitSet | null;
 }
 
 const mono: React.CSSProperties = {
@@ -49,6 +54,12 @@ const mono: React.CSSProperties = {
 const monoLight: React.CSSProperties = {
   ...mono,
   color: 'var(--color-text-secondary)',
+};
+
+// A line planned above the athlete's PR at that rep count.
+const monoBold: React.CSSProperties = {
+  ...mono,
+  fontWeight: 700,
 };
 
 const setMultiplier: React.CSSProperties = {
@@ -97,7 +108,7 @@ const stackPair: React.CSSProperties = {
 // memo: all props are primitives, and this renders once per set-line column
 // in every planner row — memoizing skips the re-parse of the prescription
 // string on every parent re-render (hover, drag, unrelated cell edits).
-export const StackedNotation = memo(function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
+export const StackedNotation = memo(function StackedNotation({ raw, unit, isCombo, prLimits }: StackedNotationProps) {
   if (!raw) return null;
 
   // Combo must win against the free-text-reps unit branch:
@@ -113,10 +124,17 @@ export const StackedNotation = memo(function StackedNotation({ raw, unit, isComb
         {lines.map((line, i) => {
           const cmp = !line.loadText && line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : '';
           const setsText = line.setsMax != null ? `${line.sets}-${line.setsMax}` : String(line.sets);
+          const verdict = prLimits && !isFreeTextReps
+            ? checkLineBeyondPR(
+                { load: line.load, loadMax: line.loadMax, repsText: line.repsText, multiplier: line.multiplier, loadText: line.loadText },
+                unit, true, prLimits,
+              )
+            : null;
+          const face = verdict ? monoBold : mono;
           return (
-            <div key={i} style={stackPair}>
+            <div key={i} style={stackPair} title={verdict ? describePRVerdict(verdict) : undefined}>
               <div style={stackColumn}>
-                <span style={mono}>
+                <span style={face}>
                   {cmp}
                   {isFreeTextReps && line.loadText
                     ? line.loadText
@@ -125,7 +143,7 @@ export const StackedNotation = memo(function StackedNotation({ raw, unit, isComb
                     : `${line.load}${unit === 'percentage' ? '%' : ''}`}
                 </span>
                 <div style={ruleStyle} />
-                <span style={mono}>
+                <span style={face}>
                   {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
                 </span>
               </div>
@@ -184,17 +202,21 @@ export const StackedNotation = memo(function StackedNotation({ raw, unit, isComb
         // A set range renders even when the lower bound is 1 — "1-3" carries
         // information a hidden set count would lose.
         const setsText = line.setsMax != null ? `${line.sets}-${line.setsMax}` : String(line.sets);
+        const verdict = prLimits
+          ? checkLineBeyondPR({ load: line.load, loadMax: line.loadMax, reps: line.reps }, unit, false, prLimits)
+          : null;
+        const face = verdict ? monoBold : mono;
         return (
-          <div key={i} style={stackPair}>
+          <div key={i} style={stackPair} title={verdict ? describePRVerdict(verdict) : undefined}>
             <div style={stackColumn}>
-              <span style={mono}>
+              <span style={face}>
                 {cmp}
                 {line.loadMax != null
                   ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
                   : `${line.load}${unit === 'percentage' ? '%' : ''}`}
               </span>
               <div style={ruleStyle} />
-              <span style={mono}>{repsText}</span>
+              <span style={face}>{repsText}</span>
             </div>
             {(line.sets > 1 || line.setsMax != null) && <span style={setMultiplier}>{setsText}</span>}
           </div>
