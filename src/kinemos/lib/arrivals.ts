@@ -106,9 +106,19 @@ export interface ArrivalRunOptions {
  * frame server takes a URL, and leaving one alive pins the whole file in
  * memory for the life of the tab.
  */
+export interface AnalyseArrivalOptions {
+  ownerId: string | null;
+  onProgress?: (stage: string, done: number, total: number) => void;
+  /** Asked throughout the pipeline; true abandons the clip with nothing
+   *  stored (`AutoAnalyseOptions.shouldStop`). The queue's own `shouldStop`
+   *  is between clips; this one is inside them, for a caller whose page
+   *  is going away (P8 plan §2). */
+  shouldStop?: () => boolean;
+}
+
 export async function analyseArrival(
   target: ArrivalTarget,
-  options: { ownerId: string | null; onProgress?: (stage: string, done: number, total: number) => void },
+  options: AnalyseArrivalOptions,
 ): Promise<ArrivalOutcome> {
   const objectUrl = target.file ? URL.createObjectURL(target.file) : null;
   const url = objectUrl ?? target.url;
@@ -127,6 +137,7 @@ export async function analyseArrival(
       ownerId: options.ownerId,
       massKg: target.massKg ?? null,
       massSource: target.massSource ?? null,
+      shouldStop: options.shouldStop,
       onProgress: options.onProgress,
     });
     return { target, result, message: describeAutoAnalysis(result, target.label) };

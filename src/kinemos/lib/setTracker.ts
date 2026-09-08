@@ -115,7 +115,7 @@ export interface TrackSetOptions {
   colour?: boolean;
   /** Passed through to the tracker. The template radius defaults to a little
    *  more than the outline's semi-major axis. */
-  trackOptions?: Omit<TrackOptions, 'onProgress' | 'stopAtIndex' | 'stopBeforeIndex'>;
+  trackOptions?: Omit<TrackOptions, 'onProgress' | 'stopAtIndex' | 'stopBeforeIndex' | 'shouldStop'>;
   /**
    * Frames to stay inside, inclusive (P7 plan §3). The activity scan says
    * where a lift is; the first track, the in-flight colour search, the
@@ -124,6 +124,13 @@ export interface TrackSetOptions {
    * a loss. Default: the whole clip.
    */
   range?: { from: number; to: number };
+  /**
+   * Asked before every frame of every piece and before every search for
+   * the plate again; true ends the set where it is (P8 plan §2). The
+   * result is what was tracked by then — the caller decides whether that
+   * is worth keeping, and the automatic pipeline decides it is not.
+   */
+  shouldStop?: () => boolean;
   onProgress?: (done: number, total: number) => void;
   /** Something worth telling: a join, a candidate turned down, the colour. */
   onLog?: (line: string) => void;
@@ -159,6 +166,7 @@ export async function trackSet(
     const trackOptions: Omit<TrackOptions, 'onProgress'> = {
       templateRadiusPx: Math.max(10, R * 1.08),
       ...options.trackOptions,
+      shouldStop: options.shouldStop,
     };
     const minConfidence = trackOptions.minConfidence ?? DEFAULT_TRACK_OPTIONS.minConfidence;
     const total = server.frameCount;
@@ -230,7 +238,10 @@ export async function trackSet(
     // template can be cut — is not found again and again.
     let searchFrom = rangeFrom;
     let attempts = 0;
-    while ((gaveUp || stoppedAtDrop) && attempts < MAX_JOINS) {
+    // A `stopped` piece has `gaveUp` false and is not a drop, so it ends
+    // this loop on its own; the check here is for a stop asked during a
+    // search between pieces, which can be seconds long.
+    while ((gaveUp || stoppedAtDrop) && attempts < MAX_JOINS && !options.shouldStop?.()) {
       attempts++;
       // A tracker that gave up spent its last frames unsure. A blurred plate
       // in the second pull is unsure and still the bar; a fan the template

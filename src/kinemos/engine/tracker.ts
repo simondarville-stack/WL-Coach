@@ -249,11 +249,19 @@ export interface TrackOptions {
   /** The same for the backward pass: the earliest frame it may reach,
    *  inclusive — the bound BEFORE the anchor in time. */
   stopBeforeIndex?: number;
+  /**
+   * Asked before every frame; true ends the pass where it is, reported as
+   * `stoppedAt: { reason: 'stopped' }` with `gaveUp` false. For a caller
+   * that no longer wants the track — the athlete who left the screen the
+   * analysis was running behind (P8 plan §2) — rather than for anything
+   * the frames say.
+   */
+  shouldStop?: () => boolean;
   onProgress?: (done: number, total: number) => void;
 }
 
 export const DEFAULT_TRACK_OPTIONS: Required<
-  Omit<TrackOptions, 'onProgress' | 'template' | 'stopAtIndex' | 'stopBeforeIndex'>
+  Omit<TrackOptions, 'onProgress' | 'template' | 'stopAtIndex' | 'stopBeforeIndex' | 'shouldStop'>
 > = {
   templateRadiusPx: 26,
   // Zero: measured, not assumed. See decision 1 in the header.
@@ -328,8 +336,9 @@ export interface TrackStop {
   /** `drop`: the bar, having risen, fell faster than a catch ever lowers it
    *  — it was let go, and what follows is not the lift. `range`: the pass
    *  reached the bound it was given (`stopAtIndex` / `stopBeforeIndex`)
-   *  with frames still beyond it. */
-  reason: 'drop' | 'range';
+   *  with frames still beyond it. `stopped`: the caller asked
+   *  (`shouldStop`); the track is whatever was done by then. */
+  reason: 'drop' | 'range' | 'stopped';
 }
 
 export interface TrackResult {
@@ -747,6 +756,10 @@ export async function trackDirection(
   for (let step = 1; ; step++) {
     const index = anchor.index + direction * step;
     if (index < 0 || index >= source.frameCount) break;
+    if (options.shouldStop?.()) {
+      stoppedAt = { index: points[points.length - 1].index, reason: 'stopped' };
+      break;
+    }
     if (direction === 1 ? index > lastAllowed : index < lastAllowed) {
       // The bound, with a frame beyond it (the clip-end check above came
       // first): the pass stops here on purpose.

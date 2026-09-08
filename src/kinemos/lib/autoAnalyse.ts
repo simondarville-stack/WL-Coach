@@ -121,6 +121,15 @@ export interface AutoAnalyseOptions {
   src?: ClipSource;
   /** A scan already run (the viewer's, the bench's), so it is not repeated. */
   activity?: ActivityScanResult | null;
+  /**
+   * Asked throughout — by the scan per frame, by the tracker per frame,
+   * and here before each stage and before anything is stored. True ends
+   * the run with `problem: 'stopped'` and NOTHING written: a half-stored
+   * set is worse than an unanalysed clip (P5 plan §5). Once storing has
+   * begun it finishes; the writes are a handful of small rows. For the
+   * athlete who leaves the screen an analysis is running behind (P8 plan).
+   */
+  shouldStop?: () => boolean;
   onProgress?: (stage: string, done: number, total: number) => void;
 }
 
@@ -139,8 +148,9 @@ export interface AutoAnalyseResult {
   /** True when lifts were found but none of them tracked to a rep, and the
    *  whole clip was tracked instead. */
   fellBack: boolean;
-  /** Why there is nothing, when there is nothing. */
-  problem?: 'no-plate' | 'no-reps';
+  /** Why there is nothing, when there is nothing. `stopped`: the caller
+   *  asked (`shouldStop`) before anything was stored. */
+  problem?: 'no-plate' | 'no-reps' | 'stopped';
 }
 
 /**
@@ -151,11 +161,13 @@ export async function autoAnalyse(
   options: AutoAnalyseOptions,
 ): Promise<AutoAnalyseResult> {
   const plateDiameterCm = options.plateDiameterCm ?? 45;
+  const stopped = () => options.shouldStop?.() === true;
 
   let activity: ActivityScanResult | null = options.activity ?? null;
   if (!activity && options.src !== undefined) {
     options.onProgress?.('Looking for the lifts', 0, server.frameCount);
     activity = await scanActivity(options.src, {
+      shouldStop: options.shouldStop,
       onProgress: (done, total) => options.onProgress?.('Looking for the lifts', done, total),
     });
   }
@@ -168,6 +180,11 @@ export async function autoAnalyse(
     windows,
     scan,
   });
+  // A scan cut short has windows only up to where it was stopped; they are
+  // not the clip's lifts, and nothing is tracked inside them.
+  if (stopped() || activity?.stopped) {
+    return { ...empty(), problem: 'stopped', joins: 0, fellBack: false };
+  }
 
   // ── By lifts ─────────────────────────────────────────────────────────────
   if (windows.length > 0) {
@@ -177,6 +194,7 @@ export async function autoAnalyse(
     let ellipse: PlateEllipse | null = null;
     let near: { x: number; y: number } | undefined;
     for (const [k, range] of ranges.entries()) {
+      if (stopped()) return { ...empty(), problem: 'stopped', joins, fellBack: false };
       options.onProgress?.('Looking for the plate', k, ranges.length);
       // With the previous lift's plate centre as a hint first — `near` is a
       // hard constraint in the finder — and without it if that finds
@@ -194,9 +212,12 @@ export async function autoAnalyse(
           ellipse: found.ellipse,
           plateDiameterCm,
           range: { from: range.from, to: range.to },
+          shouldStop: options.shouldStop,
           onProgress: (done, total) => options.onProgress?.(`Following the bar, lift ${k + 1} of ${ranges.length}`, done, total),
         },
       );
+      // A track cut short is a partial rep at best; none of it is kept.
+      if (stopped()) return { ...empty(), problem: 'stopped', joins, fellBack: false };
       joins += result.joins.length;
       // Reps are numbered from 1 within a call; across lifts they run on.
       for (const rep of result.reps) reps.push({ ...rep, rep: reps.length + 1 });
@@ -210,6 +231,7 @@ export async function autoAnalyse(
 
   // ── The whole clip ───────────────────────────────────────────────────────
   const fellBack = windows.length > 0;
+  if (stopped()) return { ...empty(), problem: 'stopped', joins: 0, fellBack };
   const anchorIndex = options.anchorIndex ?? 0;
   options.onProgress?.('Looking for the plate', 0, 1);
   const found = await findPlateOnFrame(server, anchorIndex);
@@ -224,9 +246,13 @@ export async function autoAnalyse(
     {
       ellipse,
       plateDiameterCm,
+      shouldStop: options.shouldStop,
       onProgress: (done, total) => options.onProgress?.('Following the bar', done, total),
     },
   );
+  if (stopped()) {
+    return { ...empty(), problem: 'stopped', joins: result.joins.length, fellBack };
+  }
   if (result.reps.length === 0) {
     return { ...empty(), problem: 'no-reps', joins: result.joins.length, fellBack };
   }
@@ -269,6 +295,9 @@ export function describeAutoAnalysis(result: AutoAnalyseResult, clipLabel: strin
   const n = result.windows.length;
   const lifts =
     n === 0 ? '' : `${n} lift${n === 1 ? '' : 's'} found at ${liftTimes(result.windows)}`;
+  if (result.problem === 'stopped') {
+    return `${clipLabel}: the analysis was stopped before anything was stored.`;
+  }
   if (result.problem === 'no-plate') {
     return n > 0
       ? `${clipLabel}: ${lifts}, but no plate on the still frame before ${n === 1 ? 'it' : 'any of them'} or on the first frame. Open it and outline one — the rest runs from there.`
