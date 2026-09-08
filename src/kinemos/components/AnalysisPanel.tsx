@@ -1,10 +1,12 @@
 /**
- * AnalysisPanel — the phase band and the curves, under the stage.
+ * AnalysisPanel — the phase timeline and the velocity chart.
  *
- * One x-axis, shared. That is the whole point of putting them in one component:
- * a phase edge dragged on the band moves the dashed line on the chart in the
- * same gesture, and the playhead sits at the same place in both. Two components
- * with two scales would drift the first time one of them padded its plot area.
+ * Two components now, one file: `PhaseTimeline` sits under the video and
+ * `VelocityChart` is a panel in the rail (docs/KINEMOS_VIEWER_LAYOUT.md). They
+ * no longer share a pixel axis, so they share the next best thing — the same
+ * `fractionOf` over the same series, the same phase colours behind the curve
+ * as on the band, and the one playhead. A phase edge dragged on the band still
+ * moves the dashed line on the chart in the same gesture.
  *
  * The band is where phase boundaries are CORRECTED. The engine proposes; a
  * coach who disagrees drags an edge and their value is the answer from then on
@@ -88,7 +90,7 @@ const EVENT_LABELS: Array<{ key: keyof AnalyzerEvents; label: string; below?: bo
   { key: 'vmin', label: 'Vmin' },
 ];
 
-interface AnalysisPanelProps {
+interface PhaseTimelineProps {
   series: KinematicSeries | null;
   spans: PhaseSpan[];
   boundaries: PhaseBoundary[];
@@ -98,12 +100,24 @@ interface AnalysisPanelProps {
   onBoundaryCommit: () => void;
   currentT: number | null;
   onSeekT: (t: number) => void;
+  /** Why there are no phases, when there are none — the short form. */
+  emptyReason: string | null;
+}
+
+interface VelocityChartProps {
+  series: KinematicSeries | null;
+  spans: PhaseSpan[];
+  boundaries: PhaseBoundary[];
+  currentT: number | null;
+  onSeekT: (t: number) => void;
   /** Why there is nothing to draw, when there is nothing to draw. */
   emptyReason: string | null;
   /** The marked knee height above the bar's start, cm — drawn as a line at
    *  that height against height, and at the moment the bar crosses it
    *  against time. */
   kneeCm?: number | null;
+  /** Plot height, px. */
+  height?: number;
 }
 
 
@@ -124,7 +138,18 @@ function capturePointer(element: Element, pointerId: number): void {
   }
 }
 
-export function AnalysisPanel({
+/**
+ * PhaseTimeline — the phase band under the video.
+ *
+ * Five (or however many the phase set has) clickable bands over the tracked
+ * rep's time range: a click jumps to the phase's first frame, a drag on an
+ * interior edge CORRECTS it (`source: 'coach'`). An edge the engine could not
+ * find from a real signature is drawn hatched — "this is a guess", not a
+ * measurement presented as one. The same phase colours back the velocity
+ * chart in the rail, so phases read across the video, the timeline and the
+ * chart identically.
+ */
+export function PhaseTimeline({
   series,
   spans,
   boundaries,
@@ -133,25 +158,14 @@ export function AnalysisPanel({
   currentT,
   onSeekT,
   emptyReason,
-  kneeCm = null,
-}: AnalysisPanelProps) {
+}: PhaseTimelineProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<number | null>(null);
-  const [secondary, setSecondary] = useState<SecondarySeries>('horizontal');
-  const [domain, setDomain] = useState<ChartDomain>('time');
 
   const t0 = series?.t[0] ?? 0;
   const t1 = series?.t[series.t.length - 1] ?? 1;
   const span = t1 - t0 || 1;
-
   const fractionOf = useCallback((t: number) => (t - t0) / span, [t0, span]);
-
-  const forcePct = useMemo(() => (series ? forcePercentOf(series) : null), [series]);
-  const events = useMemo(() => (series ? locateAnalyzerEvents(series, spans) : null), [series, spans]);
-  const knee = useMemo(
-    () => (series && kneeCm !== null ? kneeCrossing(series, kneeCm) : null),
-    [series, kneeCm],
-  );
 
   const timeFromClient = useCallback(
     (clientX: number) => {
@@ -165,14 +179,13 @@ export function AnalysisPanel({
   );
 
   const onTrackPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (draggingRef.current !== null) {
-      capturePointer(e.currentTarget, e.pointerId);
-      return;
-    }
-    // A press anywhere else on the band scrubs, so the band doubles as a
-    // timeline rather than being a thing you can only drag edges on.
     capturePointer(e.currentTarget, e.pointerId);
-    onSeekT(timeFromClient(e.clientX));
+    if (draggingRef.current !== null) return;
+    // A press on a band jumps to the phase's first frame — the timeline is a
+    // table of contents, not a second scrub strip (the transport has that).
+    const t = timeFromClient(e.clientX);
+    const hit = spans.find(s => t >= s.fromT && t <= s.toT);
+    onSeekT(hit ? hit.fromT : t);
   };
 
   const onTrackPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -191,107 +204,38 @@ export function AnalysisPanel({
     }
   };
 
-  if (!series) {
+  if (!series || spans.length === 0) {
     return (
-      <section style={shell}>
-        <p style={{ margin: 0, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
-          {emptyReason ?? 'Nothing to plot yet.'}
-        </p>
-      </section>
+      <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div
+          style={{
+            height: 26,
+            borderRadius: 'var(--radius-sm)',
+            border: '0.5px dashed var(--color-border-secondary)',
+            background: 'repeating-linear-gradient(135deg, transparent 0 8px, rgba(0,0,0,0.025) 8px 16px)',
+          }}
+        />
+        <span style={captionStyle}>{emptyReason ?? 'Phases appear once the lift is tracked and calibrated.'}</span>
+      </div>
     );
   }
 
-  // Against height, height itself and the horizontal path are not curves to
-  // ride alongside — the axis is the one and the other is the bar path, which
-  // the stage draws. Force stands in for them.
-  const shown: SecondarySeries =
-    domain === 'height' && (secondary === 'horizontal' || secondary === 'height') ? 'force' : secondary;
-  const secondaryValues =
-    shown === 'horizontal'
-      ? series.xCm
-      : shown === 'height'
-        ? series.yCm
-        : shown === 'force'
-          ? forcePct
-          : series.powerW;
-  const secondaryDisabled = (option: SecondarySeries): string | null =>
-    option === 'power' && !series.powerW
-      ? 'Enter the bar mass to see power'
-      : domain === 'height' && (option === 'horizontal' || option === 'height')
-        ? 'Height is the axis here'
-        : null;
-
   return (
-    <section style={shell}>
-      {/* Legend + secondary picker */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
-          <span style={captionStyle}>PHASES — drag an edge to correct</span>
-          {spans.map(s => (
-            <span key={s.definition.id} style={{ ...captionStyle, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-text-secondary)' }}>
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 2,
-                  background: s.definition.color,
-                  // A guessed edge is drawn hollow in the legend too, so the
-                  // caveat travels with the name.
-                  opacity: s.source === 'fallback' ? 0.45 : 1,
-                }}
-              />
-              {s.definition.label}
-              {s.source === 'fallback' && <span title="Placed by proportion — the engine found no signature here">*</span>}
-            </span>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 2 }} title="What the curves are drawn against">
-            {(['time', 'height'] as ChartDomain[]).map(option => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setDomain(option)}
-                style={pickerButton(option === domain, false)}
-              >
-                {option === 'time' ? 'vs time' : 'vs height'}
-              </button>
-            ))}
-          </div>
-          <span style={{ width: 1, height: 12, background: 'var(--color-border-secondary)' }} />
-          <div style={{ display: 'flex', gap: 2 }}>
-            {(Object.keys(SECONDARY_LABEL) as SecondarySeries[]).map(option => {
-              const why = secondaryDisabled(option);
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setSecondary(option)}
-                  disabled={why !== null}
-                  title={why ?? undefined}
-                  style={pickerButton(option === shown, why !== null)}
-                >
-                  {SECONDARY_SHORT[option]}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Phase band */}
+    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div
         ref={trackRef}
         onPointerDown={onTrackPointerDown}
         onPointerMove={onTrackPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        title="Phases of the tracked rep"
         style={{
           position: 'relative',
-          height: 30,
+          height: 26,
           borderRadius: 'var(--radius-sm)',
           overflow: 'hidden',
           background: 'var(--color-bg-secondary)',
+          border: '0.5px solid var(--color-border-secondary)',
           cursor: 'pointer',
           touchAction: 'none',
           flexShrink: 0,
@@ -304,7 +248,7 @@ export function AnalysisPanel({
           return (
             <div
               key={s.definition.id}
-              title={`${s.definition.label} — ${num(s.toT - s.fromT, 2)} s${s.source === 'fallback' ? ' (edge placed by proportion)' : ''}`}
+              title={`${s.definition.label} — ${num(s.toT - s.fromT, 2)} s${s.source === 'fallback' ? ' (edge placed by proportion)' : ''} · click to jump to its first frame`}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -314,7 +258,7 @@ export function AnalysisPanel({
                 background: s.definition.color,
                 display: 'flex',
                 alignItems: 'center',
-                paddingLeft: 6,
+                justifyContent: 'center',
                 overflow: 'hidden',
                 // Hatching marks an edge the engine guessed at.
                 backgroundImage:
@@ -329,6 +273,12 @@ export function AnalysisPanel({
                   fontWeight: 500,
                   color: '#FFFFFF',
                   whiteSpace: 'nowrap',
+                  // A band narrower than its name shows what fits and an
+                  // ellipsis; the full name is the band's title.
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '100%',
+                  padding: '0 3px',
                 }}
               >
                 {s.definition.shortLabel}
@@ -347,7 +297,7 @@ export function AnalysisPanel({
               onPointerDown={() => {
                 draggingRef.current = i;
               }}
-              title={`${b.rule.replace(/-/g, ' ')} — ${b.source}`}
+              title={`${b.rule.replace(/-/g, ' ')} — ${b.source} · drag to correct`}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -374,30 +324,154 @@ export function AnalysisPanel({
           <span
             style={{
               position: 'absolute',
-              top: 0,
-              bottom: 0,
+              top: -2,
+              bottom: -2,
               left: `${fractionOf(currentT) * 100}%`,
               width: 2,
               marginLeft: -1,
-              background: 'var(--color-text-primary)',
+              background: 'var(--color-accent)',
               pointerEvents: 'none',
             }}
           />
         )}
+      </div>
+      <span style={captionStyle}>
+        Click a phase to jump to its first frame · drag an edge to correct it · <Key>R</Key> resets the edges
+        {spans.some(s => s.source === 'fallback') && ' · hatched = edge placed by proportion'}
+      </span>
+    </div>
+  );
+}
+
+/** A keycap, for the caption's shortcut hints. */
+function Key({ children }: { children: string }) {
+  return (
+    <span
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 'var(--text-micro)',
+        border: '0.5px solid var(--color-border-primary)',
+        borderRadius: 3,
+        padding: '0 3px',
+        background: 'var(--color-bg-primary)',
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * VelocityChart — the curves, in the rail.
+ *
+ * Velocity is always drawn — it is the one a coach reads — and the second
+ * slot is theirs to choose. The playhead on it is the same one as the video's:
+ * the frame number is single-source, and a press on the plot moves it.
+ */
+export function VelocityChart({
+  series,
+  spans,
+  boundaries,
+  currentT,
+  onSeekT,
+  emptyReason,
+  kneeCm = null,
+  height = 150,
+}: VelocityChartProps) {
+  const [secondary, setSecondary] = useState<SecondarySeries>('horizontal');
+  const [domain, setDomain] = useState<ChartDomain>('time');
+
+  const t0 = series?.t[0] ?? 0;
+  const t1 = series?.t[series.t.length - 1] ?? 1;
+  const span = t1 - t0 || 1;
+
+  const fractionOf = useCallback((t: number) => (t - t0) / span, [t0, span]);
+
+  const forcePct = useMemo(() => (series ? forcePercentOf(series) : null), [series]);
+  const events = useMemo(() => (series ? locateAnalyzerEvents(series, spans) : null), [series, spans]);
+  const knee = useMemo(
+    () => (series && kneeCm !== null ? kneeCrossing(series, kneeCm) : null),
+    [series, kneeCm],
+  );
+
+  if (!series) {
+    return (
+      <div style={{ padding: 'var(--space-md)' }}>
+        <p style={{ margin: 0, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+          {emptyReason ?? 'Nothing to plot yet.'}
+        </p>
+      </div>
+    );
+  }
+
+  // Against height, height itself and the horizontal path are not curves to
+  // ride alongside — the axis is the one and the other is the bar path, which
+  // the stage draws. Force stands in for them.
+  const shown: SecondarySeries =
+    domain === 'height' && (secondary === 'horizontal' || secondary === 'height') ? 'force' : secondary;
+  const secondaryValues =
+    shown === 'horizontal'
+      ? series.xCm
+      : shown === 'height'
+        ? series.yCm
+        : shown === 'force'
+          ? forcePct
+          : series.powerW;
+  const secondaryDisabled = (option: SecondarySeries): string | null =>
+    option === 'power' && !series.powerW
+      ? 'Enter the bar mass to see power'
+      : domain === 'height' && (option === 'horizontal' || option === 'height')
+        ? 'Height is the axis here'
+        : null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', padding: 'var(--space-sm) var(--space-md) var(--space-md)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 2 }} title="What the curves are drawn against">
+          {(['time', 'height'] as ChartDomain[]).map(option => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setDomain(option)}
+              style={pickerButton(option === domain, false)}
+            >
+              {option === 'time' ? 'vs time' : 'vs height'}
+            </button>
+          ))}
+        </div>
+        <span style={{ width: 1, height: 12, background: 'var(--color-border-secondary)' }} />
+        <div style={{ display: 'flex', gap: 2 }}>
+          {(Object.keys(SECONDARY_LABEL) as SecondarySeries[]).map(option => {
+            const why = secondaryDisabled(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setSecondary(option)}
+                disabled={why !== null}
+                title={why ?? undefined}
+                style={pickerButton(option === shown, why !== null)}
+              >
+                {SECONDARY_SHORT[option]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Charts */}
       <div
         style={{
           position: 'relative',
-          flexGrow: 1,
-          minHeight: 90,
+          height,
+          flexShrink: 0,
           border: '1px solid var(--color-border-tertiary)',
           borderRadius: 'var(--radius-sm)',
           overflow: 'hidden',
           background: 'var(--color-bg-primary)',
         }}
       >
+        {domain === 'time' && <PhaseBackdrop spans={spans} fractionOf={fractionOf} />}
         {domain === 'time' ? (
           <Curves
             series={series}
@@ -481,7 +555,47 @@ export function AnalysisPanel({
           </span>
         )}
       </div>
-    </section>
+
+      {domain === 'time' && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ ...captionStyle, fontVariantNumeric: 'tabular-nums' }}>{`${num(t0, 2)} s`}</span>
+          <span style={captionStyle}>the playhead is the same one as the video</span>
+          <span style={{ ...captionStyle, fontVariantNumeric: 'tabular-nums' }}>{`${num(t1, 2)} s`}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The phase tints behind the time chart, so the chart and the timeline
+ * under the video read as one thing. Light: the span's own colour at low
+ * opacity, which keeps the phase identity (DATA colour) without fighting
+ * the curve.
+ */
+function PhaseBackdrop({ spans, fractionOf }: { spans: PhaseSpan[]; fractionOf: (t: number) => number }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+      {spans.map(s => {
+        const left = fractionOf(s.fromT) * 100;
+        const width = Math.max(0, (fractionOf(s.toT) - fractionOf(s.fromT)) * 100);
+        if (width <= 0) return null;
+        return (
+          <span
+            key={s.definition.id}
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              left: `${left}%`,
+              width: `${width}%`,
+              background: s.definition.color,
+              opacity: s.source === 'fallback' ? 0.06 : 0.11,
+            }}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -965,18 +1079,6 @@ function valueAtTime(t: readonly number[], values: readonly number[], at: number
   }
   return values[values.length - 1];
 }
-
-const shell = {
-  flexShrink: 0,
-  height: 190,
-  display: 'flex',
-  flexDirection: 'column' as const,
-  gap: 'var(--space-sm)',
-  padding: 'var(--space-md)',
-  background: 'var(--color-bg-primary)',
-  borderTop: '1px solid var(--color-border-secondary)',
-  boxSizing: 'border-box' as const,
-};
 
 const captionStyle = {
   fontSize: 'var(--text-caption)',

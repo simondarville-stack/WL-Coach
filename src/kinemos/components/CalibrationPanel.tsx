@@ -42,6 +42,8 @@ interface CalibrationPanelProps {
   /** The lens tier: which correction this clip is being measured through,
    *  and how to measure one. */
   lens: LensState;
+  /** Inside a rail panel that already carries the title. */
+  hideTitle?: boolean;
 }
 
 export interface LensState {
@@ -72,6 +74,7 @@ export function CalibrationPanel({
   assist,
   shape,
   onShape,
+  hideTitle = false,
 }: CalibrationPanelProps) {
   const shapeToggle = (
     <label
@@ -90,8 +93,8 @@ export function CalibrationPanel({
 
   return (
     <section style={sectionStyle}>
-      <header style={headerStyle}>
-        <span style={labelStyle}>CALIBRATION</span>
+      <header style={{ ...headerStyle, ...(hideTitle && !ellipse ? { display: 'none' } : {}) }}>
+        <span style={labelStyle}>{hideTitle ? '' : 'CALIBRATION'}</span>
         {ellipse && (
           <button type="button" onClick={onClear} title="Remove the calibration" style={iconButton}>
             <Trash2 size={13} />

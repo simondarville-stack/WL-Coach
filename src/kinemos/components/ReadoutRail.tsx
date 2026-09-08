@@ -25,7 +25,15 @@ import type { PathMetrics } from '../engine/calibration';
 import { distance, drift, num } from '../lib/viewerFormat';
 import type { ViewerTool } from './ViewerStage';
 
+/** The rail's sections. The viewer's rail is composed of collapsible
+ *  panels, and these sections are dealt out among them: the rep picker to
+ *  "This lift", the path and tracking to "Tracking & correction", notes and
+ *  sharing to their own panel. Rendered whole when nothing is asked for. */
+export type RailPart = 'rep' | 'path' | 'measure' | 'share' | 'notes';
+
 interface ReadoutRailProps {
+  /** Which sections to render, in the rail's own order. */
+  parts?: RailPart[];
   repIndices: number[];
   repIndex: number;
   onRep: (rep: number) => void;
@@ -82,6 +90,10 @@ export interface TrackingState {
   /** Follow a high-contrast marker on the bar end instead of the plate —
    *  design §6.2's tighter tier. Absent until there is an anchor. */
   onTrackMarker?: () => void;
+  /** The frames the tracker flagged, as a queue: a press on one moves the
+   *  playhead there. The video, both charts and the timeline follow. */
+  uncertainIndices?: number[];
+  onJumpTo?: (index: number) => void;
 }
 
 export interface ShareState {
@@ -118,6 +130,7 @@ export interface TalkoverState {
 }
 
 export function ReadoutRail({
+  parts,
   repIndices,
   repIndex,
   onRep,
@@ -156,10 +169,12 @@ export function ReadoutRail({
   }, [talkover?.recording]);
   const recordedS = talkover?.recording && talkover.startedAt !== null ? (performance.now() - talkover.startedAt) / 1000 : 0;
   const calibrated = metrics.calibrated;
+  const wants = (part: RailPart) => !parts || parts.includes(part);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {/* ── Reps ────────────────────────────────────────────────────────── */}
+      {wants('rep') && (
       <section style={section}>
         <header style={header}>
           <span style={label}>REP</span>
@@ -198,8 +213,10 @@ export function ReadoutRail({
           numbers.
         </p>
       </section>
+      )}
 
       {/* ── Path ────────────────────────────────────────────────────────── */}
+      {wants('path') && (
       <section style={section}>
         <header style={header}>
           <span style={label}>BAR PATH</span>
@@ -344,11 +361,18 @@ export function ReadoutRail({
               </Button>
             </div>
           )}
+
+          {/* The flagged frames as a queue with an end — fix, next, done —
+              rather than an inspection of every frame. */}
+          {!tracking.busy && tracking.onJumpTo && (tracking.uncertainIndices?.length ?? 0) > 0 && (
+            <FlaggedFrames indices={tracking.uncertainIndices ?? []} onJumpTo={tracking.onJumpTo} />
+          )}
         </div>
       </section>
+      )}
 
       {/* ── Knee height ─────────────────────────────────────────────────── */}
-      {tool === 'knee' && (
+      {wants('measure') && tool === 'knee' && (
         <section style={section}>
           <header style={header}>
             <span style={label}>KNEE</span>
@@ -371,7 +395,7 @@ export function ReadoutRail({
       )}
 
       {/* ── Measurement ─────────────────────────────────────────────────── */}
-      {(tool === 'distance' || tool === 'angle') && (
+      {wants('measure') && (tool === 'distance' || tool === 'angle') && (
         <section style={section}>
           <header style={header}>
             <span style={label}>{tool === 'distance' ? 'DISTANCE' : 'ANGLE'}</span>
@@ -410,7 +434,7 @@ export function ReadoutRail({
       )}
 
       {/* ── Share ───────────────────────────────────────────────────────── */}
-      {share && (
+      {wants('share') && share && (
         <section style={section}>
           <header style={header}>
             <span style={label}>SHARE</span>
@@ -529,6 +553,7 @@ export function ReadoutRail({
       )}
 
       {/* ── Annotations ─────────────────────────────────────────────────── */}
+      {wants('notes') && (
       <section style={section}>
         <header style={header}>
           <span style={label}>NOTES & SNAPSHOTS</span>
@@ -661,8 +686,52 @@ export function ReadoutRail({
           </Button>
         </form>
       </section>
+      )}
       {playingKey && (
         <VideoLightbox src={kinemosObjectUrl(playingKey)} caption="Talkover" onClose={() => setPlayingKey(null)} />
+      )}
+    </div>
+  );
+}
+
+/** The tracker's flagged frames, at most a dozen at a time, each a jump. */
+function FlaggedFrames({ indices, onJumpTo }: { indices: number[]; onJumpTo: (index: number) => void }) {
+  const shown = indices.slice(0, 12);
+  return (
+    <div style={{ marginTop: 'var(--space-sm)' }}>
+      <div style={{ ...label, marginBottom: 4 }}>FRAMES TO CHECK</div>
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
+        {shown.map(i => (
+          <li key={i}>
+            <button
+              type="button"
+              onClick={() => onJumpTo(i)}
+              title="Move the playhead here — the video, both charts and the timeline follow"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                padding: '3px 6px',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                background: 'transparent',
+                color: 'var(--color-text-primary)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--text-label)',
+                cursor: 'pointer',
+              }}
+              className="kinemos-flag-row"
+            >
+              <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{`f${String(i + 1).padStart(3, '0')}`}</span>
+              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>not confident</span>
+              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-accent)' }}>jump →</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {indices.length > shown.length && (
+        <p style={hint}>{`and ${indices.length - shown.length} more — fix these first, then re-track.`}</p>
       )}
     </div>
   );

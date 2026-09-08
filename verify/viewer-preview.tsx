@@ -38,7 +38,17 @@ import {
 import { gradeAnalysis, type CameraStability } from '../src/kinemos/engine/grade';
 import { DEFAULT_FILTER } from '../src/kinemos/engine/signal';
 import { useFrameServer } from '../src/kinemos/hooks/useFrameServer';
-import { AnalysisPanel } from '../src/kinemos/components/AnalysisPanel';
+import { PhaseTimeline, VelocityChart } from '../src/kinemos/components/AnalysisPanel';
+import { BarPathPanel } from '../src/kinemos/components/BarPathPanel';
+import { HistoryPanel } from '../src/kinemos/components/HistoryPanel';
+import { LiftPanel } from '../src/kinemos/components/LiftPanel';
+import { HeadlineChip, RailPanel } from '../src/kinemos/components/RailPanel';
+import { DEPTH_LABELS, PANEL_KEYS, useViewerPanels, type ViewerDepth } from '../src/kinemos/hooks/useViewerPanels';
+import type { HistoryRow } from '../src/kinemos/lib/history';
+import { verdictFor } from '../src/kinemos/lib/verdict';
+import { num } from '../src/kinemos/lib/viewerFormat';
+import { Button, SegmentedControl } from '../src/components/ui';
+import { Circle, Crosshair, Hand, Minus, Ruler, Share2, Triangle } from 'lucide-react';
 import { ViewerStage, type ViewerTool } from '../src/kinemos/components/ViewerStage';
 import { ComparisonView } from '../src/kinemos/components/ComparisonView';
 import type { AlignmentAnchor } from '../src/kinemos/engine/compare';
@@ -75,8 +85,13 @@ const CM_PER_PX = 0.2;
 /** Stage dimensions. Deliberately larger than the box it is drawn into, so the
  *  gesture maths has to deal with a scaled canvas — which is the case that
  *  breaks if a handler reads clientX without going through the rect. */
-const STAGE_W = 1280;
-const STAGE_H = 800;
+/** `?portrait` stands the frame up, the way a phone films it — the case the
+ *  layout bets on (docs/KINEMOS_VIEWER_LAYOUT.md). Landscape otherwise, which
+ *  exercises the wider video column. */
+const PORTRAIT = new URLSearchParams(window.location.search).has('portrait');
+const STAGE_W = PORTRAIT ? 720 : 1280;
+const STAGE_H = PORTRAIT ? 1280 : 800;
+const PLATE_PX: PxPoint = PORTRAIT ? { x: 500, y: 1100 } : { x: 640, y: 620 };
 
 /** The reference lift is filmed at a different frame rate from the current one.
  *  That is the case side-by-side playback exists to survive: the follower has
@@ -444,7 +459,30 @@ function Bench() {
     [kinematics, fps, camera, points.length],
   );
 
-  const stageCanvas = useStageCanvas(STAGE_W, STAGE_H, { x: 640, y: 620 });
+  const stageCanvas = useStageCanvas(STAGE_W, STAGE_H, PLATE_PX);
+  const panels = useViewerPanels('bench');
+  // A plausible earlier lift, so the verdict has something to say — and a
+  // history for the table. Synthetic, like everything else on this page.
+  const earlier = { analysisId: 'earlier', date: '2026-08-19', loadKg: 102, peakVelocityMs: 1.79, errorMs: 0.03 };
+  const verdict = verdictFor(
+    { peakVelocityMs: metrics?.analyzer.vmaxMs ?? null, loadKg: 102, errorMs: grade.expectedVelocityErrorMs },
+    earlier,
+  );
+  const history: HistoryRow[] = [
+    { analysisId: null, date: '2026-08-26', loadKg: 102, peakVelocityMs: metrics?.analyzer.vmaxMs ?? null, sVmaxCm: metrics?.analyzer.sVmaxCm ?? null, grade: grade.grade, current: true, isReference: false },
+    { analysisId: 'earlier', date: '2026-08-19', loadKg: 102, peakVelocityMs: 1.79, sVmaxCm: 72.1, grade: 'A', current: false, isReference: true },
+    { analysisId: 'e2', date: '2026-08-12', loadKg: 105, peakVelocityMs: 1.74, sVmaxCm: 74.9, grade: 'B', current: false, isReference: false },
+    { analysisId: 'e3', date: '2026-08-05', loadKg: 100, peakVelocityMs: 1.81, sVmaxCm: 71.8, grade: 'A', current: false, isReference: false },
+    { analysisId: 'e4', date: '2026-07-29', loadKg: 97.5, peakVelocityMs: 1.84, sVmaxCm: 70.7, grade: 'A', current: false, isReference: false },
+  ];
+  const TOOLS: Array<{ id: ViewerTool; label: string; icon: typeof Hand }> = [
+    { id: 'look', label: 'Look', icon: Hand },
+    { id: 'calibrate', label: 'Calibrate', icon: Circle },
+    { id: 'mark', label: 'Mark', icon: Crosshair },
+    { id: 'distance', label: 'Distance', icon: Ruler },
+    { id: 'angle', label: 'Angle', icon: Triangle },
+    { id: 'knee', label: 'Knee', icon: Minus },
+  ];
 
   // The handle the driver reaches through. Exposing state rather than reaching
   // into the DOM keeps the assertions about what the component computed, not
@@ -484,26 +522,42 @@ function Bench() {
         background: 'var(--color-bg-page)',
       }}
     >
+      {/* The viewer's header, as the viewer draws it. */}
       <header
         style={{
-          height: 52,
+          minHeight: 49,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
           gap: 12,
           padding: '0 16px',
           background: 'var(--color-bg-primary)',
-          borderBottom: '1px solid var(--color-border-secondary)',
+          borderBottom: '0.5px solid var(--color-border-primary)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <strong style={{ fontSize: 'var(--text-section)' }}>Snatch</strong>
-          <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
-            Jon Herskind · 102 kg · 26/08
-          </span>
-        </div>
+        <span style={{ fontSize: 'var(--text-page-title)', fontWeight: 600, letterSpacing: 'var(--tracking-page-title)' }}>KinEMOS</span>
+        <span style={{ display: 'inline-flex', gap: 6, fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
+          <span>Jon Herskind</span>
+          <span>·</span>
+          <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>Snatch</span>
+          <span>·</span>
+          <span style={{ fontFamily: 'var(--font-mono)' }}>26/08</span>
+          <span>·</span>
+          <span style={{ fontFamily: 'var(--font-mono)' }}>102 kg</span>
+        </span>
         <GradeChip grade={grade} />
+        <span style={{ flexGrow: 1 }} />
+        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>{`${panels.openCount} of ${PANEL_KEYS.length} panels open`}</span>
+        <span style={{ fontSize: 'var(--text-micro)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-text-tertiary)' }}>Depth</span>
+        <SegmentedControl<ViewerDepth>
+          ariaLabel="Depth"
+          value={panels.depth}
+          onChange={panels.setDepth}
+          options={(Object.keys(DEPTH_LABELS) as ViewerDepth[]).map(d => ({ id: d, label: DEPTH_LABELS[d] }))}
+        />
+        <Button size="sm" variant="primary" icon={<Share2 size={12} />} onClick={() => panels.show('notes')}>
+          Share
+        </Button>
       </header>
 
       {comparing && kinematics && metrics && summary && (
@@ -532,144 +586,271 @@ function Bench() {
         />
       )}
 
-      <div style={{ flexGrow: 1, display: comparing ? 'none' : 'flex', minHeight: 0 }}>
-        <main
+      {/* The viewer's three columns (docs/KINEMOS_VIEWER_LAYOUT.md): the
+          clip, the bar path, the panel rail. Same widths, same order. */}
+      <div style={{ flexGrow: 1, display: comparing ? 'none' : 'flex', gap: 12, padding: 12, minHeight: 0 }}>
+        <nav
+          aria-label="Tools"
           style={{
-            flexGrow: 1,
-            minWidth: 0,
+            width: 40,
+            flexShrink: 0,
+            alignSelf: 'flex-start',
             display: 'flex',
             flexDirection: 'column',
-            gap: 12,
-            padding: 16,
-            background: 'var(--color-bg-tertiary)',
+            alignItems: 'center',
+            gap: 4,
+            padding: '8px 0',
+            background: 'var(--color-bg-primary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-lg)',
           }}
         >
-          <ViewerStage
-            canvas={stageCanvas}
-            width={STAGE_W}
-            height={STAGE_H}
-            tool={tool}
-            points={marks}
-            currentT={currentT}
-            showPath
-            ellipse={ellipse}
-            onEllipseChange={setEllipse}
-            measurePoints={[]}
-            onMeasurePoint={() => undefined}
-            onMark={p =>
-              setMarks(current => [
-                ...current.filter(m => Math.abs(m.t - currentT) > 1e-6),
-                { t: currentT, x: p.x, y: p.y, s: 'm' },
-              ])
-            }
-          />
-          <div
-            style={{
-              display: 'flex',
-              gap: 16,
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              fontSize: 'var(--text-caption)',
-            }}
-          >
-            <label>
-              fps{' '}
-              <select value={fps} onChange={e => setFps(Number(e.target.value))}>
-                {[24, 30, 60, 120, 240].map(v => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              marking tremor (px){' '}
-              <input
-                type="range"
-                min={0}
-                max={4}
-                step={0.5}
-                value={tremor}
-                onChange={e => setTremor(Number(e.target.value))}
-              />{' '}
-              {tremor.toFixed(1)}
-            </label>
-            <label>
-              playhead{' '}
-              <input
-                type="range"
-                min={0}
-                max={2.3}
-                step={0.01}
-                value={currentT}
-                onChange={e => setCurrentT(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              tool{' '}
-              <select value={tool} onChange={e => setTool(e.target.value as ViewerTool)}>
-                {(['look', 'calibrate', 'mark', 'distance', 'angle'] as ViewerTool[]).map(t => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="button" onClick={() => setCoach(null)}>
-              reset phase edges
+          {TOOLS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              title={label}
+              aria-label={label}
+              aria-pressed={tool === id}
+              onClick={() => setTool(id)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 30,
+                height: 30,
+                border: 'none',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+                background: tool === id ? 'var(--color-accent-muted)' : 'transparent',
+                color: tool === id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+              }}
+            >
+              <Icon size={16} />
             </button>
-            <span>{`${marks.length} marks`}</span>
-            <button type="button" onClick={() => setComparing(c => !c)}>
-              {comparing ? 'back to the lift' : 'compare'}
-            </button>
-          </div>
-        </main>
+          ))}
+        </nav>
 
-        <aside
+        <section
+          aria-label="Video"
           style={{
-            width: 304,
+            width: PORTRAIT ? 392 : 600,
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
             background: 'var(--color-bg-primary)',
-            borderLeft: '1px solid var(--color-border-tertiary)',
-            overflowY: 'auto',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
           }}
         >
-          <MetricsPanel
-            metrics={metrics}
-            summary={summary}
-            massKg={massKg}
-            massSource="logged"
-            onMass={setMassKg}
-            emptyReason={null}
-          />
-          <GradePanel grade={grade} camera={camera} onCamera={setCamera} />
-        </aside>
-      </div>
+          <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 8 }}>
+            <ViewerStage
+              canvas={stageCanvas}
+              width={STAGE_W}
+              height={STAGE_H}
+              tool={tool}
+              points={marks}
+              currentT={currentT}
+              showPath
+              ellipse={ellipse}
+              onEllipseChange={setEllipse}
+              measurePoints={[]}
+              onMeasurePoint={() => undefined}
+              onMark={p =>
+                setMarks(current => [
+                  ...current.filter(m => Math.abs(m.t - currentT) > 1e-6),
+                  { t: currentT, x: p.x, y: p.y, s: 'm' },
+                ])
+              }
+            />
+          </div>
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 12px' }}>
+            {/* The bench's own controls stand in for the transport. */}
+            <div
+              style={{
+                display: 'flex',
+                gap: 10,
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                fontSize: 'var(--text-caption)',
+              }}
+            >
+              <label>
+                fps{' '}
+                <select value={fps} onChange={e => setFps(Number(e.target.value))}>
+                  {[24, 30, 60, 120, 240].map(v => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                tremor{' '}
+                <input
+                  type="range"
+                  min={0}
+                  max={4}
+                  step={0.5}
+                  style={{ width: 60 }}
+                  value={tremor}
+                  onChange={e => setTremor(Number(e.target.value))}
+                />{' '}
+                {tremor.toFixed(1)}
+              </label>
+              <label>
+                playhead{' '}
+                <input
+                  type="range"
+                  min={0}
+                  max={2.3}
+                  step={0.01}
+                  style={{ width: 90 }}
+                  value={currentT}
+                  onChange={e => setCurrentT(Number(e.target.value))}
+                />
+              </label>
+              <button type="button" onClick={() => setCoach(null)}>
+                reset phase edges
+              </button>
+              <span>{`${marks.length} marks`}</span>
+              <button type="button" onClick={() => setComparing(c => !c)}>
+                {comparing ? 'back to the lift' : 'compare'}
+              </button>
+            </div>
+            <PhaseTimeline
+              series={kinematics}
+              spans={spans}
+              boundaries={boundaries}
+              onBoundaryDrag={(index: number, t: number) =>
+                setCoach(current => {
+                  const base = current ?? boundaries;
+                  return base.map((b, i) => (i === index ? { ...b, t, source: 'coach' as const } : b));
+                })
+              }
+              onBoundaryCommit={() => undefined}
+              currentT={currentT}
+              onSeekT={setCurrentT}
+              emptyReason={null}
+            />
+          </div>
+        </section>
 
-      {/* Hidden while comparing, exactly as the viewer does it — a bench that
-          shows a panel the real screen does not makes its screenshots lie. */}
-      {!comparing && (
-        <AnalysisPanel
-          series={kinematics}
-          spans={spans}
-          boundaries={boundaries}
-          onBoundaryDrag={(index, t) =>
-            setCoach(current => {
-              const base = current ?? boundaries;
-              return base.map((b, i) => (i === index ? { ...b, t, source: 'coach' as const } : b));
-            })
-          }
-          onBoundaryCommit={() => undefined}
-          currentT={currentT}
-          onSeekT={setCurrentT}
-          emptyReason={null}
-          // `?knee=40` marks a knee height, cm above the start, to see the
-          // line in both domains.
-          kneeCm={Number(new URLSearchParams(window.location.search).get('knee')) || null}
-        />
-      )}
+        <div style={{ width: 322, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+          <BarPathPanel
+            series={kinematics}
+            spans={spans}
+            analyzer={metrics?.analyzer ?? null}
+            summary={summary}
+            currentT={currentT}
+            onSeekT={setCurrentT}
+            emptyReason={null}
+            // `?knee=40` marks a knee height, cm above the start, to see the
+            // line in both domains.
+            kneeCm={Number(new URLSearchParams(window.location.search).get('knee')) || null}
+          />
+        </div>
+
+        <div style={{ flexGrow: 1, flexBasis: 0, minWidth: 280, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
+          <RailPanel
+            title="This lift · rep 1"
+            headline={<HeadlineChip tone={grade.grade === 'A' ? 'success' : grade.grade === 'B' ? 'warning' : 'danger'}>{grade.grade ?? 'ungraded'}</HeadlineChip>}
+            open={panels.open.lift}
+            onToggle={() => panels.toggle('lift')}
+          >
+            <LiftPanel
+              repIndices={[1, 2, 3]}
+              repIndex={1}
+              repPeaks={{ 1: metrics?.analyzer.vmaxMs ?? null, 2: 1.79, 3: null }}
+              onRep={() => undefined}
+              onAddRep={() => undefined}
+              metrics={metrics}
+              summary={summary}
+              emptyReason={null}
+              verdict={verdict}
+              marks={{
+                comparable: true,
+                busy: false,
+                isReference: false,
+                onToggleReference: () => undefined,
+                isModel: false,
+                modelLabel: null,
+                onToggleModel: () => undefined,
+                athleteName: 'Jon Herskind',
+                exerciseName: 'Snatch',
+              }}
+            />
+          </RailPanel>
+          <RailPanel
+            title="Velocity over time"
+            headline={<HeadlineChip mono>{metrics?.analyzer.vmaxMs != null ? `peak ${num(metrics.analyzer.vmaxMs, 2)} m/s` : '—'}</HeadlineChip>}
+            open={panels.open.velocity}
+            onToggle={() => panels.toggle('velocity')}
+          >
+            <VelocityChart
+              series={kinematics}
+              spans={spans}
+              boundaries={boundaries}
+              currentT={currentT}
+              onSeekT={setCurrentT}
+              emptyReason={null}
+              kneeCm={Number(new URLSearchParams(window.location.search).get('knee')) || null}
+            />
+          </RailPanel>
+          <RailPanel
+            title="All metrics"
+            headline={<HeadlineChip>21 of 21</HeadlineChip>}
+            open={panels.open.metrics}
+            onToggle={() => panels.toggle('metrics')}
+          >
+            <MetricsPanel
+              metrics={metrics}
+              summary={summary}
+              massKg={massKg}
+              massSource="logged"
+              onMass={setMassKg}
+              emptyReason={null}
+            />
+          </RailPanel>
+          <RailPanel
+            title="Tracking & correction"
+            headline={<HeadlineChip tone="danger">3 frames flagged</HeadlineChip>}
+            open={panels.open.tracking}
+            onToggle={() => panels.toggle('tracking')}
+          >
+            <GradePanel grade={grade} camera={camera} onCamera={setCamera} />
+          </RailPanel>
+          <RailPanel
+            title="Calibration"
+            headline={<HeadlineChip mono>45,0 cm · θ 0,0°</HeadlineChip>}
+            open={panels.open.calibration}
+            onToggle={() => panels.toggle('calibration')}
+          >
+            <p style={{ margin: 0, padding: 12, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+              The calibration panel needs a frame server; see the viewer.
+            </p>
+          </RailPanel>
+          <RailPanel
+            title="History & comparison"
+            headline={<HeadlineChip>Snatch · last 4</HeadlineChip>}
+            open={panels.open.history}
+            onToggle={() => panels.toggle('history')}
+          >
+            <HistoryPanel rows={history} exerciseName="Snatch" comparable onCompare={() => setComparing(true)} canTrend onTrends={() => undefined} />
+          </RailPanel>
+          <RailPanel
+            title="Notes & sharing"
+            headline={<HeadlineChip>0 notes</HeadlineChip>}
+            open={panels.open.notes}
+            onToggle={() => panels.toggle('notes')}
+          >
+            <p style={{ margin: 0, padding: 12, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+              Sharing needs an athlete and a stored rep; see the viewer.
+            </p>
+          </RailPanel>
+        </div>
+      </div>
     </div>
   );
 }

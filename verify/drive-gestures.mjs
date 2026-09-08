@@ -72,7 +72,7 @@ try {
   // ── Dragging a phase edge ─────────────────────────────────────────────────
   const strip = await page.evaluate(() => {
     const el = [...document.querySelectorAll('div')].find(
-      d => d.style.cursor === 'pointer' && d.style.height === '30px',
+      d => d.style.cursor === 'pointer' && d.style.height === '26px',
     );
     const r = el.getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height };
