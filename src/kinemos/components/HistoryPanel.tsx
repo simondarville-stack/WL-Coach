@@ -35,9 +35,7 @@ export function HistoryPanel({ rows, exerciseName, comparable, onCompare, canTre
     <div>
       {earlier.length === 0 ? (
         <p style={hint}>
-          {exerciseName
-            ? `No other analysed ${exerciseName} for this athlete yet. The next one lands here, with this lift to compare against.`
-            : 'No other analysed lifts for this athlete yet.'}
+          {exerciseName ? `No other analysed ${exerciseName} for this athlete.` : 'No other analysed lifts for this athlete.'}
         </p>
       ) : (
         <table style={table}>
@@ -55,13 +53,7 @@ export function HistoryPanel({ rows, exerciseName, comparable, onCompare, canTre
               <tr
                 key={r.analysisId ?? 'current'}
                 onClick={r.current || !comparable || !r.analysisId ? undefined : () => onCompare(r.analysisId)}
-                title={
-                  r.current
-                    ? 'This lift'
-                    : comparable
-                      ? 'Compare this lift with it'
-                      : 'Comparison needs a calibrated, marked lift'
-                }
+                title={r.current ? 'This lift' : comparable ? 'Compare with this lift' : 'Needs a calibrated, marked lift'}
                 style={{
                   background: r.current ? 'var(--color-accent-muted)' : undefined,
                   cursor: r.current || !comparable ? 'default' : 'pointer',
@@ -71,7 +63,7 @@ export function HistoryPanel({ rows, exerciseName, comparable, onCompare, canTre
                 <td style={{ ...td, fontFamily: 'var(--font-mono)' }}>
                   {r.date ? formatDateShort(r.date) : '—'}
                   {r.isReference && (
-                    <span title="The athlete’s reference lift for this exercise" style={{ marginLeft: 4, color: 'var(--color-accent)' }}>
+                    <span title="Reference lift" style={{ marginLeft: 4, color: 'var(--color-accent)' }}>
                       ★
                     </span>
                   )}
@@ -100,10 +92,10 @@ export function HistoryPanel({ rows, exerciseName, comparable, onCompare, canTre
           onClick={() => onCompare(target?.analysisId ?? null)}
           title={
             !comparable
-              ? 'Comparison needs a calibrated, marked lift'
+              ? 'Needs a calibrated, marked lift'
               : target
-                ? `Open the comparison on ${target.isReference ? 'the reference lift' : 'the latest lift'}${target.date ? ` (${formatDateShort(target.date)})` : ''}`
-                : 'Compare this lift with another of the same athlete, or with a model lift'
+                ? `Compare with the ${target.isReference ? 'reference' : 'latest'} lift`
+                : 'Compare with another lift'
           }
         >
           {target?.date ? `Compare with ${formatDateShort(target.date)}` : 'Compare…'}
@@ -114,9 +106,9 @@ export function HistoryPanel({ rows, exerciseName, comparable, onCompare, canTre
           icon={<TrendingUp size={12} />}
           disabled={!canTrend}
           onClick={onTrends}
-          title={canTrend ? 'This athlete’s analysed lifts over time and against load' : 'Trends need an athlete on the clip'}
+          title={canTrend ? 'Analysed lifts over time and against load' : 'Needs an athlete on the clip'}
         >
-          Trend over time
+          Trends
         </Button>
       </div>
     </div>

@@ -857,6 +857,7 @@ function Bench() {
                 frameCount={points.length}
                 currentIndex={Math.round((currentT / 2.3) * (points.length - 1))}
                 onSeek={i => setCurrentT((i / (points.length - 1)) * 2.3)}
+                edges={spans.map(s => ({ index: Math.round((s.fromT / 2.3) * (points.length - 1)), label: s.definition.label }))}
               />
             </div>
             <GradePanel grade={grade} camera={camera} onCamera={setCamera} />

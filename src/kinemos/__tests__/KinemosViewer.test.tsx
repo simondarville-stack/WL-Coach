@@ -182,7 +182,8 @@ describe('KinemosViewer', () => {
 
   it('explains why there are no velocities yet', async () => {
     renderViewer();
-    expect(await screen.findByText(/Calibrate against a plate to get velocities/i)).toBeInTheDocument();
+    // One line, said once per surface: the bar-path column, the chart, the lift.
+    expect((await screen.findAllByText('Calibrate a plate to get velocities.')).length).toBeGreaterThan(0);
   });
 
   it('offers the bar mass, and says what it is for', async () => {

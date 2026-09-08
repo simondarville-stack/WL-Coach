@@ -24,7 +24,7 @@ import { formatDateTimeShort } from '../../lib/dateUtils';
 import type { PathMetrics } from '../engine/calibration';
 import { distance, drift, num } from '../lib/viewerFormat';
 import type { ViewerTool } from './ViewerStage';
-import { TrackConfidenceStrip } from './TrackConfidenceStrip';
+import { TrackConfidenceStrip, type PhaseEdge } from './TrackConfidenceStrip';
 import type { FrameConfidence } from '../lib/trackedPoints';
 
 /** The rail's sections. The viewer's rail is composed of collapsible
@@ -98,7 +98,7 @@ export interface TrackingState {
   onJumpTo?: (index: number) => void;
   /** The tracker's score on every frame, for the confidence strip. Absent
    *  until there is a frame server to place the points on. */
-  confidence?: { frames: FrameConfidence[]; frameCount: number; currentIndex: number | null };
+  confidence?: { frames: FrameConfidence[]; frameCount: number; currentIndex: number | null; edges?: PhaseEdge[] };
 }
 
 export interface ShareState {
@@ -376,6 +376,7 @@ export function ReadoutRail({
                 frameCount={tracking.confidence.frameCount}
                 currentIndex={tracking.confidence.currentIndex}
                 onSeek={tracking.onJumpTo}
+                edges={tracking.confidence.edges}
               />
             </div>
           )}
@@ -383,7 +384,11 @@ export function ReadoutRail({
           {/* The flagged frames as a queue with an end — fix, next, done —
               rather than an inspection of every frame. */}
           {!tracking.busy && tracking.onJumpTo && (tracking.uncertainIndices?.length ?? 0) > 0 && (
-            <FlaggedFrames indices={tracking.uncertainIndices ?? []} onJumpTo={tracking.onJumpTo} />
+            <FlaggedFrames
+              indices={tracking.uncertainIndices ?? []}
+              scores={new Map(tracking.confidence?.frames.map(f => [f.index, f.c]) ?? [])}
+              onJumpTo={tracking.onJumpTo}
+            />
           )}
         </div>
       </section>
@@ -713,18 +718,26 @@ export function ReadoutRail({
 }
 
 /** The tracker's flagged frames, at most a dozen at a time, each a jump. */
-function FlaggedFrames({ indices, onJumpTo }: { indices: number[]; onJumpTo: (index: number) => void }) {
+function FlaggedFrames({
+  indices,
+  scores,
+  onJumpTo,
+}: {
+  indices: number[];
+  scores: Map<number, number | null>;
+  onJumpTo: (index: number) => void;
+}) {
   const shown = indices.slice(0, 12);
   return (
     <div style={{ marginTop: 'var(--space-sm)' }}>
-      <div style={{ ...label, marginBottom: 4 }}>FRAMES TO CHECK</div>
+      <div style={{ ...label, marginBottom: 4 }}>{`FLAGGED · ${indices.length}`}</div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
         {shown.map(i => (
           <li key={i}>
             <button
               type="button"
               onClick={() => onJumpTo(i)}
-              title="Move the playhead here — the video, both charts and the timeline follow"
+              title="Jump to frame"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -742,14 +755,16 @@ function FlaggedFrames({ indices, onJumpTo }: { indices: number[]; onJumpTo: (in
               className="kinemos-flag-row"
             >
               <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{`f${String(i + 1).padStart(3, '0')}`}</span>
-              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>not confident</span>
-              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-accent)' }}>jump →</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                {num(scores.get(i) ?? null, 2)}
+              </span>
+              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-accent)' }}>→</span>
             </button>
           </li>
         ))}
       </ul>
       {indices.length > shown.length && (
-        <p style={hint}>{`and ${indices.length - shown.length} more — fix these first, then re-track.`}</p>
+        <p style={hint}>{`+${indices.length - shown.length} more`}</p>
       )}
     </div>
   );

@@ -77,7 +77,7 @@ export function MetricsPanel({
         <header style={header}>
           <span style={label}>VELOCITY</span>
           {deltaHeader && (
-            <span style={{ ...label, letterSpacing: 0 }} title="Each number against the same earlier lift the verdict is judged by. A difference inside the metric's threshold — for velocities, the grade's margin — reads as “same”.">
+            <span style={{ ...label, letterSpacing: 0 }} title="Against the lift the verdict uses · inside the threshold = same">
               {deltaHeader}
             </span>
           )}

@@ -8,8 +8,7 @@
  * open too: it is the panel's summary, not a substitute for its content.
  *
  * A real `<button>` with `aria-expanded`, so the rail reads as what it is to
- * a keyboard and a screen reader; the chevron label says the verb rather than
- * leaving a glyph to carry it.
+ * a keyboard and a screen reader.
  */
 import { forwardRef, type CSSProperties, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
@@ -37,9 +36,8 @@ export const RailPanel = forwardRef<HTMLElement, RailPanelProps>(function RailPa
           <span style={titleStyle}>{title}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             {headline}
-            <span style={chevron}>
-              {open ? 'Collapse' : 'Open'}
-              {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            <span style={chevron} title={open ? 'Collapse' : 'Open'}>
+              {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </span>
           </span>
         </button>

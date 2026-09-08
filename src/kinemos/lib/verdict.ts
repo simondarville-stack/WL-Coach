@@ -89,8 +89,8 @@ export function verdictFor(
   if (current.peakVelocityMs === null || !Number.isFinite(current.peakVelocityMs)) {
     return {
       kind: 'none',
-      headline: 'No peak velocity yet',
-      detail: 'Calibrate and track the lift to get one.',
+      headline: 'No peak velocity',
+      detail: 'Calibrate and track first.',
       deltaMs: null,
     };
   }
@@ -98,10 +98,7 @@ export function verdictFor(
     return {
       kind: 'none',
       headline: 'Nothing earlier to compare with',
-      detail:
-        current.loadKg !== null
-          ? `No earlier analysed lift of this exercise for this athlete. The next one at ${loadLabel(current.loadKg)} gets a verdict.`
-          : 'No earlier analysed lift of this exercise for this athlete.',
+      detail: 'No earlier analysed lift of this exercise.',
       deltaMs: null,
     };
   }
@@ -128,14 +125,14 @@ export function verdictFor(
     return {
       kind: faster ? 'faster' : 'slower',
       headline: `${faster ? 'Faster' : 'Slower'} than the last lift ${at}`,
-      detail: `${signed} vs ${when} — larger than the ${marginText} margin of error, so the difference is real.`,
+      detail: `${signed} vs ${when} · outside ${marginText}`,
       deltaMs: delta,
     };
   }
   return {
     kind: 'level',
     headline: `Level with the last lift ${at}`,
-    detail: `${signed} vs ${when} — inside the ${marginText} margin of error, so treat it as the same speed.`,
+    detail: `${signed} vs ${when} · inside ${marginText}`,
     deltaMs: delta,
   };
 }

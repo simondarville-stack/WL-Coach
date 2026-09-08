@@ -118,7 +118,7 @@ describe('verdictFor', () => {
     expect(v.kind).toBe('faster');
     expect(v.headline).toBe('Faster than the last lift at this weight');
     expect(v.detail).toContain('+0,04 m/s vs 22/07');
-    expect(v.detail).toContain('larger than the ±0,02 m/s margin');
+    expect(v.detail).toBe('+0,04 m/s vs 22/07 · outside ±0,02 m/s');
   });
 
   it('reports a difference inside the margin as level — never a directional claim', () => {
@@ -126,7 +126,7 @@ describe('verdictFor', () => {
     expect(v.kind).toBe('level');
     expect(v.headline).toBe('Level with the last lift at this weight');
     expect(v.detail).toContain('+0,01 m/s');
-    expect(v.detail).toContain('inside the ±0,02 m/s margin');
+    expect(v.detail).toBe('+0,01 m/s vs 22/07 · inside ±0,02 m/s');
   });
 
   it('is gated by the wider of the two margins', () => {
@@ -152,6 +152,6 @@ describe('verdictFor', () => {
     expect(verdictFor({ peakVelocityMs: null, loadKg: 112.5, errorMs: null }, earlier).kind).toBe('none');
     const none = verdictFor({ peakVelocityMs: 1.8, loadKg: 112.5, errorMs: 0.02 }, null);
     expect(none.kind).toBe('none');
-    expect(none.detail).toContain('112,5 kg');
+    expect(none.headline).toBe('Nothing earlier to compare with');
   });
 });

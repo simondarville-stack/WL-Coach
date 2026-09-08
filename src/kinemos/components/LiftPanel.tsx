@@ -80,7 +80,7 @@ export function LiftPanel({
               type="button"
               onClick={() => onRep(rep)}
               aria-pressed={active}
-              title={peak === null ? `Rep ${rep} — not analysed yet` : `Rep ${rep} — peak ${num(peak, 2)} m/s`}
+              title={peak === null ? `Rep ${rep} · not analysed` : `Rep ${rep} · Vmax ${num(peak, 2)} m/s`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -103,7 +103,7 @@ export function LiftPanel({
             </button>
           );
         })}
-        <button type="button" onClick={onAddRep} title="Add a rep — one recording often holds several attempts" style={addButton}>
+        <button type="button" onClick={onAddRep} title="Add a rep" style={addButton}>
           <Plus size={12} />
           rep
         </button>
@@ -112,7 +112,7 @@ export function LiftPanel({
       {/* The three big numbers */}
       {topSpeed === null ? (
         <p style={{ margin: 0, padding: '12px 16px', fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-tertiary)' }}>
-          {emptyReason ?? 'Mark the bar through the lift to get numbers.'}
+          {emptyReason ?? 'Mark the bar to get numbers.'}
         </p>
       ) : (
         <div style={{ display: 'flex', padding: '12px 0' }}>
@@ -120,19 +120,19 @@ export function LiftPanel({
             label="Top speed"
             value={num(topSpeed, 2)}
             unit={heightAtTop === null ? 'm/s' : `m/s · at ${num(heightAtTop, 1)} cm`}
-            title="Peak vertical velocity (Vmax), and the height the bar had reached when it got there (S_vmax)."
+            title="Vmax · at S_vmax"
           />
           <BigStat
             label="Bar height"
             value={barHeight === null ? '—' : num(barHeight, 1)}
             unit="cm"
-            title="The top of the bar's flight (S_max), above where it started."
+            title="S_max, above the start"
           />
           <BigStat
             label="Turnover"
             value={turnover === null ? '—' : num(turnover, 2)}
             unit="s"
-            title="Time from Vmax to Vmin — how fast the lifter got under the bar (t_turn)."
+            title="t_turn · Vmax → Vmin"
             last
           />
         </div>
@@ -159,10 +159,10 @@ export function LiftPanel({
           onClick={marks.onToggleReference}
           title={
             !marks.comparable
-              ? 'A reference needs a calibrated, marked lift'
+              ? 'Needs a calibrated, marked lift'
               : marks.isReference
-                ? `This is ${marks.athleteName ?? 'the athlete'}’s reference ${marks.exerciseName ?? 'lift'}. Comparison opens on it and the trend view draws it as a line. Press to unmark.`
-                : `Make this ${marks.athleteName ?? 'the athlete'}’s reference ${marks.exerciseName ?? 'lift'} — the one the others are judged against. Replaces any current reference for this exercise.`
+                ? `${marks.athleteName ?? 'The athlete'}’s reference ${marks.exerciseName ?? 'lift'} · press to unmark`
+                : `Make this ${marks.athleteName ?? 'the athlete'}’s reference ${marks.exerciseName ?? 'lift'} · replaces the current one`
           }
         >
           {marks.isReference ? 'Reference lift' : 'Set as reference'}
@@ -176,10 +176,10 @@ export function LiftPanel({
           onClick={marks.onToggleModel}
           title={
             !marks.comparable
-              ? 'A model lift needs a calibrated, marked lift'
+              ? 'Needs a calibrated, marked lift'
               : marks.isModel
-                ? `A model lift for the whole club${marks.modelLabel ? `: “${marks.modelLabel}”` : ''}. It is offered when comparing any athlete. Press to unmark.`
-                : 'Make this a model lift for the whole club — an exemplar offered when comparing any athlete, not only this one.'
+                ? `Club model lift${marks.modelLabel ? ` · ${marks.modelLabel}` : ''} · press to unmark`
+                : 'Make this a club model lift · offered when comparing any athlete'
           }
         >
           {marks.isModel ? (marks.modelLabel ? `Model · ${marks.modelLabel}` : 'Model lift') : 'Set as model'}

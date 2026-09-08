@@ -215,7 +215,7 @@ export function PhaseTimeline({
             background: 'repeating-linear-gradient(135deg, transparent 0 8px, rgba(0,0,0,0.025) 8px 16px)',
           }}
         />
-        <span style={captionStyle}>{emptyReason ?? 'Phases appear once the lift is tracked and calibrated.'}</span>
+        <span style={captionStyle}>{emptyReason ?? 'No phases.'}</span>
       </div>
     );
   }
@@ -248,7 +248,7 @@ export function PhaseTimeline({
           return (
             <div
               key={s.definition.id}
-              title={`${s.definition.label} — ${num(s.toT - s.fromT, 2)} s${s.source === 'fallback' ? ' (edge placed by proportion)' : ''} · click to jump to its first frame`}
+              title={`${s.definition.label} · ${num(s.toT - s.fromT, 2)} s${s.source === 'fallback' ? ' · edge by proportion' : ''}`}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -297,7 +297,7 @@ export function PhaseTimeline({
               onPointerDown={() => {
                 draggingRef.current = i;
               }}
-              title={`${b.rule.replace(/-/g, ' ')} — ${b.source} · drag to correct`}
+              title={`${b.rule.replace(/-/g, ' ')} · ${b.source}`}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -336,8 +336,8 @@ export function PhaseTimeline({
         )}
       </div>
       <span style={captionStyle}>
-        Click a phase to jump to its first frame · drag an edge to correct it · <Key>R</Key> resets the edges
-        {spans.some(s => s.source === 'fallback') && ' · hatched = edge placed by proportion'}
+        click: jump · drag edge: correct · <Key>R</Key>: reset
+        {spans.some(s => s.source === 'fallback') && ' · hatched: edge by proportion'}
       </span>
     </div>
   );
@@ -398,7 +398,7 @@ export function VelocityChart({
     return (
       <div style={{ padding: 'var(--space-md)' }}>
         <p style={{ margin: 0, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
-          {emptyReason ?? 'Nothing to plot yet.'}
+          {emptyReason ?? 'Nothing to plot.'}
         </p>
       </div>
     );
@@ -559,7 +559,6 @@ export function VelocityChart({
       {domain === 'time' && (
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
           <span style={{ ...captionStyle, fontVariantNumeric: 'tabular-nums' }}>{`${num(t0, 2)} s`}</span>
-          <span style={captionStyle}>the playhead is the same one as the video</span>
           <span style={{ ...captionStyle, fontVariantNumeric: 'tabular-nums' }}>{`${num(t1, 2)} s`}</span>
         </div>
       )}

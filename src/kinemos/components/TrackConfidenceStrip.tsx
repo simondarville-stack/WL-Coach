@@ -15,11 +15,20 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { CONFIDENCE_FLAGGED, CONFIDENCE_SOLID, confidenceRuns, type ConfidenceRun, type FrameConfidence } from '../lib/trackedPoints';
 import { num } from '../lib/viewerFormat';
 
+export interface PhaseEdge {
+  /** Frame the phase starts on. */
+  index: number;
+  label: string;
+}
+
 interface TrackConfidenceStripProps {
   frames: FrameConfidence[];
   frameCount: number;
   currentIndex: number | null;
   onSeek: (index: number) => void;
+  /** Where each phase starts, drawn as ticks so a red run can be placed in
+   *  the lift without looking away to the timeline. */
+  edges?: PhaseEdge[];
 }
 
 const BAND_COLOR: Record<ConfidenceRun['band'], string> = {
@@ -33,14 +42,14 @@ const BAND_COLOR: Record<ConfidenceRun['band'], string> = {
 
 const BAND_WORD: Record<ConfidenceRun['band'], string> = {
   solid: 'solid match',
-  doubtful: 'worth a look',
+  doubtful: 'doubtful',
   flagged: 'flagged',
-  manual: 'marked by hand',
-  unscored: 'tracked before scores were kept',
+  manual: 'by hand',
+  unscored: 'unscored',
   none: 'no point',
 };
 
-export function TrackConfidenceStrip({ frames, frameCount, currentIndex, onSeek }: TrackConfidenceStripProps) {
+export function TrackConfidenceStrip({ frames, frameCount, currentIndex, onSeek, edges = [] }: TrackConfidenceStripProps) {
   if (frameCount <= 0) return null;
   const runs = confidenceRuns(frames, frameCount);
   const scored = frames.filter(f => f.c !== null);
@@ -58,7 +67,7 @@ export function TrackConfidenceStrip({ frames, frameCount, currentIndex, onSeek 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
         <span style={micro}>{`Tracker confidence · ${frameCount} frames`}</span>
         {mean !== null && (
-          <span style={{ ...micro, textTransform: 'none', letterSpacing: 0, fontVariantNumeric: 'tabular-nums' }} title="Mean score over the scored frames">
+          <span style={{ ...micro, textTransform: 'none', letterSpacing: 0, fontVariantNumeric: 'tabular-nums' }} title="Mean score">
             {`mean ${num(mean, 2)}`}
           </span>
         )}
@@ -80,16 +89,43 @@ export function TrackConfidenceStrip({ frames, frameCount, currentIndex, onSeek 
             </title>
           </rect>
         ))}
+        {/* Lines, not rects: a one-frame rect is under a pixel on a long
+            clip, and a non-scaling stroke keeps these one width at any
+            frame count. */}
+        {edges.map(edge =>
+          edge.index > 0 && edge.index < frameCount ? (
+            <line
+              key={`${edge.label}-${edge.index}`}
+              x1={edge.index}
+              y1={0}
+              x2={edge.index}
+              y2={14}
+              stroke="var(--color-text-primary)"
+              strokeWidth={1}
+              strokeDasharray="2 2"
+              strokeOpacity={0.6}
+              vectorEffect="non-scaling-stroke"
+            >
+              <title>{`${edge.label} · frame ${edge.index + 1}`}</title>
+            </line>
+          ) : null,
+        )}
         {currentIndex !== null && currentIndex >= 0 && currentIndex < frameCount && (
-          <rect x={currentIndex} y={0} width={1} height={14} fill="var(--color-text-primary)" vectorEffect="non-scaling-stroke" />
+          <line x1={currentIndex + 0.5} y1={0} x2={currentIndex + 0.5} y2={14} stroke="var(--color-text-primary)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
         )}
       </svg>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
         <Key band="solid">{`≥ ${num(CONFIDENCE_SOLID, 2)} solid`}</Key>
-        <Key band="doubtful">{`${num(CONFIDENCE_FLAGGED, 2)}–${num(CONFIDENCE_SOLID, 2)} worth a look`}</Key>
+        <Key band="doubtful">{`${num(CONFIDENCE_FLAGGED, 2)}–${num(CONFIDENCE_SOLID, 2)} doubtful`}</Key>
         <Key band="flagged">{`< ${num(CONFIDENCE_FLAGGED, 2)} flagged`}</Key>
         <Key band="manual">by hand</Key>
-        {frames.some(f => f.band === 'unscored') && <Key band="unscored">unscored — re-track to score</Key>}
+        {frames.some(f => f.band === 'unscored') && <Key band="unscored">unscored · re-track</Key>}
+        {edges.length > 0 && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-micro)', color: 'var(--color-text-tertiary)' }}>
+            <span style={{ width: 0, height: 8, borderLeft: '1px dashed var(--color-text-primary)', opacity: 0.6 }} />
+            phase edge
+          </span>
+        )}
       </div>
     </div>
   );

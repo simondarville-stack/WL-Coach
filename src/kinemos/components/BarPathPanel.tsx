@@ -64,9 +64,9 @@ const TICK_ROW_1 = 518;
 const TICK_ROW_2 = 532;
 
 const MODES: Array<{ id: PathMode; label: string; title: string }> = [
-  { id: 'path', label: 'Bar path', title: 'Where the bar went — horizontal position against height' },
-  { id: 'velocity', label: 'Velocity path', title: 'How fast the bar was moving at each height — the analyzer’s figure' },
-  { id: 'both', label: 'Combined', title: 'Both on the same height axis: one set of gridlines' },
+  { id: 'path', label: 'Bar path', title: 'x vs height' },
+  { id: 'velocity', label: 'Velocity path', title: 'v vs height' },
+  { id: 'both', label: 'Combined', title: 'Both on one height axis' },
 ];
 
 export function BarPathPanel({
@@ -135,7 +135,7 @@ export function BarPathPanel({
         <span style={{ fontSize: 'var(--text-label)', fontWeight: 600, letterSpacing: 'var(--tracking-section)' }}>
           Bar path
         </span>
-        <span style={caption}>bar height on y</span>
+        <span style={caption}>height on y</span>
       </header>
 
       <div role="radiogroup" aria-label="Plot" style={{ display: 'flex', gap: 4, padding: '8px 10px 0', flexShrink: 0 }}>
@@ -194,7 +194,7 @@ export function BarPathPanel({
           </svg>
         ) : (
           <div style={{ ...plotStyle, display: 'grid', placeItems: 'center', padding: 16, boxSizing: 'border-box' }}>
-            <p style={{ margin: 0, ...caption, textAlign: 'center' }}>{emptyReason ?? 'Nothing to plot yet.'}</p>
+            <p style={{ margin: 0, ...caption, textAlign: 'center' }}>{emptyReason ?? 'Nothing to plot.'}</p>
           </div>
         )}
       </div>
@@ -220,12 +220,6 @@ export function BarPathPanel({
         </div>
       )}
 
-      <div style={{ flexShrink: 0, padding: '6px 10px 10px', borderTop: '0.5px solid var(--color-border-tertiary)' }}>
-        <span style={caption}>
-          Both plots carry bar height on the same vertical axis, so <b>Combined</b> is a true overlay — where the bar
-          was, and how fast it was moving at that height, on one set of gridlines.
-        </span>
-      </div>
     </section>
   );
 }

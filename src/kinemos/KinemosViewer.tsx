@@ -601,23 +601,8 @@ export function KinemosViewer() {
     [kinematics, server, calibration, camera, points.length, trackerTier, correctionCount, stability, lensSource],
   );
 
-  /**
-   * Why there are no curves, in the coach's terms — long for the empty chart
-   * area, which has the room and is the more likely place to be read cold.
-   */
-  const analysisEmptyReason = useMemo(() => {
-    if (!calibration)
-      return 'Calibrate against a plate to get velocities — without a scale there is no velocity to measure.';
-    if (calibration.confidence === 'degenerate')
-      return 'The plate outline is too small to carry a scale worth measuring against.';
-    if (points.length < 8)
-      return `Mark the bar through the lift — ${points.length} of at least 8 points so far.`;
-    return null;
-  }, [calibration, points.length]);
-
-  /** The same fact, terse, for the rail. The long sentence is already on screen
-   *  in the chart area; repeating it verbatim in a 304 px column reads as a
-   *  duplicated warning rather than as one condition stated once. */
+  /** Why there are no numbers, in one line — the bar-path column, the
+   *  chart and the lift panel all say this one thing. */
   const metricsEmptyReason = useMemo(() => {
     if (!calibration) return 'Calibrate a plate to get velocities.';
     if (calibration.confidence === 'degenerate')
@@ -2033,7 +2018,7 @@ export function KinemosViewer() {
   );
 
   const calibrationHeadline = calibration ? (
-    <HeadlineChip mono title={`Plate ${num(calibration.plateDiameterCm, 1)} cm · viewing angle ${num(calibration.viewingAngleDeg, 1)}° off perpendicular`}>
+    <HeadlineChip mono title="plate · viewing angle">
       {`${num(calibration.plateDiameterCm, 1)} cm · θ ${num(calibration.viewingAngleDeg, 1)}°`}
     </HeadlineChip>
   ) : (
@@ -2062,8 +2047,7 @@ export function KinemosViewer() {
   /** What the panels say when there is nothing to show. The stage carries the
    *  full embed note; the panels say the short thing once each — the long
    *  sentence lives in the bar-path column, the terse one in the rail. */
-  const embedEmpty = embedded && !kinematics ? 'No stored rep for this clip — it is analysed on the athlete’s phone.' : null;
-  const columnEmptyReason = embedEmpty ?? analysisEmptyReason;
+  const embedEmpty = embedded && !kinematics ? 'No stored rep — analysed on the athlete’s phone.' : null;
   const railEmptyReason = embedEmpty ?? metricsEmptyReason;
 
   /** Everything the rail needs to offer, and report on, assisted tracking —
@@ -2082,7 +2066,14 @@ export function KinemosViewer() {
     onTrackMarker: points.length > 0 && status === 'ready' ? () => void runMarkerTrack() : undefined,
     uncertainIndices,
     onJumpTo: seek,
-    confidence: server ? { frames: frameScores, frameCount: server.frameCount, currentIndex: index } : undefined,
+    confidence: server
+      ? {
+          frames: frameScores,
+          frameCount: server.frameCount,
+          currentIndex: index,
+          edges: spans.map(s => ({ index: server.nearestIndex(s.fromT), label: s.definition.label })),
+        }
+      : undefined,
   };
 
   return (
@@ -2188,15 +2179,10 @@ export function KinemosViewer() {
           options={(Object.keys(DEPTH_LABELS) as ViewerDepth[]).map(depth => ({
             id: depth,
             label: DEPTH_LABELS[depth],
-            title:
-              depth === 'look'
-                ? 'The lift only — the three numbers and the verdict'
-                : depth === 'read'
-                  ? 'The lift, its velocity curve, every metric and the history'
-                  : 'Everything, tracking and calibration included',
+            title: depth === 'look' ? 'Lift only' : depth === 'read' ? 'Lift, velocity, metrics, history' : 'Everything',
           }))}
         />
-        <Button size="sm" variant="primary" icon={<Share2 size={12} />} onClick={openShare} title="Send this rep to the athlete or a colleague, or export the clip with the bar path burned in">
+        <Button size="sm" variant="primary" icon={<Share2 size={12} />} onClick={openShare} title="Send, or export with the bar path">
           Share
         </Button>
       </header>
@@ -2468,7 +2454,7 @@ export function KinemosViewer() {
             )}
             {stageReady && (
               <p style={{ margin: 0, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
-                ← → step a frame · ⇧ steps ten · space plays · V/C/M/D/A/K pick a tool · shift-drag pans
+                ← → frame · ⇧ ×10 · space play · V C M D A K tools · ⇧-drag pan
               </p>
             )}
           </div>
@@ -2516,7 +2502,7 @@ export function KinemosViewer() {
             onSeekT={t => {
               if (server) seek(server.nearestIndex(t));
             }}
-            emptyReason={columnEmptyReason}
+            emptyReason={railEmptyReason}
             kneeCm={kneeCm}
           />
         </div>

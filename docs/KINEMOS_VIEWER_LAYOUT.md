@@ -79,8 +79,8 @@ coverage, flagged frames and lift windows, plus frame stepping), then the
 **phase timeline**: one band per phase in its own phase colour, a click jumps
 to the phase's first frame, a drag on an interior edge corrects it, a hatched
 band is an edge the engine placed by proportion. The accent playhead is the
-video's. Caption: `Click a phase to jump to its first frame · drag an edge to
-correct it · R resets the edges`. The active hand-tool's readout (a distance,
+video's. Caption: `click: jump · drag edge: correct · R: reset`. The active
+hand-tool's readout (a distance,
 an angle, the knee) sits at the foot of this column, with the stage it is
 read off.
 
@@ -117,9 +117,9 @@ a real `<button aria-expanded>`, chevron label `Open ⌄` / `Collapse ⌃`.
 | # | Panel | Collapsed headline | Open content |
 | --- | --- | --- | --- |
 | 1 | `This lift · rep n` | grade letter | rep pills with each rep's stored peak; three big stats — Top speed (Vmax, at S_vmax) / Bar height (S_max) / Turnover (t_turn), 40 px mono; the verdict callout; reference / model toggles |
-| 2 | `Velocity over time` | `peak 1,82 m/s` | the curves with phase tints behind them, the second-series picker, `vs time / vs height`, playhead synced to the video; caption *the playhead is the same one as the video*, `0,00 s … 5,80 s` |
+| 2 | `Velocity over time` | `peak 1,82 m/s` | the curves with phase tints behind them, the second-series picker, `vs time / vs height`, playhead synced to the video, `0,00 s … 5,80 s` |
 | 3 | `All metrics` | `17 of 21 · vs 22/07` | the existing metrics panel — velocity, bar mass, the BVDG analyzer block, phases — with a **Δ vs last make** column: each number against the same earlier lift the verdict is judged by, a direction word per row (`+0,04 ↑ better`, `+0,03 ↓ worse`, `+1,1 ↑ higher`, `−2,8 ↓ earlier in the pull`), and `same` inside the metric's threshold (`lib/metricDeltas.ts`) |
-| 4 | `Tracking & correction` | `3 frames flagged` (danger) / `tracked · 218 frames` / `12 marks by hand` / `not tracked` | path geometry, track / re-track / track the set / marker, the **confidence strip** — the tracker's score on every frame over the clip's whole length, green ≥ 0,80 / amber / red < 0,55, hand marks in the accent, a press seeks (`components/TrackConfidenceStrip.tsx`) — the flagged-frame queue (each row a jump), then *How far to trust this*: the grade's conditions, camera, stabilise, re-centre |
+| 4 | `Tracking & correction` | `3 frames flagged` (danger) / `tracked · 218 frames` / `12 marks by hand` / `not tracked` | path geometry, track / re-track / track the set / marker, the **confidence strip** — the tracker's score on every frame over the clip's whole length, green ≥ 0,80 / amber / red < 0,55, hand marks in the accent, phase edges as dashed ticks, a press seeks (`components/TrackConfidenceStrip.tsx`) — the flagged-frame queue (each row a jump), then *How far to trust this*: the grade's conditions, camera, stabilise, re-centre |
 | 5 | `Calibration` | `45,0 cm · θ 28,4°` / `not calibrated` (warning) | the existing calibration panel: find, outline, plate, the two scales, the lens tier |
 | 6 | `History & comparison` | `Snatch · last 6` | table Date / Load / Vmax / S_vmax / grade, current row selected, ★ on the reference; a row opens the comparison on it; `Compare with DD/MM`, `Trend over time` |
 | 7 | `Notes & sharing` | `2 notes · shared 1×` | send to the athlete or a colleague, export with the bar path burned in, talkover, notes and snapshots |
@@ -145,11 +145,9 @@ error on peak velocity), with the catalogue's `significant` threshold as the
 fallback for an ungraded row:
 
 - |Δ| > margin → *"Faster / Slower than the last lift at this weight"* /
-  *"+0,04 m/s vs 22/07 — larger than the ±0,02 m/s margin of error, so the
-  difference is real."*
+  *"+0,04 m/s vs 22/07 · outside ±0,02 m/s"*
 - otherwise → *"Level with the last lift at this weight"* / *"+0,01 m/s vs
-  22/07 — inside the ±0,02 m/s margin of error, so treat it as the same
-  speed."*
+  22/07 · inside ±0,02 m/s"*
 
 Never a directional claim for a delta inside the margin.
 
