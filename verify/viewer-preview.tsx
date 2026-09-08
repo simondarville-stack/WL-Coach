@@ -53,6 +53,7 @@ import { num } from '../src/kinemos/lib/viewerFormat';
 import { Button, SegmentedControl } from '../src/components/ui';
 import { Circle, Crosshair, Hand, Minus, Ruler, Share2, Triangle } from 'lucide-react';
 import { ViewerStage, type ViewerTool } from '../src/kinemos/components/ViewerStage';
+import { DEFAULT_DISPLAY_PREFS } from '../src/kinemos/lib/displayPrefs';
 import { ComparisonView } from '../src/kinemos/components/ComparisonView';
 import type { AlignmentAnchor } from '../src/kinemos/engine/compare';
 import type { ComparisonCandidate, ComparisonSubject } from '../src/kinemos/lib/comparisonService';
@@ -682,7 +683,7 @@ function Bench() {
               tool={tool}
               points={marks}
               currentT={currentT}
-              showPath
+              display={DEFAULT_DISPLAY_PREFS.stage}
               ellipse={ellipse}
               onEllipseChange={setEllipse}
               measurePoints={[]}

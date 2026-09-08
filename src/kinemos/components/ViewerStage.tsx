@@ -28,6 +28,14 @@ import {
 } from 'react';
 import type { PlateEllipse, PxPoint } from '../engine/calibration';
 import type { KinemosTrackPoint } from '../../lib/database.types';
+import {
+  STAGE_GRID_CM,
+  STAGE_LINE_WIDTHS_PX,
+  STAGE_OPACITIES,
+  STAGE_POINT_RADII_PX,
+  type StagePrefs,
+} from '../lib/displayPrefs';
+import { DisplayOptions, type OptionRow } from './DisplayOptions';
 
 export type ViewerTool = 'look' | 'calibrate' | 'mark' | 'distance' | 'angle' | 'knee';
 
@@ -40,7 +48,21 @@ interface ViewerStageProps {
   points: KinemosTrackPoint[];
   /** Timestamp of the frame on screen, so its own mark can be highlighted. */
   currentT: number | null;
-  showPath: boolean;
+
+  /** How the path and the frame furniture are drawn (`lib/displayPrefs`). */
+  display: StagePrefs;
+  /** The options chip on the stage. Absent → the chip is not drawn. */
+  onDisplay?: (patch: Partial<StagePrefs>) => void;
+  onDisplayReset?: () => void;
+  displayModified?: boolean;
+  /** One colour per point when the path is coloured by velocity or phase,
+   *  aligned to `points`. Null → the path is one colour. */
+  pointColours?: readonly string[] | null;
+  /** Why the path cannot be coloured, when it cannot (no calibrated track). */
+  colourReason?: string | null;
+  /** The centimetre grid in frame pixels: the spacing along each axis and a
+   *  point the lines pass through (the bar's start). Null → no calibration. */
+  cmGrid?: { xStep: number; yStep: number; origin: PxPoint; cm: number } | null;
 
   ellipse: PlateEllipse | null;
   onEllipseChange: (ellipse: PlateEllipse) => void;
@@ -146,7 +168,13 @@ export function ViewerStage({
   tool,
   points,
   currentT,
-  showPath,
+  display,
+  onDisplay,
+  onDisplayReset,
+  displayModified = false,
+  pointColours = null,
+  colourReason = null,
+  cmGrid = null,
   ellipse,
   onEllipseChange,
   measurePoints,
@@ -327,7 +355,121 @@ export function ViewerStage({
   };
 
   const currentMark =
-    currentT === null ? null : (points.find(p => Math.abs(p.t - currentT) < 1e-6) ?? null);
+    currentT === null || !display.cursor ? null : (points.find(p => Math.abs(p.t - currentT) < 1e-6) ?? null);
+
+  // ── The path, as the coach wants it drawn ────────────────────────────────
+  //
+  // `visible` is the indices of the points to draw: all of them, or only what
+  // the bar has done so far when the trail follows the playhead. Indices, not
+  // a filtered copy, so a per-point colour stays aligned to its point.
+  const visible: number[] = [];
+  for (let i = 0; i < points.length; i++) {
+    if (display.trail === 'past' && currentT !== null && points[i].t > currentT + 1e-6) continue;
+    visible.push(i);
+  }
+  const drawLine = display.path === 'line' || display.path === 'both';
+  const drawPoints = display.path === 'points' || display.path === 'both';
+  const colours = display.colour !== 'plain' && pointColours && pointColours.length === points.length ? pointColours : null;
+  const lineWidth = px(display.lineWidthPx);
+  const pointRadius = px(display.pointRadiusPx);
+
+  const gridStroke = { stroke: 'rgba(255,255,255,0.38)', strokeWidth: px(1), strokeDasharray: `${px(4)} ${px(4)}` };
+  const cmLines = (() => {
+    if (display.grid !== 'cm' || !cmGrid || !(cmGrid.xStep > 1) || !(cmGrid.yStep > 1)) return null;
+    const xs: number[] = [];
+    const ys: number[] = [];
+    // Both ways from the origin, capped so a tiny plate on a huge frame cannot
+    // draw thousands of lines.
+    for (let x = cmGrid.origin.x, n = 0; x >= 0 && n < 120; x -= cmGrid.xStep, n++) xs.push(x);
+    for (let x = cmGrid.origin.x + cmGrid.xStep, n = 0; x <= width && n < 120; x += cmGrid.xStep, n++) xs.push(x);
+    for (let y = cmGrid.origin.y, n = 0; y >= 0 && n < 120; y -= cmGrid.yStep, n++) ys.push(y);
+    for (let y = cmGrid.origin.y + cmGrid.yStep, n = 0; y <= height && n < 120; y += cmGrid.yStep, n++) ys.push(y);
+    return { xs, ys };
+  })();
+
+  const optionRows: OptionRow[] | null = onDisplay
+    ? [
+        {
+          kind: 'choice',
+          label: 'Path',
+          value: display.path,
+          options: [
+            { value: 'line', label: 'line' },
+            { value: 'points', label: 'points' },
+            { value: 'both', label: 'both' },
+            { value: 'off', label: 'off' },
+          ],
+          onChange: (v: never) => onDisplay({ path: v }),
+        },
+        {
+          kind: 'choice',
+          label: 'Line width',
+          value: display.lineWidthPx,
+          options: STAGE_LINE_WIDTHS_PX.map(w => ({ value: w, label: `${w} px` })),
+          onChange: (v: never) => onDisplay({ lineWidthPx: v }),
+        },
+        {
+          kind: 'choice',
+          label: 'Point size',
+          value: display.pointRadiusPx,
+          options: STAGE_POINT_RADII_PX.map(r => ({ value: r, label: `${String(r).replace('.', ',')} px` })),
+          onChange: (v: never) => onDisplay({ pointRadiusPx: v }),
+        },
+        {
+          kind: 'choice',
+          label: 'Opacity',
+          value: display.opacity,
+          options: STAGE_OPACITIES.map(o => ({ value: o, label: `${Math.round(o * 100)} %` })),
+          onChange: (v: never) => onDisplay({ opacity: v }),
+        },
+        {
+          kind: 'choice',
+          label: 'Colour',
+          value: display.colour,
+          options: [
+            { value: 'plain', label: 'one colour' },
+            { value: 'velocity', label: 'velocity heat', title: 'Blue falling · grey at rest · amber rising · red at this lift\'s Vmax' },
+            { value: 'phase', label: 'by phase', title: 'Each phase in its timeline colour' },
+          ],
+          onChange: (v: never) => onDisplay({ colour: v }),
+          disabledReason: colourReason,
+        },
+        {
+          kind: 'choice',
+          label: 'Grid',
+          value: display.grid,
+          options: [
+            { value: 'off', label: 'off' },
+            { value: 'thirds', label: 'thirds' },
+            { value: 'cm', label: 'cm', title: 'Real centimetres through the plate outline, from the bar\'s start' },
+          ],
+          onChange: (v: never) => onDisplay({ grid: v }),
+        },
+        ...(display.grid === 'cm'
+          ? [
+              {
+                kind: 'choice' as const,
+                label: 'Grid step',
+                value: display.gridCm,
+                options: STAGE_GRID_CM.map(cm => ({ value: cm, label: `${cm} cm` })),
+                onChange: (v: never) => onDisplay({ gridCm: v }),
+                disabledReason: cmGrid ? null : 'no plate outline',
+              },
+            ]
+          : []),
+        {
+          kind: 'choice',
+          label: 'Trail',
+          value: display.trail,
+          options: [
+            { value: 'full', label: 'whole rep' },
+            { value: 'past', label: 'up to now', title: 'The path grows with the playhead' },
+          ],
+          onChange: (v: never) => onDisplay({ trail: v }),
+        },
+        { kind: 'toggle', label: 'Ring on the bar at this frame', value: display.cursor, onChange: v => onDisplay({ cursor: v }) },
+      ]
+    : null;
 
   const cursor =
     tool === 'look' ? 'grab' : tool === 'calibrate' && ellipse ? 'default' : 'crosshair';
@@ -350,6 +492,9 @@ export function ViewerStage({
   };
 
   return (
+    // The outer wrapper is not clipped, so the options popover can hang past
+    // the stage's edge; the inner box clips the zoomed frame as before.
+    <div style={{ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex' }}>
     <div
       ref={boxRef}
       style={{
@@ -394,22 +539,74 @@ export function ViewerStage({
           // the handles below opt back in.
           pointerEvents="none"
         >
-          {/* ── Bar path ──────────────────────────────────────────────── */}
-          {showPath && points.length > 1 && (
-            <polyline
-              points={points.map(p => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke="var(--color-accent)"
-              strokeWidth={px(2.5)}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={0.95}
-            />
+          {/* ── Grid ──────────────────────────────────────────────────── */}
+          {display.grid === 'thirds' && (
+            <g data-grid="thirds" {...gridStroke}>
+              <line x1={width / 3} y1={0} x2={width / 3} y2={height} />
+              <line x1={(2 * width) / 3} y1={0} x2={(2 * width) / 3} y2={height} />
+              <line x1={0} y1={height / 3} x2={width} y2={height / 3} />
+              <line x1={0} y1={(2 * height) / 3} x2={width} y2={(2 * height) / 3} />
+            </g>
           )}
-          {showPath &&
-            points.map(p => (
-              <circle key={p.t} cx={p.x} cy={p.y} r={px(2.5)} fill="#FFFFFF" opacity={0.85} />
-            ))}
+          {cmLines && cmGrid && (
+            <g data-grid="cm" {...gridStroke}>
+              {cmLines.xs.map(x => (
+                <line key={`x${x}`} x1={x} y1={0} x2={x} y2={height} />
+              ))}
+              {cmLines.ys.map(y => (
+                <line key={`y${y}`} x1={0} y1={y} x2={width} y2={y} />
+              ))}
+              <text
+                x={px(8)}
+                y={height - px(8)}
+                fontSize={px(11)}
+                fill="#FFFFFF"
+                stroke={INK}
+                strokeWidth={px(3)}
+                style={labelStyle}
+              >
+                {`${cmGrid.cm} cm`}
+              </text>
+            </g>
+          )}
+
+          {/* ── Bar path ──────────────────────────────────────────────── */}
+          {display.path !== 'off' && visible.length > 0 && (
+            <g data-path={display.path} opacity={display.opacity}>
+              {drawLine && visible.length > 1 && !colours && (
+                <polyline
+                  points={visible.map(i => `${points[i].x},${points[i].y}`).join(' ')}
+                  fill="none"
+                  stroke="var(--color-accent)"
+                  strokeWidth={lineWidth}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+              {drawLine &&
+                colours &&
+                visible.slice(1).map((i, k) => {
+                  const a = points[visible[k]];
+                  const b = points[i];
+                  return (
+                    <line
+                      key={b.t}
+                      x1={a.x}
+                      y1={a.y}
+                      x2={b.x}
+                      y2={b.y}
+                      stroke={colours[i]}
+                      strokeWidth={lineWidth}
+                      strokeLinecap="round"
+                    />
+                  );
+                })}
+              {drawPoints &&
+                visible.map(i => (
+                  <circle key={points[i].t} cx={points[i].x} cy={points[i].y} r={pointRadius} fill={colours ? colours[i] : '#FFFFFF'} />
+                ))}
+            </g>
+          )}
           {currentMark && (
             <>
               <circle
@@ -584,6 +781,25 @@ export function ViewerStage({
         >
           {`${scale.toFixed(1).replace('.', ',')}× — reset`}
         </button>
+      )}
+    </div>
+      {optionRows && (
+        <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 2 }}>
+          <DisplayOptions
+            title="Clip overlay"
+            tone="stage"
+            rows={optionRows}
+            modified={displayModified}
+            onReset={() => onDisplayReset?.()}
+            footer={
+              display.colour === 'velocity' && !colourReason ? (
+                <p style={{ margin: '8px 0 0', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', lineHeight: 1.35 }}>
+                  Blue falling · grey at rest · amber rising · red at this lift's Vmax.
+                </p>
+              ) : null
+            }
+          />
+        </div>
       )}
     </div>
   );

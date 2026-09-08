@@ -234,7 +234,12 @@ play, step, scrub, both orientations, 1440 × 900 and 1280 × 720):**
 2. **The `vs height` toggle on the velocity chart** now duplicates the
    bar-path column. Kept for now (nothing shipped is deleted without
    instruction); retire it once the column has been used for a few weeks.
-3. **Overlay chips on the clip** (`bar path` / `grid` / `pose`). The stage
-   always draws the path; there is no grid and no pose. Not built.
+3. **Overlay chips on the clip** (`bar path` / `grid` / `pose`). Built in
+   0.100.0 as a display-options popover on the stage (`DisplayOptions`,
+   `lib/displayPrefs.ts`): path line / points / both / off, width, opacity,
+   colour by velocity or phase, a thirds or centimetre grid, a trail that
+   follows the playhead. The bar-path column has the same popover for its
+   labels, a velocity-heated line, points and width. Pose is still not
+   built (P5 plan §6).
 4. **Depth as a coach setting** — the presets are hardcoded
    (`DEPTH_PRESETS`); parameterise when the three names settle.

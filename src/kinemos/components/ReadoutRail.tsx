@@ -87,6 +87,11 @@ export interface TrackingState {
   /** Track the whole clip as a set and make a rep of each lift. Absent
    *  until there is an anchor and a calibration to size the plate by. */
   onTrackSet?: () => void;
+  /** Track on from where "+ rep" left off to the end of the clip, making a
+   *  rep of each lift found. Present only on a fresh rep with frames after
+   *  that point; `trackRestHint` says where it starts. */
+  onTrackRest?: () => void;
+  trackRestHint?: string;
   /** What the last set track said, in the coach's terms. */
   setNote?: string | null;
   /** Follow a high-contrast marker on the bar end instead of the plate —
@@ -317,6 +322,15 @@ function ReadoutRailImpl({
                     ? 'Mark a wrong frame, then re-track from it.'
                     : 'Tracks both ways from the mark.'}
               </p>
+              {tracking.onTrackRest && (
+                <div style={{ marginTop: 'var(--space-sm)' }}>
+                  <Button size="sm" variant="primary" onClick={tracking.onTrackRest} title={tracking.trackRestHint}>
+                    Track the rest of the clip
+                  </Button>
+                  <p style={hint}>{tracking.trackRestHint}</p>
+                  {tracking.setNote && <p style={hint}>{tracking.setNote}</p>}
+                </div>
+              )}
               {tracking.onTrackSet && (
                 <div style={{ marginTop: 'var(--space-sm)' }}>
                   <Button

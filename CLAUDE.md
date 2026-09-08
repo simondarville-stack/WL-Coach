@@ -213,6 +213,21 @@ All modules are **active** — nothing is currently disabled or hidden:
   sized in screen pixels, an angle is drawn as rays and an arc — found by
   `verify/drive-viewer.mjs`, which walks the viewer in a real Chrome against
   the library's clips (the dev `/api` proxy pointed at the deployment).
+  From 0.100.0: **display preferences** for the viewer
+  (`lib/displayPrefs.ts`, `hooks/useDisplayPrefs.ts`, one popover component
+  `components/DisplayOptions.tsx` on the clip and on the bar-path column) —
+  line / points / both, width, opacity, a path coloured by velocity or by
+  phase, a thirds or real-centimetre grid, a trail that follows the playhead,
+  and on the plots which labels show, a velocity-heated line, points and the
+  width; the coach's, stored per browser (`kinemos.viewer.display`), never
+  per athlete. V1/V2/Vmax/Vmin are drawn on the **bar path too** (diamonds,
+  event colours), from the same search as the table; a V1/V2 withheld
+  because its phase edge was placed by proportion says so on its legend
+  chip. And **"+ rep" remembers where the rep it left ended** (or the
+  playhead, when the coach scrubbed past it): the new, empty rep offers
+  *Track the rest of the clip*, the set tracker held to the frames after
+  that point (`trackSet`'s `range`), each lift found landing on the next
+  rep index — how a set the tracker cut wrongly is finished.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on

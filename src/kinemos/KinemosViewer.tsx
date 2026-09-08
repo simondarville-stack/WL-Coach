@@ -88,6 +88,8 @@ import { GradeChip, GradePanel } from './components/GradePanel';
 import { MetricsPanel } from './components/MetricsPanel';
 import { ReadoutRail, type ShareState, type TalkoverState, type TrackingState } from './components/ReadoutRail';
 import { ViewerStage, type ViewerTool } from './components/ViewerStage';
+import { useDisplayPrefs } from './hooks/useDisplayPrefs';
+import { DEFAULT_DISPLAY_PREFS, heatScaleMs, velocityColour } from './lib/displayPrefs';
 import { ColumnSplitter } from './components/ColumnSplitter';
 import { PATH_WIDTH_RANGE, VIDEO_WIDTH_RANGE, useColumnWidths } from './hooks/useColumnWidths';
 import { useElementWidth } from './hooks/useElementWidth';
@@ -149,6 +151,11 @@ const LIFT_SCAN_KEY = 'kinemos.scan.';
 /** What TRACK THE SET reads of a set tracker's result, whether from one
  *  call over the whole clip or several inside the lifts. */
 type SetOutcome = Pick<TrackSetResult, 'points' | 'reps' | 'joins' | 'lostAtEnd' | 'colour'>;
+
+/** "12,4 s" — a clip time for a sentence. */
+function secs(t: number): string {
+  return `${t.toFixed(1).replace('.', ',')} s`;
+}
 
 export function KinemosViewer() {
   const { kind, id } = useParams<{ kind: string; id: string }>();
@@ -240,6 +247,34 @@ export function KinemosViewer() {
    *  what gets stored. */
   const [plateShape, setPlateShape] = useState<'ellipse' | 'circle'>('ellipse');
   const [setNote, setSetNote] = useState<string | null>(null);
+  /** What the last "track the rest" said — on the lift panel, where the offer was. */
+  const [restNote, setRestNote] = useState<string | null>(null);
+  /**
+   * Where the next part of the clip begins, kept from the moment the coach
+   * pressed "+ rep": the end of the rep they were on — or the playhead, when
+   * they had already scrubbed past that end to where the next lift starts.
+   * The new, empty rep can then be tracked from there to the end of the clip
+   * without a mark; a set the tracker cut wrongly is finished this way.
+   */
+  const [restStart, setRestStart] = useState<{
+    index: number;
+    t: number;
+    x: number;
+    y: number;
+    ellipse: PlateEllipse;
+    afterRep: number;
+    /** The coach chose the frame; the plate is found on it before tracking. */
+    atPlayhead: boolean;
+  } | null>(null);
+  const display = useDisplayPrefs();
+  const stageModified = useMemo(
+    () => JSON.stringify(display.prefs.stage) !== JSON.stringify(DEFAULT_DISPLAY_PREFS.stage),
+    [display.prefs.stage],
+  );
+  const plotModified = useMemo(
+    () => JSON.stringify(display.prefs.plot) !== JSON.stringify(DEFAULT_DISPLAY_PREFS.plot),
+    [display.prefs.plot],
+  );
   const [recentreProgress, setRecentreProgress] = useState<{ done: number; total: number } | null>(null);
   const [recentreNote, setRecentreNote] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
@@ -568,6 +603,30 @@ export function KinemosViewer() {
   );
 
   const repSummary = useMemo(() => (kinematics ? summariseRep(kinematics) : null), [kinematics]);
+
+  /**
+   * The path over the video, coloured: by the bar's vertical velocity at each
+   * point (the series is on the clip's clock, so a point's time reads straight
+   * off it) or by the phase the point falls in. One colour per stored point,
+   * aligned to `points`; null when the coach wants one colour or there is no
+   * calibrated series to colour by.
+   */
+  const pointColours = useMemo<string[] | null>(() => {
+    const mode = display.prefs.stage.colour;
+    if (mode === 'plain' || !kinematics || points.length === 0) return null;
+    if (mode === 'velocity') {
+      const scale = heatScaleMs(kinematics.vyMs);
+      return points.map(p => velocityColour(valueAt(kinematics.t, kinematics.vyMs, p.t) ?? 0, scale));
+    }
+    return points.map(p => spans.find(sp => p.t >= sp.fromT && p.t <= sp.toT)?.definition.color ?? '#9CA3AF');
+  }, [display.prefs.stage.colour, kinematics, points, spans]);
+  const colourReason = kinematics ? null : 'needs a calibrated track';
+  /** A real-centimetre grid through the plate's own scales, from the bar's start. */
+  const cmGrid = useMemo(() => {
+    if (!calibration || points.length === 0 || display.prefs.stage.grid !== 'cm') return null;
+    const cm = display.prefs.stage.gridCm;
+    return { xStep: cm / calibration.cmPerPxH, yStep: cm / calibration.cmPerPxV, origin: { x: points[0].x, y: points[0].y }, cm };
+  }, [calibration, points, display.prefs.stage.grid, display.prefs.stage.gridCm]);
 
   /**
    * Whether this lift has everything the comparison needs. One flag rather than
@@ -1028,6 +1087,111 @@ export function KinemosViewer() {
    * rep picker, the comparison and the trends see them with no change. Rep
    * 1 replaces the rep the coach is in; later reps take the next indices.
    */
+  /**
+   * Persist every rep of a set track. Rep k takes index (repIndex + k), so the
+   * current analysis becomes rep 1 and a set tracked twice lands on the same
+   * rows; rep 1 is taken into the viewer directly, already saved.
+   */
+  const persistSetReps = useCallback(
+    async (result: SetOutcome): Promise<number[]> => {
+      if (!server || !source || !id) return [];
+      const owner = getOwnerId();
+      const indices: number[] = [];
+      let firstApplied = false;
+      for (const rep of result.reps) {
+        const index = repIndex + rep.rep - 1;
+        // One definition of what a stored rep is, shared with the automatic
+        // run on the library (`lib/autoAnalyse.ts`).
+        const analysisId = await persistRep({
+          source,
+          sourceId: id,
+          repIndex: index,
+          server,
+          ownerId: owner,
+          points: rep.points,
+          ellipse: rep.ellipse,
+          calibration: rep.calibration,
+          calibratedAt: { index: server.nearestIndex(rep.segment.liftOffT), t: rep.segment.liftOffT },
+          massKg,
+          massSource,
+          camera,
+        });
+        indices.push(index);
+        if (!firstApplied) {
+          firstApplied = true;
+          analysisIdRef.current = analysisId;
+          dirtyRef.current = false;
+          setPoints(rep.points);
+          setEllipse(rep.ellipse);
+          setUncertainIndices(rep.lowConfidenceIndices);
+          setTrackerTier('assisted');
+          setCorrectionCount(0);
+        }
+      }
+      setRepIndices(current => [...new Set([...current, ...indices])].sort((a, b) => a - b));
+      return indices;
+    },
+    [server, source, id, repIndex, massKg, massSource, camera],
+  );
+
+  /**
+   * The rest of the clip, from where "+ rep" left off, as reps of this and
+   * the following indices. The same set tracker as TRACK THE SET, held to the
+   * frames after the previous rep (`range`), anchored on the plate where that
+   * rep left it — or, when the coach scrubbed ahead first, found again on the
+   * frame they chose. This is how a set the tracker cut wrongly is finished:
+   * the coach keeps what is right, adds a rep, and tracks on from there.
+   */
+  const trackRestNow = useCallback(async () => {
+    if (!server || !source || !id || !restStart) return;
+    const from = Math.min(restStart.index, server.frameCount - 1);
+    setTrackProgress({ done: 0, total: server.frameCount - from });
+    setSetNote(null);
+    setRestNote(null);
+    const say = (note: string) => {
+      setSetNote(note);
+      setRestNote(note);
+    };
+    try {
+      let at = { index: from, x: restStart.x, y: restStart.y };
+      let outline = restStart.ellipse;
+      if (restStart.atPlayhead) {
+        const found =
+          (await findPlateOnFrame(server, from, { x: restStart.x, y: restStart.y }, { shape: plateShape })) ??
+          (await findPlateOnFrame(server, from, undefined, { shape: plateShape }));
+        if (found) {
+          at = { index: from, x: found.ellipse.cx, y: found.ellipse.cy };
+          outline = found.ellipse;
+        }
+      }
+      const result = await trackSet(server, at, {
+        ellipse: outline,
+        plateDiameterCm,
+        range: { from, to: server.frameCount - 1 },
+        onProgress: (done, total) => setTrackProgress({ done, total }),
+      });
+      if (result.reps.length === 0) {
+        say(
+          result.points.length < 8
+            ? `The tracker could not get hold of the bar at ${secs(restStart.t)}. Scrub to a still frame where the plate is clear, press + rep again, and try from there — or mark the bar and track by hand.`
+            : `Nothing after ${secs(restStart.t)} rises 40 cm from a rest. The clip may end here, or the next lift starts mid-pull — mark the bar and use TRACK for it.`,
+        );
+        return;
+      }
+      const indices = await persistSetReps(result);
+      setRestStart(null);
+      say(
+        `${indices.length} rep${indices.length === 1 ? '' : 's'} found after rep ${restStart.afterRep}, from ${secs(restStart.t)} to the end of the clip` +
+          (result.joins.length > 0 ? `, the plate found again ${result.joins.length} time${result.joins.length === 1 ? '' : 's'}` : '') +
+          (result.lostAtEnd ? '. The tracker lost the bar at the end and did not find it again.' : '.'),
+      );
+    } catch (e) {
+      say(e instanceof Error ? e.message : 'Tracking the rest of the clip failed — the clip could not be read frame by frame.');
+    } finally {
+      setTrackProgress(null);
+    }
+  }, [server, source, id, restStart, plateShape, plateDiameterCm, persistSetReps]);
+
   const trackSetNow = useCallback(async () => {
     if (!server || !source || !id || currentT === null || !ellipse) return;
     const anchorPoint = points.reduce<KinemosTrackPoint | null>(
@@ -1092,44 +1256,7 @@ export function KinemosViewer() {
         );
         return;
       }
-      // Persist every rep. Rep k takes index (repIndex + k), so the current
-      // analysis becomes rep 1 and a set tracked twice lands on the same rows.
-      const owner = getOwnerId();
-      const indices: number[] = [];
-      let firstApplied = false;
-      for (const rep of result.reps) {
-        const index = repIndex + rep.rep - 1;
-        // One definition of what a stored rep is, shared with the automatic
-        // run on the library (`lib/autoAnalyse.ts`).
-        const analysisId = await persistRep({
-          source,
-          sourceId: id,
-          repIndex: index,
-          server,
-          ownerId: owner,
-          points: rep.points,
-          ellipse: rep.ellipse,
-          calibration: rep.calibration,
-          calibratedAt: { index: server.nearestIndex(rep.segment.liftOffT), t: rep.segment.liftOffT },
-          massKg,
-          massSource,
-          camera,
-        });
-        indices.push(index);
-        if (!firstApplied) {
-          // Rep 1 is the one on screen: take it into the viewer directly,
-          // already saved, rather than round-tripping through a reload.
-          firstApplied = true;
-          analysisIdRef.current = analysisId;
-          dirtyRef.current = false;
-          setPoints(rep.points);
-          setEllipse(rep.ellipse);
-          setUncertainIndices(rep.lowConfidenceIndices);
-          setTrackerTier('assisted');
-          setCorrectionCount(0);
-        }
-      }
-      setRepIndices(current => [...new Set([...current, ...indices])].sort((a, b) => a - b));
+      await persistSetReps(result);
       const own = result.reps.filter(r => r.ownCalibration).length;
       const byColour = result.joins.filter(j => j.how === 'colour').length;
       setSetNote(
@@ -1152,7 +1279,7 @@ export function KinemosViewer() {
     } finally {
       setTrackProgress(null);
     }
-  }, [server, source, id, currentT, ellipse, points, plateDiameterCm, repIndex, massKg, massSource, camera, liftScan, plateShape]);
+  }, [server, source, id, currentT, ellipse, points, plateDiameterCm, liftScan, plateShape, persistSetReps]);
 
   /**
    * Follow a marker on the bar end rather than the plate. The coach clicks
@@ -1876,11 +2003,52 @@ export function KinemosViewer() {
     if (analysisId) await clearCalibration(analysisId).catch(() => undefined);
   }, []);
 
-  const addRep = useCallback(() => {
+  // `useEvent`, not `useCallback`: it reads the playhead, and a handler that
+  // changed on every frame step would re-render the lift panel on every frame.
+  const addRep = useEvent(() => {
     const next = Math.max(...repIndices) + 1;
+    // Where the next part of the clip starts: the end of the rep being left,
+    // or the playhead when the coach has already scrubbed past that end. The
+    // plate outline goes with it, since the new rep has none of its own yet.
+    if (server && points.length > 0 && ellipse) {
+      const last = points[points.length - 1];
+      const endIndex = server.nearestIndex(last.t);
+      const fromIndex = Math.max(endIndex, index);
+      setRestStart({
+        index: fromIndex,
+        t: server.timestamps[fromIndex] ?? last.t,
+        x: last.x,
+        y: last.y,
+        ellipse,
+        afterRep: repIndex,
+        atPlayhead: fromIndex > endIndex,
+      });
+    } else {
+      setRestStart(null);
+    }
+    setRestNote(null);
     setRepIndices(current => [...current, next]);
     setRepIndex(next);
-  }, [repIndices]);
+  });
+
+  // A different clip: nothing left to track on from.
+  useEffect(() => {
+    setRestStart(null);
+    setRestNote(null);
+  }, [source, id]);
+
+  /** The offer to track on from where "+ rep" left off, while this rep is
+   *  still empty and the clip has frames after that point. */
+  const trackRest = useMemo(
+    () =>
+      restStart && server && points.length === 0 && status === 'ready' && restStart.index < server.frameCount - 1
+        ? {
+            hint: `From ${secs(restStart.t)}${restStart.atPlayhead ? ' (the playhead)' : ` (the end of rep ${restStart.afterRep})`} to the end of the clip. Each lift found becomes a rep, calibrated at its own rest.`,
+            run: () => void trackRestNow(),
+          }
+        : null,
+    [restStart, server, points.length, status, trackRestNow],
+  );
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -2067,12 +2235,14 @@ export function KinemosViewer() {
       onTrack: on.track,
       onNextUncertain: jumpToNextUncertain,
       onTrackSet: points.length > 0 && status === 'ready' && ellipse ? on.trackSet : undefined,
+      onTrackRest: trackRest?.run,
+      trackRestHint: trackRest?.hint,
       setNote,
       onTrackMarker: points.length > 0 && status === 'ready' ? on.trackMarker : undefined,
       uncertainIndices,
       onJumpTo: seek,
     }),
-    [points.length, status, trackProgress, trackerTier, uncertainIndices, correctionCount, ellipse, setNote, seek, jumpToNextUncertain, on.track, on.trackSet, on.trackMarker],
+    [points.length, status, trackProgress, trackerTier, uncertainIndices, correctionCount, ellipse, setNote, seek, jumpToNextUncertain, on.track, on.trackSet, on.trackMarker, trackRest],
   );
   const phaseEdges = useMemo(
     () => (server ? spans.map(s => ({ index: server.nearestIndex(s.fromT), label: s.definition.label })) : []),
@@ -2557,7 +2727,13 @@ export function KinemosViewer() {
                 tool={tool}
                 points={points}
                 currentT={currentT}
-                showPath
+                display={display.prefs.stage}
+                onDisplay={display.setStage}
+                onDisplayReset={() => display.reset('stage')}
+                displayModified={stageModified}
+                pointColours={pointColours}
+                colourReason={colourReason}
+                cmGrid={cmGrid}
                 ellipse={ellipse}
                 onEllipseChange={on.ellipseChange}
                 measurePoints={measurePoints}
@@ -2668,6 +2844,11 @@ export function KinemosViewer() {
             onSeekT={seekT}
             emptyReason={railEmptyReason}
             kneeCm={kneeCm}
+            display={display.prefs.plot}
+            onDisplay={display.setPlot}
+            onLabels={display.setLabels}
+            onDisplayReset={() => display.reset('plot')}
+            displayModified={plotModified}
           />
         </div>
 
@@ -2705,6 +2886,9 @@ export function KinemosViewer() {
               repPeaks={repPeaks}
               onRep={setRepIndex}
               onAddRep={addRep}
+              trackRest={trackRest}
+              trackBusy={trackProgress}
+              setNote={restNote}
               metrics={liftMetrics}
               summary={repSummary}
               emptyReason={railEmptyReason}

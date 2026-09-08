@@ -27,6 +27,13 @@ interface LiftPanelProps {
   repPeaks: Record<number, number | null>;
   onRep: (rep: number) => void;
   onAddRep: () => void;
+  /** On a rep just added: track on from where the previous one ended, to the
+   *  end of the clip. Null when there is nothing to track on from. */
+  trackRest?: { hint: string; run: () => void } | null;
+  /** A track in progress, so the offer waits. */
+  trackBusy?: { done: number; total: number } | null;
+  /** What the last track said, shown under the offer on an empty rep. */
+  setNote?: string | null;
 
   metrics: LiftMetrics | null;
   summary: RepSummary | null;
@@ -55,6 +62,9 @@ function LiftPanelImpl({
   repPeaks,
   onRep,
   onAddRep,
+  trackRest = null,
+  trackBusy = null,
+  setNote = null,
   metrics,
   summary,
   emptyReason,
@@ -111,9 +121,27 @@ function LiftPanelImpl({
 
       {/* The three big numbers */}
       {topSpeed === null ? (
-        <p style={{ margin: 0, padding: '12px 16px', fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-tertiary)' }}>
-          {emptyReason ?? 'Mark the bar to get numbers.'}
-        </p>
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {trackRest && !trackBusy && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <Button size="sm" variant="primary" onClick={trackRest.run} title={trackRest.hint} style={{ alignSelf: 'flex-start' }}>
+                Track the rest of the clip
+              </Button>
+              <p style={{ margin: 0, fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-tertiary)' }}>{trackRest.hint}</p>
+            </div>
+          )}
+          {trackBusy && (
+            <p style={{ margin: 0, fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-secondary)' }}>
+              {`Tracking · frame ${trackBusy.done} / ${trackBusy.total}`}
+            </p>
+          )}
+          {setNote && (
+            <p style={{ margin: 0, fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-secondary)' }}>{setNote}</p>
+          )}
+          <p style={{ margin: 0, fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-tertiary)' }}>
+            {emptyReason ?? (trackRest ? 'Or mark the bar and track by hand.' : 'Mark the bar to get numbers.')}
+          </p>
+        </div>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', rowGap: 12, padding: '12px 0' }}>
           <BigStat
