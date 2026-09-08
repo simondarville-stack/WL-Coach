@@ -24,6 +24,8 @@ import { formatDateTimeShort } from '../../lib/dateUtils';
 import type { PathMetrics } from '../engine/calibration';
 import { distance, drift, num } from '../lib/viewerFormat';
 import type { ViewerTool } from './ViewerStage';
+import { TrackConfidenceStrip } from './TrackConfidenceStrip';
+import type { FrameConfidence } from '../lib/trackedPoints';
 
 /** The rail's sections. The viewer's rail is composed of collapsible
  *  panels, and these sections are dealt out among them: the rep picker to
@@ -94,6 +96,9 @@ export interface TrackingState {
    *  playhead there. The video, both charts and the timeline follow. */
   uncertainIndices?: number[];
   onJumpTo?: (index: number) => void;
+  /** The tracker's score on every frame, for the confidence strip. Absent
+   *  until there is a frame server to place the points on. */
+  confidence?: { frames: FrameConfidence[]; frameCount: number; currentIndex: number | null };
 }
 
 export interface ShareState {
@@ -359,6 +364,19 @@ export function ReadoutRail({
               <Button size="sm" variant="ghost" onClick={tracking.onNextUncertain}>
                 Jump to the next one
               </Button>
+            </div>
+          )}
+
+          {/* Where the tracker was sure and where it was not, over the whole
+              clip on the transport's axis — read, not scrubbed. */}
+          {!tracking.busy && tracking.confidence && tracking.confidence.frames.length > 0 && tracking.onJumpTo && (
+            <div style={{ marginTop: 'var(--space-sm)' }}>
+              <TrackConfidenceStrip
+                frames={tracking.confidence.frames}
+                frameCount={tracking.confidence.frameCount}
+                currentIndex={tracking.confidence.currentIndex}
+                onSeek={tracking.onJumpTo}
+              />
             </div>
           )}
 

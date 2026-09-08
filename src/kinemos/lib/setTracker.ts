@@ -62,6 +62,7 @@ import {
 } from '../engine/tracker';
 import { findPlate, refinePlateEllipse } from '../cv/plate';
 import type { KinemosTrackPoint } from '../../lib/database.types';
+import { toTrackPoint } from './trackedPoints';
 import { trackerSourceFrom } from './trackerSource';
 
 export interface TrackedRep {
@@ -415,7 +416,7 @@ export async function trackSet(
     all.sort((a, b) => a.index - b.index);
     const keptLow = new Set(all.map(p => p.index));
     const lowConfidenceIndices = [...new Set(low.filter(i => keptLow.has(i)))].sort((a, b) => a - b);
-    const points: KinemosTrackPoint[] = all.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const }));
+    const points: KinemosTrackPoint[] = all.map(toTrackPoint);
     const setCalibration = calibrateFromEllipse(options.ellipse, options.plateDiameterCm, { rollDeg: options.rollDeg ?? 0 });
     const segments = splitReps(points, setCalibration);
 

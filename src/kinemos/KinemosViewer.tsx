@@ -81,6 +81,7 @@ import { HeadlineChip, RailPanel } from './components/RailPanel';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { DEPTH_LABELS, PANEL_KEYS, useViewerPanels, type ViewerDepth } from './hooks/useViewerPanels';
 import { findEarlierLift, verdictFor } from './lib/verdict';
+import { frameConfidences, lowConfidenceFrames, toTrackPoint } from './lib/trackedPoints';
 import { CalibrationPanel } from './components/CalibrationPanel';
 import { GradeChip, GradePanel } from './components/GradePanel';
 import { MetricsPanel } from './components/MetricsPanel';
@@ -202,6 +203,9 @@ export function KinemosViewer() {
    *  how a coach finds the frames worth checking without scrubbing all of
    *  them — the design brief's third open question. */
   const [uncertainIndices, setUncertainIndices] = useState<number[]>([]);
+  /** Set when a rep is loaded: the flagged frames come from the stored
+   *  scores, and placing them needs the frame server. */
+  const rebuildUncertainRef = useRef(false);
   /** Where the activity scan found the lifts (P7 plan): shown on the
    *  scrub strip before anything is tracked, and what TRACK THE SET works
    *  inside. Null until the scan has run (or was found cached). */
@@ -301,6 +305,19 @@ export function KinemosViewer() {
   } = playback;
 
   const currentT = server ? (server.timestamps[index] ?? null) : null;
+
+  useEffect(() => {
+    if (!rebuildUncertainRef.current || status !== 'ready' || !server) return;
+    rebuildUncertainRef.current = false;
+    setUncertainIndices(lowConfidenceFrames(points, server.nearestIndex));
+  }, [points, status, server]);
+
+  /** Every stored point on its frame with the tracker's score — the
+   *  confidence strip's data. */
+  const frameScores = useMemo(
+    () => (server && status === 'ready' ? frameConfidences(points, server.nearestIndex) : []),
+    [points, server, status],
+  );
 
   // ── The lifts in the clip ─────────────────────────────────────────────────
   //
@@ -425,6 +442,9 @@ export function KinemosViewer() {
         if (cancelled || !bundle) return;
         analysisIdRef.current = bundle.analysis.id;
         setPoints(bundle.track?.points ?? []);
+        // The flagged list is read back from the stored scores once the
+        // frame server can place the points on frames — below.
+        rebuildUncertainRef.current = true;
         setAnnotations(bundle.annotations);
         // Shares are an extra: a missing table (the migration not yet
         // applied) must not stop the rep from loading.
@@ -946,7 +966,7 @@ export function KinemosViewer() {
           }
         }
         const keptIndex = new Set(kept.map(p => p.index));
-        setPoints(kept.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })));
+        setPoints(kept.map(toTrackPoint));
         setUncertainIndices(result.lowConfidenceIndices.filter(i => keptIndex.has(i)));
         setTrackerTier('assisted');
         const notes: string[] = [];
@@ -2062,6 +2082,7 @@ export function KinemosViewer() {
     onTrackMarker: points.length > 0 && status === 'ready' ? () => void runMarkerTrack() : undefined,
     uncertainIndices,
     onJumpTo: seek,
+    confidence: server ? { frames: frameScores, frameCount: server.frameCount, currentIndex: index } : undefined,
   };
 
   return (

@@ -13,6 +13,7 @@ import { estimateCameraMotion, motionSummary, stabilisePoints } from '../cv/stab
 import type { KinemosTrackPoint } from '../../lib/database.types';
 import { trackMarker } from '../engine/markerTracker';
 import { grayFromRgba, type GrayImage } from '../engine/tracker';
+import { toTrackPoint } from './trackedPoints';
 import { trackerSourceFrom } from './trackerSource';
 
 /**
@@ -321,7 +322,7 @@ export async function trackMarkerFrom(
       { onProgress },
     );
     return {
-      points: result.points.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })),
+      points: result.points.map(toTrackPoint),
       lowConfidenceIndices: result.lowConfidenceIndices,
       gaveUp: result.gaveUp,
       found: result.colour !== null,

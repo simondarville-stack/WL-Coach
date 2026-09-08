@@ -44,6 +44,8 @@ import { BarPathPanel } from '../src/kinemos/components/BarPathPanel';
 import { HistoryPanel } from '../src/kinemos/components/HistoryPanel';
 import { LiftPanel } from '../src/kinemos/components/LiftPanel';
 import { HeadlineChip, RailPanel } from '../src/kinemos/components/RailPanel';
+import { TrackConfidenceStrip } from '../src/kinemos/components/TrackConfidenceStrip';
+import { bandOf, type FrameConfidence } from '../src/kinemos/lib/trackedPoints';
 import { DEPTH_LABELS, PANEL_KEYS, useViewerPanels, type ViewerDepth } from '../src/kinemos/hooks/useViewerPanels';
 import type { HistoryRow } from '../src/kinemos/lib/history';
 import { verdictFor } from '../src/kinemos/lib/verdict';
@@ -495,6 +497,14 @@ function Bench() {
     { analysisId: 'e3', date: '2026-08-05', loadKg: 100, peakVelocityMs: 1.81, sVmaxCm: 71.8, grade: 'A', current: false, isReference: false },
     { analysisId: 'e4', date: '2026-07-29', loadKg: 97.5, peakVelocityMs: 1.84, sVmaxCm: 70.7, grade: 'A', current: false, isReference: false },
   ];
+  // A tracker's opinion of the synthetic lift: solid through the pulls, a
+  // dip where the plate blurs through the second pull, a hand mark or two.
+  const frameScores: FrameConfidence[] = points.map((p, i) => {
+    const t = p.t;
+    const c = Math.round((0.92 - (t > 1.2 && t < 1.5 ? 0.45 * Math.sin(((t - 1.2) / 0.3) * Math.PI) : 0) - (t > 1.9 ? 0.12 : 0)) * 100) / 100;
+    const s: 'm' | 't' = i === 30 || i === 31 ? 'm' : 't';
+    return { index: i, c: s === 'm' ? null : c, band: bandOf({ s, c }) };
+  });
   const TOOLS: Array<{ id: ViewerTool; label: string; icon: typeof Hand }> = [
     { id: 'look', label: 'Look', icon: Hand },
     { id: 'calibrate', label: 'Calibrate', icon: Circle },
@@ -841,6 +851,14 @@ function Bench() {
             open={panels.open.tracking}
             onToggle={() => panels.toggle('tracking')}
           >
+            <div style={{ padding: '10px 12px 4px' }}>
+              <TrackConfidenceStrip
+                frames={frameScores}
+                frameCount={points.length}
+                currentIndex={Math.round((currentT / 2.3) * (points.length - 1))}
+                onSeek={i => setCurrentT((i / (points.length - 1)) * 2.3)}
+              />
+            </div>
             <GradePanel grade={grade} camera={camera} onCamera={setCamera} />
           </RailPanel>
           <RailPanel
