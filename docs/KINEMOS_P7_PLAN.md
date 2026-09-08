@@ -352,3 +352,25 @@ Findings, and what changed:
 - The "training hall: none" row in §6 was a wrong expectation: motion
   alone cannot tell a lifter standing up from a lift, and the design never
   needed it to. The bar is: no false REP, and less time than before.
+
+## 8. After 0.93.0: the scan and playback, and the library (0.94.0)
+
+- The viewer's scan started the moment a clip opened and ran alongside
+  playback — two decoder runs on one hardware decoder, and a 60 fps phone
+  clip stuttered (07/09/2026). The scan now runs only while the clip is
+  paused: it starts 1,2 s after opening, stops on play (`shouldStop`) and
+  resumes from the frame it reached (`resumeFrom`; `FrameServer.stream`
+  takes a start index). Verified on the competition clip: a scan stopped at
+  frame 100 and resumed gives sample-for-sample the same result as one run.
+- The library shows an **Analysis** column per clip (`2 reps · A`,
+  `waiting`, or `—` for streaming clips) and "N waiting for analysis" in the
+  header. The backlog sweep is now **opportunistic**: it starts on its own
+  three seconds after the library loads when analyse-on-import is on, the tab
+  is visible and the machine is on power (Battery API; a desktop counts as on
+  power), one clip at a time with a note saying so, and stops when the tab is
+  hidden or left. On battery, nothing starts by itself; the button still
+  works.
+- Not changed: athlete-app clips on Stream cannot be analysed in a browser at
+  all. That is the case for a server-side worker, and where a per-clip cost
+  would first appear.
+

@@ -86,7 +86,7 @@ export interface FrameServer {
    * be interleaved with `frameAt` on the same server: both drive the one
    * decoder. Absent on a server that cannot stream (tests' mocks).
    */
-  stream?(onFrame: (frame: ServedFrame) => boolean | void): Promise<number>;
+  stream?(onFrame: (frame: ServedFrame) => boolean | void, fromIndex?: number): Promise<number>;
   /** Warm the cache around `index`, in presentation order. Best-effort and
    *  never rejects — a failed prefetch is a slower step, not an error. */
   prefetch(index: number, radius?: number): void;
@@ -597,10 +597,11 @@ export async function openFrameServer(
       return nearestIndexIn(timestamps, t);
     },
 
-    async stream(onFrame) {
+    async stream(onFrame, fromIndex = 0) {
       if (closed) throw new FrameServerUnavailableError('Frame server is closed.');
       let served = 0;
-      for await (const wrapped of canvasSink.canvases()) {
+      const start = Math.max(0, Math.min(timestamps.length - 1, Math.round(fromIndex)));
+      for await (const wrapped of canvasSink.canvases(timestamps[start])) {
         if (closed) break;
         served++;
         const index = nearestIndexIn(timestamps, wrapped.timestamp);

@@ -61,6 +61,13 @@ export interface ScanServerOptions {
   onProgress?: (done: number, total: number) => void;
   /** Checked before every frame; true ends the walk. */
   shouldStop?: () => boolean;
+  /**
+   * Carry on from an earlier walk that `shouldStop` ended — its `frames` and
+   * `samples`. The viewer stops the scan the moment the coach presses play
+   * (two decoders on one clip is a stutter) and picks it up again from here
+   * when the clip is paused, rather than starting over each time.
+   */
+  resumeFrom?: { frames: number; samples: ActivitySample[] };
   activity?: ActivityOptions;
   windows?: LiftWindowOptions;
 }
@@ -111,37 +118,51 @@ export async function scanServer(server: FrameServer, options: ScanServerOptions
   const acc = activityAccumulator(options.activity);
   const t0 = now();
   let stopped = false;
-  let frames = 0;
-  if (server.stream) {
-    // One decoder run over the clip (`FrameServer.stream`): 16 ms a frame
-    // against 89–153 through `frameAt`, measured on the testset — the walk
-    // is the whole cost of the scan, so this is what makes it pay.
-    await server.stream(frame => {
-      if (options.shouldStop?.()) {
-        stopped = true;
-        return false;
+  // Resuming: the earlier samples stand; the walk restarts one frame BEFORE
+  // the first unseen one so the accumulator has a previous thumbnail to
+  // difference against, and that re-read frame's sample is dropped.
+  const prior = options.resumeFrom?.samples ?? [];
+  const resumeAt = Math.max(0, Math.min(total, options.resumeFrom?.frames ?? 0));
+  const seedIndex = resumeAt > 0 ? resumeAt - 1 : 0;
+  let frames = resumeAt;
+  const take = (frame: ServedFrame): void => {
+    acc.push(read(frame, width, height));
+    if (resumeAt > 0 && frame.index === seedIndex) {
+      // The seed: read for its pixels only, its sample already counted.
+      acc.samples.pop();
+      return;
+    }
+    frames++;
+    options.onProgress?.(frames, total);
+  };
+  if (resumeAt < total) {
+    if (server.stream) {
+      // One decoder run over the clip (`FrameServer.stream`): 16 ms a frame
+      // against 89–153 through `frameAt`, measured on the testset — the walk
+      // is the whole cost of the scan, so this is what makes it pay.
+      await server.stream(frame => {
+        if (options.shouldStop?.()) {
+          stopped = true;
+          return false;
+        }
+        take(frame);
+        return true;
+      }, seedIndex);
+    } else {
+      for (let i = seedIndex; i < total; i++) {
+        if (options.shouldStop?.()) {
+          stopped = true;
+          break;
+        }
+        take(await server.frameAt(i));
       }
-      acc.push(read(frame, width, height));
-      frames++;
-      options.onProgress?.(frames, total);
-      return true;
-    });
-  } else {
-    for (let i = 0; i < total; i++) {
-      if (options.shouldStop?.()) {
-        stopped = true;
-        break;
-      }
-      const frame = await server.frameAt(i);
-      acc.push(read(frame, width, height));
-      frames++;
-      options.onProgress?.(frames, total);
     }
   }
+  const samples = prior.length > 0 ? prior.concat(acc.samples) : acc.samples;
   const totalMs = now() - t0;
   return {
-    windows: liftWindows(acc.samples, height, options.windows),
-    samples: acc.samples,
+    windows: liftWindows(samples, height, options.windows),
+    samples,
     frames,
     totalMs,
     msPerFrame: frames > 0 ? totalMs / frames : 0,

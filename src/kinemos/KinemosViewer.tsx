@@ -52,6 +52,7 @@ import { markAsReference } from './lib/referenceService';
 import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack, trackMarkerFrom } from './lib/assists';
 import { trackSet, type TrackSetResult } from './lib/setTracker';
 import { scanActivity, windowLabel } from './lib/activityScan';
+import type { ActivitySample } from './engine/activity';
 import { windowRanges, type LiftWindow } from './engine/activity';
 import { splitReps } from './engine/reps';
 import { persistRep } from './lib/autoAnalyse';
@@ -293,9 +294,20 @@ export function KinemosViewer() {
   // on the scrub strip and TRACK THE SET stays inside them. Cached per clip
   // in localStorage so reopening an analysed rep does not decode the clip
   // again; the cache holds the windows and the timing, nothing heavier.
+  //
+  // Only while the clip is IDLE. The scan is a second decoder run on the same
+  // clip, and on a 60 fps phone clip it took playback from smooth to a
+  // stutter (07/09/2026): both runs queue on one hardware decoder. So it
+  // starts a moment after the clip opens, stops the instant the coach presses
+  // play, and resumes from the frame it reached once the clip is paused
+  // again (`resumeFrom`) — never from scratch.
+  const scanPartialRef = useRef<{ frames: number; samples: ActivitySample[] } | null>(null);
   useEffect(() => {
+    scanPartialRef.current = null;
     setLiftScan(null);
-    if (status !== 'ready' || !playbackUrl || !clipKey) return;
+  }, [clipKey]);
+  useEffect(() => {
+    if (status !== 'ready' || !playbackUrl || !clipKey || playing || liftScan) return;
     const key = `${LIFT_SCAN_KEY}${clipKey}`;
     try {
       const raw = localStorage.getItem(key);
@@ -310,26 +322,34 @@ export function KinemosViewer() {
       // No cache, or none readable: scan.
     }
     let cancelled = false;
-    scanActivity(playbackUrl, { shouldStop: () => cancelled })
-      .then(result => {
-        if (cancelled || result.stopped) return;
-        const summary: LiftScan = { windows: result.windows, frames: result.frames, msPerFrame: result.msPerFrame };
-        setLiftScan(summary);
-        try {
-          localStorage.setItem(key, JSON.stringify(summary));
-        } catch {
-          // Storage full or refused: the scan simply runs again next time.
-        }
-      })
-      .catch(() => {
-        // A clip the thumbnail server cannot open is one the main server
-        // could not either; nothing to say here that the stage does not.
-        if (!cancelled) setLiftScan(null);
-      });
+    const timer = setTimeout(() => {
+      scanActivity(playbackUrl, { shouldStop: () => cancelled, resumeFrom: scanPartialRef.current ?? undefined })
+        .then(result => {
+          if (result.stopped) {
+            // Interrupted by play: keep what was seen for the next idle moment.
+            scanPartialRef.current = { frames: result.frames, samples: result.samples };
+            return;
+          }
+          if (cancelled) return;
+          scanPartialRef.current = null;
+          const summary: LiftScan = { windows: result.windows, frames: result.frames, msPerFrame: result.msPerFrame };
+          setLiftScan(summary);
+          try {
+            localStorage.setItem(key, JSON.stringify(summary));
+          } catch {
+            // Storage full or refused: the scan simply runs again next time.
+          }
+        })
+        .catch(() => {
+          // A clip the thumbnail server cannot open is one the main server
+          // could not either; nothing to say here that the stage does not.
+        });
+    }, 1200);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [status, playbackUrl, clipKey]);
+  }, [status, playbackUrl, clipKey, playing, liftScan]);
 
   const liftSpans = useMemo(() => {
     if (!server || !liftScan || liftScan.windows.length === 0) return [];

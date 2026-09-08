@@ -39,7 +39,30 @@ import { useCoachStore } from '../store/coachStore';
 import { getOwnerId } from '../lib/ownerContext';
 import { openFrameServer } from './engine/frameServer';
 import { autoAnalyse, describeAutoAnalysis } from './lib/autoAnalyse';
-import { analysedClipKeys, runArrivalQueue, targetFor, unanalysedClips } from './lib/arrivals';
+import { analyseOnImportEnabled, runArrivalQueue, targetFor, unanalysedClips } from './lib/arrivals';
+import { clipKeyOf, listRecentAnalyses } from './lib/analysisService';
+
+/** Reps stored for a clip and the best grade among them. */
+interface ClipAnalysisSummary {
+  reps: number;
+  grade: 'A' | 'B' | 'C' | null;
+}
+
+/**
+ * Is this machine on power? A minute of flat-out decoding per clip is not
+ * something to start on a coach's battery. The Battery API is Chromium-only
+ * and absent on desktops without a battery; either way the answer is "go".
+ */
+async function onPower(): Promise<boolean> {
+  const nav = navigator as Navigator & { getBattery?: () => Promise<{ charging: boolean; level: number }> };
+  if (typeof nav.getBattery !== 'function') return true;
+  try {
+    const battery = await nav.getBattery();
+    return battery.charging || battery.level >= 0.99;
+  } catch {
+    return true;
+  }
+}
 
 const SOURCE_LABEL: Record<LibrarySource, string> = {
   log: 'Log',
@@ -82,6 +105,12 @@ export function KinemosLibrary() {
   const [autoBusy, setAutoBusy] = useState<string | null>(null);
   const [autoNote, setAutoNote] = useState<string | null>(null);
   const [sweeping, setSweeping] = useState(false);
+  /** What each clip already has: stored reps and the best grade among them.
+   *  Keyed by clip key; absent = never analysed. */
+  const [analysisByClip, setAnalysisByClip] = useState<Map<string, ClipAnalysisSummary>>(new Map());
+  /** The opportunistic sweep runs once per visit to the library, not once
+   *  per re-render or refresh. */
+  const autoSweepStarted = useRef(false);
   /** A ref, not state: the queue reads it between clips and must see the
    *  latest value, not the one captured when the sweep started. */
   const stopSweep = useRef(false);
@@ -90,6 +119,26 @@ export function KinemosLibrary() {
   const [source, setSource] = useState<'' | LibrarySource>('');
   const [exerciseName, setExerciseName] = useState('');
 
+  /** One read of the analyses answers "which clips have reps" for every
+   *  row at once (the same reasoning as `unanalysedClips`). */
+  const refreshAnalyses = useCallback(async () => {
+    try {
+      const analyses = await listRecentAnalyses();
+      const next = new Map<string, ClipAnalysisSummary>();
+      for (const a of analyses) {
+        const key = clipKeyOf(a.source_kind, a.source_id);
+        const cur = next.get(key) ?? { reps: 0, grade: null };
+        cur.reps += 1;
+        if (a.grade && (cur.grade === null || a.grade < cur.grade)) cur.grade = a.grade;
+        next.set(key, cur);
+      }
+      setAnalysisByClip(next);
+    } catch {
+      // The column then shows nothing rather than the page failing: the
+      // library is still a library without it.
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -97,13 +146,14 @@ export function KinemosLibrary() {
       // Read everything once and filter in memory: the filter set is small,
       // the data is a season of footage, and re-querying three sources on
       // every dropdown change would be slower than it looks.
-      setRows(await loadLibrary());
+      const [loaded] = await Promise.all([loadLibrary(), refreshAnalyses()]);
+      setRows(loaded);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load the video library.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshAnalyses]);
 
   // Mount-only: the store fetchers are re-created every render, so listing
   // them as dependencies would re-fetch forever. Same pattern as Athletes.tsx.
@@ -185,36 +235,79 @@ export function KinemosLibrary() {
    * CPU and megabytes of download, and starting that because someone opened
    * the library would be a hostile thing to do.
    */
-  const runSweep = useCallback(async () => {
-    setSweeping(true);
-    stopSweep.current = false;
-    try {
-      const analysed = await analysedClipKeys();
-      const pending = unanalysedClips(rows, analysed);
-      if (pending.length === 0) {
-        setAutoNote('Every clip in the library has already been analysed.');
-        return;
+  const runSweep = useCallback(
+    async (why: 'asked' | 'opportunistic' = 'asked') => {
+      setSweeping(true);
+      stopSweep.current = false;
+      try {
+        const pending = unanalysedClips(rows, new Set(analysisByClip.keys()));
+        if (pending.length === 0) {
+          if (why === 'asked') setAutoNote('Every clip in the library has already been analysed.');
+          return;
+        }
+        const lead = why === 'opportunistic' ? 'Analysing the backlog while you are here — ' : 'Analysing ';
+        let analysedCount = 0;
+        await runArrivalQueue(pending.map(targetFor), {
+          ownerId: getOwnerId(),
+          shouldStop: () => stopSweep.current,
+          onProgress: p => setAutoNote(`${lead}${p.index} of ${p.total}, ${p.label}: ${p.stage.toLowerCase()}`),
+          onDone: outcome => {
+            if (outcome.result && !outcome.result.problem) analysedCount += 1;
+            // The row's column turns over as each clip finishes, not at the end.
+            void refreshAnalyses();
+          },
+        });
+        await refreshAnalyses();
+        setAutoNote(
+          `Swept ${pending.length} clip${pending.length === 1 ? '' : 's'}: ${analysedCount} analysed. ` +
+            'The rest need a plate outlined by hand — open them in the viewer.',
+        );
+      } catch (e) {
+        setAutoNote(e instanceof Error ? e.message : 'The sweep could not be run.');
+      } finally {
+        setSweeping(false);
       }
-      let analysedCount = 0;
-      await runArrivalQueue(pending.map(targetFor), {
-        ownerId: getOwnerId(),
-        shouldStop: () => stopSweep.current,
-        onProgress: p => setAutoNote(`Analysing ${p.index} of ${p.total} — ${p.label}, ${p.stage.toLowerCase()}`),
-        onDone: outcome => {
-          if (outcome.result && !outcome.result.problem) analysedCount += 1;
-        },
+    },
+    [refreshAnalyses, rows, analysisByClip],
+  );
+
+  /** Clips with no reps yet that a browser could analyse. */
+  const waiting = useMemo(() => unanalysedClips(rows, new Set(analysisByClip.keys())), [rows, analysisByClip]);
+
+  // The opportunistic sweep: the backlog is worked through while the coach is
+  // on the library anyway — one clip at a time, a note saying so, one click
+  // to stop — and only when the machine can afford it: the analyse-on-import
+  // preference is on, the tab is visible, and the laptop is on power (or is
+  // not a laptop). Never on battery, never in a hidden tab, never twice.
+  useEffect(() => {
+    if (loading || autoSweepStarted.current || sweeping || autoBusy !== null) return;
+    if (waiting.length === 0 || !analyseOnImportEnabled()) return;
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void onPower().then(ok => {
+        if (cancelled || !ok || autoSweepStarted.current) return;
+        autoSweepStarted.current = true;
+        void runSweep('opportunistic');
       });
-      await refresh();
-      setAutoNote(
-        `Swept ${pending.length} clip${pending.length === 1 ? '' : 's'}: ${analysedCount} analysed. ` +
-          'The rest need a plate outlined by hand — open them in the viewer.',
-      );
-    } catch (e) {
-      setAutoNote(e instanceof Error ? e.message : 'The sweep could not be run.');
-    } finally {
-      setSweeping(false);
-    }
-  }, [refresh, rows]);
+    }, 3000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [loading, waiting.length, sweeping, autoBusy, runSweep]);
+
+  // Leaving the page, or hiding the tab, stops the sweep between clips.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') stopSweep.current = true;
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      stopSweep.current = true;
+    };
+  }, []);
 
   const handleDelete = async (video: LibraryVideo) => {
     const ok = await confirmDialog({
@@ -328,6 +421,31 @@ export function KinemosLibrary() {
       ),
     },
     {
+      key: 'analysis',
+      header: 'Analysis',
+      width: '92px',
+      render: row => {
+        const done = analysisByClip.get(clipKeyOf(row.source, row.sourceId));
+        if (done) {
+          return (
+            <span title={`${done.reps} stored rep${done.reps === 1 ? '' : 's'}; best grade ${done.grade ?? 'not graded'}`}>
+              {`${done.reps} rep${done.reps === 1 ? '' : 's'}`}
+              {done.grade && <span style={{ color: 'var(--color-text-secondary)' }}>{` · ${done.grade}`}</span>}
+            </span>
+          );
+        }
+        if (row.isEmbed) return <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>;
+        return (
+          <span
+            style={{ color: 'var(--color-text-tertiary)' }}
+            title="No reps stored yet. Analysed automatically when this browser is on power, or by the wand."
+          >
+            waiting
+          </span>
+        );
+      },
+    },
+    {
       key: 'actions',
       header: '',
       width: '108px',
@@ -406,6 +524,14 @@ export function KinemosLibrary() {
           metadata={
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
               <span>{`${visible.length} of ${rows.length} clips`}</span>
+              {waiting.length > 0 && (
+                <span
+                  style={{ color: 'var(--color-text-secondary)' }}
+                  title="Clips with no stored reps. They are analysed one at a time while you are here and the machine is on power."
+                >
+                  {`${waiting.length} waiting for analysis`}
+                </span>
+              )}
               {/* Live mode is the one KinEMOS surface that is not about a clip
                   in the library, so it hangs off the header rather than the
                   table. */}
