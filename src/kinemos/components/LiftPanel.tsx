@@ -115,7 +115,7 @@ function LiftPanelImpl({
           {emptyReason ?? 'Mark the bar to get numbers.'}
         </p>
       ) : (
-        <div style={{ display: 'flex', padding: '12px 0' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', rowGap: 12, padding: '12px 0' }}>
           <BigStat
             label="Top speed"
             value={num(topSpeed, 2)}
@@ -207,14 +207,17 @@ function BigStat({
       title={title}
       style={{
         flex: 1,
-        minWidth: 0,
+        // Wide enough for five mono digits at the smallest size; a rail
+        // narrower than three of these wraps the third number under the
+        // first two rather than clipping it.
+        minWidth: 108,
         padding: '0 16px',
         borderRight: last ? 'none' : '0.5px solid var(--color-border-tertiary)',
       }}
     >
       <div style={micro}>{label}</div>
       <div style={big}>{value}</div>
-      <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{unit}</div>
+      <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>{unit}</div>
     </div>
   );
 }
@@ -255,7 +258,7 @@ const big: CSSProperties = {
   fontVariantNumeric: 'tabular-nums',
   // 40 px at the wireframe's 1440; smaller on a narrower rail so three
   // numbers still sit in one row.
-  fontSize: 'clamp(26px, 2.7vw, 40px)',
+  fontSize: 'clamp(24px, 2.4vw, 40px)',
   lineHeight: 1.1,
   letterSpacing: '-0.02em',
   color: 'var(--color-text-primary)',

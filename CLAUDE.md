@@ -202,6 +202,12 @@ All modules are **active** — nothing is currently disabled or hidden:
   playhead hooks keep **one decode in flight**. Before that mediabunny's
   per-frame `getCanvas` was a fresh decoder from the key frame every call,
   and 1× playback showed 13 of 240 frames on a phone clip.
+  From 0.98.0 (`docs/KINEMOS_VIEWER_LAYOUT.md` §6): the viewer's clip and
+  bar-path columns are **draggable** (`components/ColumnSplitter.tsx`,
+  `hooks/useColumnWidths.ts`), the rail keeps 320 px, every stage overlay is
+  sized in screen pixels, an angle is drawn as rays and an arc — found by
+  `verify/drive-viewer.mjs`, which walks the viewer in a real Chrome against
+  the library's clips (the dev `/api` proxy pointed at the deployment).
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on

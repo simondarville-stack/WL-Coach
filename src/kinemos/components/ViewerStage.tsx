@@ -10,6 +10,14 @@
  * Zoom matters more here than it looks: a bar end is ~50 px in a typical clip,
  * and in P1 the coach's click IS the measurement (there is no tracker centroid
  * to refine it yet). Magnification is how precision gets bought.
+ *
+ * Everything drawn over the frame is sized in SCREEN pixels. The overlay's
+ * viewBox is the frame's — 1080 × 1920 for a phone clip — fitted into a
+ * column a third that wide, so a radius or a stroke given in frame pixels
+ * arrives on screen a third the size: a mark became a one-pixel dot and a
+ * measurement line vanished (08/09/2026, `verify/drive-viewer.mjs`). `px()`
+ * divides by the on-screen scale (fit × zoom) so a handle is a handle at any
+ * clip size and any magnification.
  */
 import {
   useCallback,
@@ -38,9 +46,11 @@ interface ViewerStageProps {
   onEllipseChange: (ellipse: PlateEllipse) => void;
 
   /** Handles of the measurement in progress. Two for a distance, three for an
-   *  angle. */
+   *  angle — the two arms first, then the vertex. */
   measurePoints: PxPoint[];
   onMeasurePoint: (point: PxPoint) => void;
+  /** The measurement's value, drawn beside it once it is complete. */
+  measureLabel?: string | null;
 
   onMark: (point: PxPoint) => void;
 
@@ -64,6 +74,12 @@ const MAX_SCALE = 8;
  *  frame; starting close means the coach adjusts rather than constructs. */
 const DEFAULT_SEMI_AXIS_FRACTION = 0.09;
 
+/** The measurement colour, and the dark it is outlined in so it reads on a
+ *  light floor as well as a dark one. Data-ish chrome: one colour for every
+ *  hand measurement, distinct from the bar path and the plate. */
+const MEASURE_COLOR = '#7FD1B9';
+const INK = '#0F0F0E';
+
 function defaultEllipseAt(point: PxPoint, frameHeight: number): PlateEllipse {
   const r = Math.max(12, frameHeight * DEFAULT_SEMI_AXIS_FRACTION);
   return { cx: point.x, cy: point.y, semiMajorPx: r, semiMinorPx: r * 0.85, tiltDeg: 0 };
@@ -86,6 +102,25 @@ function handlePoint(ellipse: PlateEllipse, which: 'major' | 'minor'): PxPoint {
   return { x: ellipse.cx + dir.x * r, y: ellipse.cy + dir.y * r };
 }
 
+/**
+ * The arc that marks an angle at its vertex: from the first arm round to the
+ * second by the shorter way, which is the angle the readout reports. Returns
+ * the SVG path and the direction of the arc's middle, where the label goes.
+ */
+function angleArc(vertex: PxPoint, a: PxPoint, b: PxPoint, radius: number) {
+  const a1 = Math.atan2(a.y - vertex.y, a.x - vertex.x);
+  const a2 = Math.atan2(b.y - vertex.y, b.x - vertex.x);
+  let delta = a2 - a1;
+  while (delta > Math.PI) delta -= 2 * Math.PI;
+  while (delta < -Math.PI) delta += 2 * Math.PI;
+  const start = { x: vertex.x + radius * Math.cos(a1), y: vertex.y + radius * Math.sin(a1) };
+  const end = { x: vertex.x + radius * Math.cos(a1 + delta), y: vertex.y + radius * Math.sin(a1 + delta) };
+  const mid = a1 + delta / 2;
+  return {
+    d: `M ${start.x} ${start.y} A ${radius} ${radius} 0 0 ${delta > 0 ? 1 : 0} ${end.x} ${end.y}`,
+    mid: { x: Math.cos(mid), y: Math.sin(mid) },
+  };
+}
 
 /**
  * Pointer capture, guarded.
@@ -116,6 +151,7 @@ export function ViewerStage({
   onEllipseChange,
   measurePoints,
   onMeasurePoint,
+  measureLabel = null,
   onMark,
   knee = null,
   onKnee,
@@ -159,6 +195,11 @@ export function ViewerStage({
   const fit = box.w > 0 && box.h > 0 && width > 0 && height > 0 ? Math.min(box.w / width, box.h / height) : 1;
   const fittedWidth = Math.max(1, Math.round(width * fit));
   const fittedHeight = Math.max(1, Math.round(height * fit));
+
+  /** Screen pixels per frame pixel, and its inverse: a size that should be
+   *  `n` pixels on screen whatever the clip and the zoom. */
+  const ui = fit * scale;
+  const px = (n: number) => n / ui;
 
   // Paint the served frame. The frame server owns its canvas, so this copies
   // rather than adopts — the served one can be evicted from the cache at any
@@ -291,6 +332,23 @@ export function ViewerStage({
   const cursor =
     tool === 'look' ? 'grab' : tool === 'calibrate' && ellipse ? 'default' : 'crosshair';
 
+  // ── The measurement in progress ──────────────────────────────────────────
+  //
+  // A distance is the segment between its two points. An angle is two RAYS
+  // from the vertex — the third click — with an arc between them; the first
+  // two points are the arms, and until the vertex is placed nothing joins
+  // them, because a line between two arm tips is not an angle and reads as
+  // one. The value sits beside the figure once it is complete.
+  const angleReady = tool === 'angle' && measurePoints.length === 3;
+  const distanceReady = tool === 'distance' && measurePoints.length === 2;
+  const arc = angleReady ? angleArc(measurePoints[2], measurePoints[0], measurePoints[1], px(26)) : null;
+  const labelStyle = {
+    fontFamily: 'var(--font-mono)',
+    fontWeight: 600,
+    userSelect: 'none' as const,
+    paintOrder: 'stroke' as const,
+  };
+
   return (
     <div
       ref={boxRef}
@@ -342,7 +400,7 @@ export function ViewerStage({
               points={points.map(p => `${p.x},${p.y}`).join(' ')}
               fill="none"
               stroke="var(--color-accent)"
-              strokeWidth={3 / scale}
+              strokeWidth={px(2.5)}
               strokeLinecap="round"
               strokeLinejoin="round"
               opacity={0.95}
@@ -350,19 +408,19 @@ export function ViewerStage({
           )}
           {showPath &&
             points.map(p => (
-              <circle key={p.t} cx={p.x} cy={p.y} r={3 / scale} fill="#FFFFFF" opacity={0.85} />
+              <circle key={p.t} cx={p.x} cy={p.y} r={px(2.5)} fill="#FFFFFF" opacity={0.85} />
             ))}
           {currentMark && (
             <>
               <circle
                 cx={currentMark.x}
                 cy={currentMark.y}
-                r={8 / scale}
+                r={px(9)}
                 fill="none"
                 stroke="#FFFFFF"
-                strokeWidth={2 / scale}
+                strokeWidth={px(2)}
               />
-              <circle cx={currentMark.x} cy={currentMark.y} r={2.5 / scale} fill="#FFFFFF" />
+              <circle cx={currentMark.x} cy={currentMark.y} r={px(3)} fill="#FFFFFF" />
             </>
           )}
 
@@ -377,28 +435,28 @@ export function ViewerStage({
                 transform={`rotate(${ellipse.tiltDeg} ${ellipse.cx} ${ellipse.cy})`}
                 fill="none"
                 stroke="#F2C14E"
-                strokeWidth={2 / scale}
-                strokeDasharray={`${6 / scale} ${4 / scale}`}
+                strokeWidth={px(2)}
+                strokeDasharray={`${px(6)} ${px(4)}`}
               />
               {tool === 'calibrate' && (
                 <>
                   <EllipseHandle
                     point={{ x: ellipse.cx, y: ellipse.cy }}
-                    scale={scale}
+                    ui={ui}
                     onGrab={() => {
                       dragRef.current = 'centre';
                     }}
                   />
                   <EllipseHandle
                     point={handlePoint(ellipse, 'major')}
-                    scale={scale}
+                    ui={ui}
                     onGrab={() => {
                       dragRef.current = 'major';
                     }}
                   />
                   <EllipseHandle
                     point={handlePoint(ellipse, 'minor')}
-                    scale={scale}
+                    ui={ui}
                     onGrab={() => {
                       dragRef.current = 'minor';
                     }}
@@ -416,18 +474,20 @@ export function ViewerStage({
                 y1={knee.y}
                 x2={width}
                 y2={knee.y}
-                stroke="#7FD1B9"
-                strokeWidth={1.5 / scale}
-                strokeDasharray={`${8 / scale} ${5 / scale}`}
+                stroke={MEASURE_COLOR}
+                strokeWidth={px(1.5)}
+                strokeDasharray={`${px(8)} ${px(5)}`}
                 opacity={0.9}
               />
-              <circle cx={knee.x} cy={knee.y} r={4 / scale} fill="#7FD1B9" stroke="#0F0F0E" strokeWidth={1 / scale} />
+              <circle cx={knee.x} cy={knee.y} r={px(5)} fill={MEASURE_COLOR} stroke={INK} strokeWidth={px(1.5)} />
               <text
-                x={8 / scale}
-                y={knee.y - 6 / scale}
-                fontSize={12 / scale}
-                fill="#7FD1B9"
-                style={{ fontFamily: 'inherit', fontWeight: 600, userSelect: 'none' }}
+                x={px(8)}
+                y={knee.y - px(6)}
+                fontSize={px(12)}
+                fill={MEASURE_COLOR}
+                stroke={INK}
+                strokeWidth={px(3)}
+                style={labelStyle}
               >
                 knee
               </text>
@@ -435,25 +495,69 @@ export function ViewerStage({
           )}
 
           {/* ── Measurement in progress ───────────────────────────────── */}
-          {measurePoints.length > 1 && (
-            <polyline
-              points={measurePoints.map(p => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke="#7FD1B9"
-              strokeWidth={2 / scale}
+          {distanceReady && (
+            <line
+              x1={measurePoints[0].x}
+              y1={measurePoints[0].y}
+              x2={measurePoints[1].x}
+              y2={measurePoints[1].y}
+              stroke={MEASURE_COLOR}
+              strokeWidth={px(2)}
+              strokeLinecap="round"
             />
+          )}
+          {angleReady && arc && (
+            <>
+              <polyline
+                points={`${measurePoints[0].x},${measurePoints[0].y} ${measurePoints[2].x},${measurePoints[2].y} ${measurePoints[1].x},${measurePoints[1].y}`}
+                fill="none"
+                stroke={MEASURE_COLOR}
+                strokeWidth={px(2)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path d={arc.d} fill="none" stroke={MEASURE_COLOR} strokeWidth={px(1.5)} />
+            </>
           )}
           {measurePoints.map((p, i) => (
             <circle
               key={`${i}-${p.x}-${p.y}`}
               cx={p.x}
               cy={p.y}
-              r={4 / scale}
-              fill="#7FD1B9"
-              stroke="#0F0F0E"
-              strokeWidth={1 / scale}
+              r={px(5)}
+              fill={MEASURE_COLOR}
+              stroke={INK}
+              strokeWidth={px(1.5)}
             />
           ))}
+          {measureLabel && distanceReady && (
+            <text
+              x={(measurePoints[0].x + measurePoints[1].x) / 2}
+              y={(measurePoints[0].y + measurePoints[1].y) / 2 - px(10)}
+              textAnchor="middle"
+              fontSize={px(13)}
+              fill={MEASURE_COLOR}
+              stroke={INK}
+              strokeWidth={px(3)}
+              style={labelStyle}
+            >
+              {measureLabel}
+            </text>
+          )}
+          {measureLabel && angleReady && arc && (
+            <text
+              x={measurePoints[2].x + arc.mid.x * px(44)}
+              y={measurePoints[2].y + arc.mid.y * px(44) + px(4)}
+              textAnchor="middle"
+              fontSize={px(13)}
+              fill={MEASURE_COLOR}
+              stroke={INK}
+              strokeWidth={px(3)}
+              style={labelStyle}
+            >
+              {measureLabel}
+            </text>
+          )}
         </svg>
       </div>
 
@@ -486,25 +590,26 @@ export function ViewerStage({
 }
 
 /** A grab target on the ellipse. Drawn at a constant on-screen size by dividing
- *  through the zoom, so magnifying to place a handle precisely does not turn
- *  the handle itself into the obstruction. */
+ *  through the on-screen scale, so magnifying to place a handle precisely does
+ *  not turn the handle itself into the obstruction. */
 function EllipseHandle({
   point,
-  scale,
+  ui,
   onGrab,
 }: {
   point: PxPoint;
-  scale: number;
+  /** Screen pixels per frame pixel. */
+  ui: number;
   onGrab: () => void;
 }) {
   return (
     <circle
       cx={point.x}
       cy={point.y}
-      r={6 / scale}
+      r={7 / ui}
       fill="#F2C14E"
       stroke="#0F0F0E"
-      strokeWidth={1.5 / scale}
+      strokeWidth={1.5 / ui}
       pointerEvents="all"
       style={{ cursor: 'move' }}
       // Deliberately NOT stopping propagation: the wrapper's pointerdown still

@@ -46,3 +46,6 @@ mockup/**/kinemos-analysis-viewer.html
 
 # Real-footage fixtures for the KinEMOS browser harnesses (large, local only)
 verify/fixtures/
+
+# KinEMOS viewer walk output (verify/drive-viewer.mjs)
+verify/out/

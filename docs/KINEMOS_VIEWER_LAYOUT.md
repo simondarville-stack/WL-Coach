@@ -196,6 +196,34 @@ point (`KinemosTrackPoint.c`, `lib/trackedPoints.ts`), so the strip and
 the flagged list survive a reload; the design bench
 (`verify/viewer-preview.html`) showing the split pieces.
 
+**0.98.0, from a walk of the viewer in a real Chrome against the library's
+own clips (`verify/drive-viewer.mjs`, 08/09/2026 — every tool, every panel,
+play, step, scrub, both orientations, 1440 × 900 and 1280 × 720):**
+
+- **Draggable columns.** A splitter sits after the clip column and after the
+  bar-path column (`components/ColumnSplitter.tsx`); a drag resizes the
+  column to its left, a double-click resets it, and the widths are remembered
+  per orientation (`hooks/useColumnWidths.ts`, `kinemos.viewer.columns.*`).
+  The rail keeps **320 px** whatever the columns ask for: the clip column
+  gives way first, down to 280, then the bar path, down to 220
+  (`hooks/useElementWidth.ts` measures the row). Before this a landscape
+  clip's 600 px column on a 1440 px screen with the sidebar open left the
+  rail 200 px and its content clipped at the edge — the big stats, the
+  velocity chart, the headline chips.
+- **Overlays at screen size.** Every mark, handle, line and label on the
+  stage is sized in screen pixels (`ViewerStage`'s `px()`): the overlay's
+  viewBox is the frame's, and on a 1080 × 1920 phone clip fitted into a
+  392 px column a 3 px mark arrived as one pixel and a 2 px measurement line
+  did not arrive at all.
+- **The angle is drawn as an angle.** Two rays from the vertex and an arc
+  between them, with the value beside the arc; before, the three points were
+  joined in click order, which drew a line between the two arm tips. A
+  distance carries its value at the midpoint of its line.
+- **The transport wraps.** In the 392 px column the frame counter folded
+  onto three lines and the clock was clipped; the buttons and speeds now sit
+  on one row and the readout drops to its own line, right-aligned.
+- **The three big numbers wrap** on a narrow rail instead of clipping.
+
 **Open, in the order they are worth deciding:**
 
 1. **Below tablet.** The wireframe is a 1440 × 900 desktop screen. Under

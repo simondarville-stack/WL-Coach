@@ -88,6 +88,9 @@ import { GradeChip, GradePanel } from './components/GradePanel';
 import { MetricsPanel } from './components/MetricsPanel';
 import { ReadoutRail, type ShareState, type TalkoverState, type TrackingState } from './components/ReadoutRail';
 import { ViewerStage, type ViewerTool } from './components/ViewerStage';
+import { ColumnSplitter } from './components/ColumnSplitter';
+import { PATH_WIDTH_RANGE, VIDEO_WIDTH_RANGE, useColumnWidths } from './hooks/useColumnWidths';
+import { useElementWidth } from './hooks/useElementWidth';
 import { ViewerTransport } from './components/ViewerTransport';
 import {
   addAnnotation,
@@ -622,6 +625,25 @@ export function KinemosViewer() {
   /** Below this the panel rail drops under the plots instead of shrinking
    *  beside them (docs/KINEMOS_VIEWER_LAYOUT.md, Responsive). */
   const wide = useMediaQuery('(min-width: 1200px)');
+  /** The clip and bar-path columns' widths: the wireframe's by default, the
+   *  coach's after a drag on a splitter, remembered per orientation. */
+  const portraitClip = server
+    ? server.displayHeight >= server.displayWidth
+    : (clip?.height ?? 0) >= (clip?.width ?? 0);
+  const columns = useColumnWidths(portraitClip, portraitClip ? 392 : 600);
+  /**
+   * What the window can afford. The rail keeps `RAIL_MIN` whatever the
+   * columns ask for: the clip column gives way first, down to its floor,
+   * then the bar path. A drag past the cap stores the wish and shows the
+   * cap, so a wider window later honours the wish.
+   */
+  const [rowRef, rowWidth] = useElementWidth<HTMLDivElement>();
+  const RAIL_MIN = 320;
+  const TOOL_RAIL = 40;
+  const ROW_GAPS = 5 * 12; // five `--space-md` gaps: tools, clip, splitter, path, splitter, rail
+  const budget = rowWidth > 0 ? rowWidth - TOOL_RAIL - ROW_GAPS - RAIL_MIN : Number.POSITIVE_INFINITY;
+  const videoWidth = Math.max(VIDEO_WIDTH_RANGE.min, Math.min(columns.video, budget - columns.path));
+  const pathWidth = Math.max(PATH_WIDTH_RANGE.min, Math.min(columns.path, budget - videoWidth));
 
   /** The lift this one is judged against, and the sentence that judgement
    *  makes — gated on the grade's margin. */
@@ -2166,10 +2188,6 @@ export function KinemosViewer() {
    * the bet the layout makes; a landscape clip would be a stamp at that width,
    * so it gets the wider column and the rail gives up the difference.
    */
-  const portrait = server
-    ? server.displayHeight >= server.displayWidth
-    : (clip.height ?? 0) >= (clip.width ?? 0);
-  const videoWidth = portrait ? 392 : 600;
 
   const gradeTone = grade.grade === 'A' ? 'success' : grade.grade === 'B' ? 'warning' : grade.grade === 'C' ? 'danger' : 'neutral';
 
@@ -2391,6 +2409,7 @@ export function KinemosViewer() {
           are fixed and full height; the rail takes the rest and is the only
           thing that scrolls. On a narrow window the rail drops under them. */}
       <div
+        ref={rowRef}
         style={{
           flexGrow: 1,
           display: showingOverlay ? 'none' : 'flex',
@@ -2543,6 +2562,7 @@ export function KinemosViewer() {
                 onEllipseChange={on.ellipseChange}
                 measurePoints={measurePoints}
                 onMeasurePoint={addMeasurePoint}
+                measureLabel={measureValue}
                 onMark={handleMark}
                 knee={kneePoint}
                 onKnee={on.knee}
@@ -2628,8 +2648,17 @@ export function KinemosViewer() {
           )}
         </section>
 
+        {wide && (
+          <ColumnSplitter
+            label="Clip column width"
+            width={videoWidth}
+            onResize={columns.setVideo}
+            onReset={columns.resetVideo}
+          />
+        )}
+
         {/* Column 2 — the bar path and velocity-over-height, one height axis */}
-        <div style={{ width: 322, flexShrink: 0, minHeight: wide ? 0 : 560, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ width: pathWidth, flexShrink: 0, minHeight: wide ? 0 : 560, display: 'flex', flexDirection: 'column' }}>
           <BarPathPanel
             series={kinematics}
             spans={spans}
@@ -2642,12 +2671,21 @@ export function KinemosViewer() {
           />
         </div>
 
+        {wide && (
+          <ColumnSplitter
+            label="Bar-path column width"
+            width={pathWidth}
+            onResize={columns.setPath}
+            onReset={columns.resetPath}
+          />
+        )}
+
         {/* Column 3 — the panel rail; the only thing that scrolls */}
         <div
           style={{
             flexGrow: 1,
             flexBasis: wide ? 0 : '100%',
-            minWidth: wide ? 280 : 0,
+            minWidth: wide ? RAIL_MIN : 0,
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',

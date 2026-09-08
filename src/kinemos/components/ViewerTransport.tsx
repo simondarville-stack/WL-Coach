@@ -206,7 +206,11 @@ function ViewerTransportImpl({
         />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+      {/* Buttons and speeds first, the readout last; the row wraps, so in a
+          392 px column the readout drops to its own line, right-aligned,
+          rather than folding "frame 1 / 400" onto three lines and clipping
+          the clock. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-xs) var(--space-sm)' }}>
         <TransportButton label="First frame (Home)" onClick={() => onSeek(0)}>
           <SkipBack size={16} />
         </TransportButton>
@@ -259,8 +263,10 @@ function ViewerTransportImpl({
         <span
           style={{
             marginLeft: 'auto',
+            flexShrink: 0,
             display: 'flex',
             gap: 'var(--space-md)',
+            whiteSpace: 'nowrap',
             fontVariantNumeric: 'tabular-nums',
             fontSize: 'var(--text-caption)',
             color: 'var(--color-text-secondary)',
