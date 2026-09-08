@@ -75,6 +75,8 @@ import { WeekBriefCard } from '../components/WeekBriefCard';
 import { ConfirmModal } from '../../../components/log/ConfirmModal';
 import { UndoToast } from '../../../components/log/UndoToast';
 import { confirmDialog } from '../../../components/ui';
+import { useUploadAnalysis } from '../lib/useUploadAnalysis';
+import { massForUpload } from '../../../kinemos/lib/uploadAnalysis';
 
 function todayISO(): string {
   return toISO(new Date());
@@ -157,6 +159,14 @@ export function TodayScreen() {
    * the eye toggle in SessionHeader.
    */
   const [mode, setMode] = useState<'preview' | 'edit'>('preview');
+
+  // ── KinEMOS on the phone (P8 plan) ────────────────────────────────────────
+  // A clip the athlete uploads goes straight to Stream and no coach's browser
+  // can analyse it afterwards; this phone can, right now, from the same file.
+  // Queued after the upload has finished, one clip at a time, behind one
+  // line above the tab bar; abandoned with nothing stored if the athlete
+  // leaves the screen. Owned by the athlete's coach, like the clip's row.
+  const uploadAnalysis = useUploadAnalysis(athlete?.owner_id ?? null);
 
   // ── PR detection ──────────────────────────────────────────────────────────
   // The athlete's full PR history (newest-first), so a freshly-logged set can
@@ -712,6 +722,7 @@ export function TodayScreen() {
       uploadedBy: 'athlete',
     });
     mergeVideo(video);
+    queueUploadAnalysis(file, video, logEx.id);
   };
 
   /** Same as handleAddVideo, for a log exercise that already exists (the
@@ -725,6 +736,22 @@ export function TodayScreen() {
       uploadedBy: 'athlete',
     });
     mergeVideo(video);
+    queueUploadAnalysis(file, video, logExerciseId);
+  };
+
+  /**
+   * After the row exists: hand the same file to KinEMOS on this phone. The
+   * mass is the heaviest completed set logged so far on the exercise — the
+   * upload names no set, and this is the rule the library's row uses too.
+   * Never throws into the upload: `enqueue` swallows, and so does this.
+   */
+  const queueUploadAnalysis = (file: File, video: TrainingLogVideo, logExerciseId: string) => {
+    try {
+      const sets = data?.log?.exercises.find(e => e.log.id === logExerciseId)?.sets ?? [];
+      uploadAnalysis.enqueue({ file, videoId: video.id, massKg: massForUpload(sets) });
+    } catch {
+      /* the upload is done; the analysis is an extra */
+    }
   };
 
   const handleDeleteVideo = (video: TrainingLogVideo) => {
@@ -1547,6 +1574,20 @@ export function TodayScreen() {
           onConfirm={handleRegisterPR}
           onCancel={dismissPRPrompt}
         />
+
+        {/* KinEMOS running behind the screen on a clip just uploaded (P8
+            plan §2): one caption line above the tab bar, nothing to tap. */}
+        {uploadAnalysis.line && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed bottom-16 left-0 right-0 z-40 flex justify-center pointer-events-none"
+          >
+            <span className="px-3 py-1 rounded-full bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] shadow-sm">
+              {uploadAnalysis.line}
+            </span>
+          </div>
+        )}
 
         {/* Undo toast for low-risk single-set delete (UF-12) */}
         <UndoToast
