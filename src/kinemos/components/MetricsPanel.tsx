@@ -12,7 +12,7 @@
  * a season without re-running the pipeline, and this panel always shows the
  * freshly computed values.
  */
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { Input } from '../../components/ui';
 import type { ComputedLift } from '../engine/metricCatalogue';
 import type { LiftMetrics } from '../engine/phases';
@@ -39,7 +39,7 @@ interface MetricsPanelProps {
   marginMs?: number | null;
 }
 
-export function MetricsPanel({
+function MetricsPanelImpl({
   metrics,
   summary,
   massKg,
@@ -431,3 +431,5 @@ const hint: CSSProperties = {
 };
 
 const list: CSSProperties = { margin: 0, display: 'grid', gap: 2 };
+
+export const MetricsPanel = memo(MetricsPanelImpl);

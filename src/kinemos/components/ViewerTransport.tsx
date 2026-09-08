@@ -16,6 +16,7 @@
  */
 import { ChevronLeft, ChevronRight, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import {
+  memo,
   useCallback,
   useRef,
   type PointerEvent as ReactPointerEvent,
@@ -67,7 +68,7 @@ function capturePointer(element: Element, pointerId: number): void {
   }
 }
 
-export function ViewerTransport({
+function ViewerTransportImpl({
   index,
   frameCount,
   timestamps,
@@ -308,3 +309,5 @@ function TransportButton({
     </button>
   );
 }
+
+export const ViewerTransport = memo(ViewerTransportImpl);

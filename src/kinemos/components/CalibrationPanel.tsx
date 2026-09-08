@@ -15,7 +15,7 @@
  * 13 % at 30° off perpendicular.
  */
 import { Trash2 } from 'lucide-react';
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { Button, Select } from '../../components/ui';
 import { PLATE_PRESETS, type Calibration, type PlateEllipse } from '../engine/calibration';
 import type { DistortionSource } from '../engine/distortion';
@@ -60,7 +60,7 @@ export interface LensState {
   onClear: () => void;
 }
 
-export function CalibrationPanel({
+function CalibrationPanelImpl({
   ellipse,
   calibration,
   plateDiameterCm,
@@ -317,3 +317,5 @@ const iconButton: CSSProperties = {
   color: 'var(--color-text-tertiary)',
   cursor: 'pointer',
 };
+
+export const CalibrationPanel = memo(CalibrationPanelImpl);

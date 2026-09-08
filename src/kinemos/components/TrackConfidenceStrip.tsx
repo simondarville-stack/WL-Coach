@@ -11,7 +11,7 @@
  * says the same thing in words with the thresholds, so the colours never
  * carry the meaning alone.
  */
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useMemo, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { CONFIDENCE_FLAGGED, CONFIDENCE_SOLID, confidenceRuns, type ConfidenceRun, type FrameConfidence } from '../lib/trackedPoints';
 import { num } from '../lib/viewerFormat';
 
@@ -49,11 +49,14 @@ const BAND_WORD: Record<ConfidenceRun['band'], string> = {
   none: 'no point',
 };
 
-export function TrackConfidenceStrip({ frames, frameCount, currentIndex, onSeek, edges = [] }: TrackConfidenceStripProps) {
+function TrackConfidenceStripImpl({ frames, frameCount, currentIndex, onSeek, edges = [] }: TrackConfidenceStripProps) {
+  // The runs and the mean change with the track, not with the playhead.
+  const runs = useMemo(() => confidenceRuns(frames, frameCount), [frames, frameCount]);
+  const mean = useMemo(() => {
+    const scored = frames.filter(f => f.c !== null);
+    return scored.length ? scored.reduce((sum, f) => sum + (f.c ?? 0), 0) / scored.length : null;
+  }, [frames]);
   if (frameCount <= 0) return null;
-  const runs = confidenceRuns(frames, frameCount);
-  const scored = frames.filter(f => f.c !== null);
-  const mean = scored.length ? scored.reduce((sum, f) => sum + (f.c ?? 0), 0) / scored.length : null;
 
   const seekFromClient = (e: ReactPointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -147,3 +150,5 @@ const micro: CSSProperties = {
   textTransform: 'uppercase',
   color: 'var(--color-text-tertiary)',
 };
+
+export const TrackConfidenceStrip = memo(TrackConfidenceStripImpl);
