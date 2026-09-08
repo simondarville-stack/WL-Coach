@@ -102,6 +102,10 @@ interface ComparisonViewProps {
    * the drift looks like a decoding bug rather than a design mistake.
    */
   playback: UseFrameServer;
+  /** Shown over the current clip's stage instead of its frames, for a clip
+   *  that has none to show — a Stream embed analysed on the athlete's
+   *  phone (P8 plan §4). The charts and the delta table are unaffected. */
+  stageNote?: string | null;
 }
 
 export function ComparisonView({
@@ -115,6 +119,7 @@ export function ComparisonView({
   onAnchor,
   onClose,
   playback,
+  stageNote = null,
 }: ComparisonViewProps) {
   const currentAligned = alignSeries(current.series, current.boundaries, anchor);
   const referenceAligned = subject ? alignSeries(subject.series, subject.boundaries, anchor) : null;
@@ -313,6 +318,7 @@ export function ComparisonView({
           referenceAligned={referenceAligned}
           referenceLabel={referenceLabel}
           playback={playback}
+          stageNote={stageNote}
           follower={follower}
           alignedT={alignedT}
         />
@@ -427,6 +433,7 @@ function SideBySide({
   referenceAligned,
   referenceLabel,
   playback,
+  stageNote,
   follower,
   alignedT,
 }: {
@@ -436,6 +443,7 @@ function SideBySide({
   referenceAligned: AlignedSeries;
   referenceLabel: string;
   playback: UseFrameServer;
+  stageNote: string | null;
   follower: UseFollowerFrame;
   alignedT: number | null;
 }) {
@@ -503,7 +511,9 @@ function SideBySide({
           currentT={leaderT}
           color={CURRENT_COLOR}
           overlay={
-            playback.status === 'ready' && !playback.decodeError ? null : (
+            stageNote ? (
+              <span>{stageNote}</span>
+            ) : playback.status === 'ready' && !playback.decodeError ? null : (
               <span>{playback.decodeError ?? 'Opening this clip…'}</span>
             )
           }

@@ -35,6 +35,7 @@
 import { openFrameServer } from '../engine/frameServer';
 import { autoAnalyse, describeAutoAnalysis, type AutoAnalyseResult } from './autoAnalyse';
 import { clipKeyOf, listRecentAnalyses } from './analysisService';
+import type { KinemosAnalysis } from '../../lib/database.types';
 import type { LibrarySource, LibraryVideo } from './videoLibrary';
 
 const PREF_KEY = 'kinemos.analyseOnImport';
@@ -198,6 +199,32 @@ export function unanalysedClips(rows: LibraryVideo[], analysed: Set<string>): Li
 export async function analysedClipKeys(): Promise<Set<string>> {
   const analyses = await listRecentAnalyses();
   return new Set(analyses.map(a => clipKeyOf(a.source_kind as LibrarySource, a.source_id)));
+}
+
+/** Reps stored for a clip and the best grade among them. */
+export interface ClipAnalysisSummary {
+  reps: number;
+  grade: 'A' | 'B' | 'C' | null;
+}
+
+/**
+ * What every clip already has, keyed by clip key, from one read of the
+ * analyses. Deliberately blind to where the clip lives: a Stream embed that
+ * a phone analysed at upload (P8 plan) has rows like any other, and the
+ * library column shows them — it is the SWEEP that skips embeds, not this.
+ */
+export function summariseAnalyses(
+  analyses: readonly Pick<KinemosAnalysis, 'source_kind' | 'source_id' | 'grade'>[],
+): Map<string, ClipAnalysisSummary> {
+  const next = new Map<string, ClipAnalysisSummary>();
+  for (const a of analyses) {
+    const key = clipKeyOf(a.source_kind as LibrarySource, a.source_id);
+    const cur = next.get(key) ?? { reps: 0, grade: null };
+    cur.reps += 1;
+    if (a.grade && (cur.grade === null || a.grade < cur.grade)) cur.grade = a.grade;
+    next.set(key, cur);
+  }
+  return next;
 }
 
 /** A library row as a queue target. */

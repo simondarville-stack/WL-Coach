@@ -185,10 +185,14 @@ describe('KinemosViewer', () => {
     expect(screen.getByText(/distances read in pixels/i)).toBeInTheDocument();
   });
 
-  it('refuses a streaming embed with the reason, not a black stage', async () => {
+  it('opens a streaming embed on its player and says why there is nothing to measure', async () => {
+    // P8 plan §4: no frames to step through, so the Stream player stands in
+    // for the stage and the sentence says where reps come from for such a
+    // clip — with none stored here, that there are none.
     clip.value = libraryVideo({ isEmbed: true, playbackUrl: 'https://stream.example/embed' });
     renderViewer();
-    expect(await screen.findByText(/streaming embed/i)).toBeInTheDocument();
+    expect(await screen.findByText(/streams from Cloudflare and has no stored reps/i)).toBeInTheDocument();
+    expect(screen.getByTitle('Hang clean')).toHaveAttribute('src', 'https://stream.example/embed');
   });
 
   it('surfaces a decoder failure as the frame server worded it', async () => {

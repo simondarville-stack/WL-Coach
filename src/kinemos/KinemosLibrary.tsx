@@ -39,14 +39,15 @@ import { useCoachStore } from '../store/coachStore';
 import { getOwnerId } from '../lib/ownerContext';
 import { openFrameServer } from './engine/frameServer';
 import { autoAnalyse, describeAutoAnalysis } from './lib/autoAnalyse';
-import { analyseOnImportEnabled, runArrivalQueue, targetFor, unanalysedClips } from './lib/arrivals';
+import {
+  analyseOnImportEnabled,
+  runArrivalQueue,
+  summariseAnalyses,
+  targetFor,
+  unanalysedClips,
+  type ClipAnalysisSummary,
+} from './lib/arrivals';
 import { clipKeyOf, listRecentAnalyses } from './lib/analysisService';
-
-/** Reps stored for a clip and the best grade among them. */
-interface ClipAnalysisSummary {
-  reps: number;
-  grade: 'A' | 'B' | 'C' | null;
-}
 
 /**
  * Is this machine on power? A minute of flat-out decoding per clip is not
@@ -120,19 +121,11 @@ export function KinemosLibrary() {
   const [exerciseName, setExerciseName] = useState('');
 
   /** One read of the analyses answers "which clips have reps" for every
-   *  row at once (the same reasoning as `unanalysedClips`). */
+   *  row at once (the same reasoning as `unanalysedClips`) — Stream embeds
+   *  included, since a phone may have analysed them at upload (P8 plan). */
   const refreshAnalyses = useCallback(async () => {
     try {
-      const analyses = await listRecentAnalyses();
-      const next = new Map<string, ClipAnalysisSummary>();
-      for (const a of analyses) {
-        const key = clipKeyOf(a.source_kind, a.source_id);
-        const cur = next.get(key) ?? { reps: 0, grade: null };
-        cur.reps += 1;
-        if (a.grade && (cur.grade === null || a.grade < cur.grade)) cur.grade = a.grade;
-        next.set(key, cur);
-      }
-      setAnalysisByClip(next);
+      setAnalysisByClip(summariseAnalyses(await listRecentAnalyses()));
     } catch {
       // The column then shows nothing rather than the page failing: the
       // library is still a library without it.
@@ -434,7 +427,16 @@ export function KinemosLibrary() {
             </span>
           );
         }
-        if (row.isEmbed) return <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>;
+        if (row.isEmbed) {
+          return (
+            <span
+              style={{ color: 'var(--color-text-tertiary)' }}
+              title="No reps stored. A streaming clip is analysed on the athlete's phone at upload when the phone can; this browser cannot open it."
+            >
+              —
+            </span>
+          );
+        }
         return (
           <span
             style={{ color: 'var(--color-text-tertiary)' }}
@@ -450,7 +452,13 @@ export function KinemosLibrary() {
       header: '',
       width: '108px',
       align: 'right',
-      render: row => (
+      render: row => {
+        // A Stream embed has frames this browser cannot open, so it cannot
+        // be analysed HERE — the wand and the sweep stay off. It may still
+        // have reps, analysed on the athlete's phone at upload (P8 plan),
+        // and those the viewer can show from the rows.
+        const hasReps = analysisByClip.has(clipKeyOf(row.source, row.sourceId));
+        return (
         <span style={{ display: 'inline-flex', gap: 2 }}>
           {/* Zero-click: find the plate, follow the bar through the set, cut
               it into reps and store them all, with nothing asked of the coach
@@ -464,7 +472,7 @@ export function KinemosLibrary() {
             disabled={row.isEmbed || autoBusy !== null}
             title={
               row.isEmbed
-                ? 'Streaming clips cannot be analysed'
+                ? 'A streaming clip cannot be opened in this browser; it is analysed on the athlete’s phone at upload'
                 : autoBusy === row.key
                   ? 'Analysing…'
                   : 'Analyse it now, with no clicks: find the plate, follow the bar, split the reps and store them. Loads OpenCV the first time, about 13 MB.'
@@ -480,15 +488,18 @@ export function KinemosLibrary() {
             size="sm"
             iconOnly
             icon={<Ruler size={14} />}
-            // A Stream-hosted clip is an iframe embed: pixels to look at, not
-            // frames to measure. The viewer says so plainly, but there is no
-            // point sending a coach there to be told.
-            disabled={row.isEmbed}
-            title={row.isEmbed ? 'Streaming clips cannot be analysed' : 'Analyse in KinEMOS'}
+            disabled={row.isEmbed && !hasReps}
+            title={
+              row.isEmbed
+                ? hasReps
+                  ? 'Open the reps analysed on the athlete’s phone'
+                  : 'A streaming clip with no stored reps: nothing to open'
+                : 'Analyse in KinEMOS'
+            }
             aria-label="Analyse in KinEMOS"
             onClick={e => {
               e.stopPropagation();
-              if (row.isEmbed) return;
+              if (row.isEmbed && !hasReps) return;
               navigate(`/kinemos/analysis/${row.source}/${row.sourceId}`);
             }}
           />
@@ -510,7 +521,8 @@ export function KinemosLibrary() {
             />
           )}
         </span>
-      ),
+        );
+      },
     },
   ];
 

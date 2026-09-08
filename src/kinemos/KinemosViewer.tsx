@@ -56,6 +56,7 @@ import type { ActivitySample } from './engine/activity';
 import { windowRanges, type LiftWindow } from './engine/activity';
 import { splitReps } from './engine/reps';
 import { persistRep } from './lib/autoAnalyse';
+import { EMBED_ANALYSED_NOTE, EMBED_UNANALYSED_NOTE } from './lib/uploadAnalysis';
 import { createClubShare, createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
 import { exportOverlayVideo } from './lib/overlayExport';
 import { formatTalkoverLength, startTalkover, talkoverMimeType, type TalkoverController } from './lib/talkover';
@@ -261,9 +262,12 @@ export function KinemosViewer() {
   }, [clipKey]);
 
   // A Stream-hosted clip is an iframe embed, not a file: there are no frames to
-  // decode, so there is nothing to analyse (P1 plan §4). Better refused with
-  // the reason than opened onto a black stage.
+  // decode, so nothing can be MEASURED here (P1 plan §4). It may still carry
+  // reps — analysed on the athlete's phone at upload (P8 plan) — and those
+  // the rail and the analysis panel show from the stored rows, over the
+  // Stream player rather than a black stage.
   const analysable = clip !== null && !clip.isEmbed;
+  const embedded = clip !== null && clip.isEmbed;
   const playbackUrl = analysable ? clip.playbackUrl : null;
 
   // Kept whole as well as destructured: the comparison view is handed the
@@ -584,6 +588,10 @@ export function KinemosViewer() {
     if (points.length < 8) return `${points.length} of at least 8 marks so far.`;
     return null;
   }, [calibration, points.length]);
+
+  /** What the stage says over a Stream embed: that the reps below came
+   *  from the athlete's phone, or that there are none (P8 plan §4). */
+  const embedNote = embedded ? (points.length > 0 ? EMBED_ANALYSED_NOTE : EMBED_UNANALYSED_NOTE) : null;
 
   // ── Persistence ───────────────────────────────────────────────────────────
   const ensureId = useCallback(async (): Promise<string | null> => {
@@ -2152,6 +2160,7 @@ export function KinemosViewer() {
           onAnchor={setAlignment}
           onClose={() => setComparing(false)}
           playback={playback}
+          stageNote={embedNote}
         />
       )}
 
@@ -2231,14 +2240,32 @@ export function KinemosViewer() {
             background: 'var(--color-bg-tertiary)',
           }}
         >
-          {!analysable && (
-            <ErrorState
-              message={
-                'This clip is hosted as a streaming embed, so KinEMOS cannot reach its frames. ' +
-                'Clips stored as files — every direct import, and log or competition clips in the ' +
-                'video buckets — analyse normally.'
-              }
-            />
+          {embedded && clip && (
+            <>
+              <p
+                style={{
+                  margin: 0,
+                  padding: 'var(--space-sm) var(--space-md)',
+                  fontSize: 'var(--text-caption)',
+                  color: 'var(--color-text-secondary)',
+                  background: 'var(--color-bg-primary)',
+                  borderRadius: 'var(--radius-md)',
+                }}
+              >
+                {embedNote}
+              </p>
+              {/* The same player the library's modal uses: pixels to look at
+                  while reading the numbers, not frames to measure. */}
+              <div style={{ background: '#000', borderRadius: 'var(--radius-md)', overflow: 'hidden', flexGrow: 1, minHeight: 0 }}>
+                <iframe
+                  src={clip.playbackUrl}
+                  title={title}
+                  allow="accelerometer; encrypted-media; picture-in-picture;"
+                  allowFullScreen
+                  style={{ display: 'block', width: '100%', height: '100%', border: 0 }}
+                />
+              </div>
+            </>
           )}
 
           {analysable && status === 'error' && (
@@ -2451,7 +2478,9 @@ export function KinemosViewer() {
         </aside>
       </div>
 
-      {analysable && status === 'ready' && !comparing && (
+      {/* For an embed the panel draws the stored series with no playhead:
+          `currentT` is null and a seek has no server to go to. */}
+      {((analysable && status === 'ready') || (embedded && kinematics)) && !comparing && (
         <AnalysisPanel
           series={kinematics}
           spans={spans}
