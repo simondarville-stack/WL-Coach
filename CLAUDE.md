@@ -196,6 +196,12 @@ All modules are **active** — nothing is currently disabled or hidden:
   (`lib/verdict.ts`): a delta inside the margin is "level with", never
   faster or slower. The doc's §6 lists what the wireframe asked for that is
   not built yet.
+  From 0.97.1 (`docs/KINEMOS_P7_PLAN.md` §9): the frame server keeps **one
+  forward decoder run** and pulls from it for playback, a held → key and the
+  tracker's walk, seeking only when the run cannot reach the frame; the
+  playhead hooks keep **one decode in flight**. Before that mediabunny's
+  per-frame `getCanvas` was a fresh decoder from the key frame every call,
+  and 1× playback showed 13 of 240 frames on a phone clip.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on

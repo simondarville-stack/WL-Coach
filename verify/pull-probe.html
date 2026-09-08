@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KinEMOS — pull probe</title>
+    <style>
+      body { margin: 0; padding: 20px; font: 13px/1.5 ui-monospace, Menlo, monospace; background: #fafaf9; color: #1a1a18; }
+      pre { margin: 0 0 12px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <pre id="log">starting…</pre>
+    <script type="module">
+      // After a seek, what does each of the next pulls cost — with the canvases
+      // kept (as a backfill would) and with them dropped?
+      //   /verify/pull-probe.html?clip=…&pulls=13&n=8
+      const params = new URLSearchParams(location.search);
+      const clip = params.get('clip') ?? '/verify/fixtures/emostestvideo-clip.mp4';
+      const pulls = Number(params.get('pulls') ?? 13);
+      const n = Number(params.get('n') ?? 8);
+      const logEl = document.getElementById('log');
+      const lines = [];
+      const log = (...parts) => {
+        lines.push(parts.join(' '));
+        logEl.textContent = lines.join('\n');
+      };
+      const fmt = arr => arr.map(v => v.toFixed(0)).join(' ');
+      try {
+        const mb = await import('mediabunny');
+        const input = new mb.Input({ formats: mb.ALL_FORMATS, source: new mb.UrlSource(clip) });
+        const track = await input.getPrimaryVideoTrack();
+        const timestamps = [];
+        for await (const p of new mb.EncodedPacketSink(track).packets(undefined, undefined, { metadataOnly: true })) timestamps.push(p.timestamp);
+        timestamps.sort((a, b) => a - b);
+        let seed = 7;
+        const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        const targets = Array.from({ length: n }, () => Math.floor(rnd() * (timestamps.length - 1 - pulls)));
+        const sink = new mb.CanvasSink(track, { poolSize: 0 });
+
+        for (const keep of [true, false]) {
+          const kept = [];
+          let totalFirst = 0;
+          let totalRest = 0;
+          for (const i of targets) {
+            const it = sink.canvases(timestamps[i])[Symbol.asyncIterator]();
+            const times = [];
+            for (let k = 0; k < pulls; k++) {
+              const t0 = performance.now();
+              const r = await it.next();
+              times.push(performance.now() - t0);
+              if (keep) kept.push(r.value.canvas);
+              if (kept.length > 24) kept.shift();
+            }
+            await it.return();
+            totalFirst += times[0];
+            totalRest += times.slice(1).reduce((a, b) => a + b, 0);
+            log(`${keep ? 'keep' : 'drop'} seek→${i}: ${fmt(times)}`);
+          }
+          log(`${keep ? 'keep' : 'drop'}: first pull mean ${(totalFirst / n).toFixed(0)} ms · later pulls mean ${(totalRest / (n * (pulls - 1))).toFixed(1)} ms`);
+        }
+        log('done');
+        document.title = 'probe done';
+      } catch (err) {
+        log('FAILED', err instanceof Error ? err.stack ?? err.message : String(err));
+        document.title = 'probe failed';
+      }
+    </script>
+  </body>
+</html>

@@ -374,3 +374,73 @@ Findings, and what changed:
   all. That is the case for a server-side worker, and where a per-clip cost
   would first appear.
 
+## 9. After 0.97.0: the decode run (0.97.1)
+
+Playback and stepping measured on the testset, 08/09/2026
+(`verify/playback-probe.html`, which runs the viewer's own gestures against
+the frame server: a held → key, a held ← key, the play loop at 0,25× and
+1×, a scrub). mediabunny's `CanvasSink.getCanvas(t)` is not a seek into a
+running decoder: it builds a fresh `VideoDecoder` per call, decodes from the
+previous key frame up to `t`, hands that frame over and closes the decoder.
+Every `frameAt` paid that, and the play loop asked for one per animation
+tick — every stale request still decoded, newest first, so backwards.
+
+| clip | gesture | before | after |
+|---|---|---|---|
+| 1080×1920 HEVC 60 fps, GOP 56 | step forward, mean | 75 ms | 8 ms |
+| | step back, mean | 40 ms | 3 ms |
+| | play 0,25×, frames shown of due | 30 of 60 | 61 of 60 |
+| | play 1×, frames shown of due | 13 of 240 | 238 of 240 (59,4 fps) |
+| | random seek, mean | 58 ms | 61 ms |
+| 1920×1080 H.264 30 fps, GOP 29 | step forward, mean | 48 ms | 15 ms |
+| | step back, mean | 30 ms | 6 ms |
+| | play 1×, frames shown of due | 13 of 120 | 120 of 120 |
+| | random seek, mean | 138 ms | 42 ms |
+| 7680×4320 HEVC 24 fps, GOP 23 (cache holds 2 frames) | step forward, mean | 796 ms | 83 ms |
+| | step back, mean | 1 732 ms | 116 ms |
+| | play 0,25×, frames shown of due | 2 of 18 | 19 of 18 |
+| | random seek, mean | 737 ms | 483 ms |
+
+What changed:
+
+- **`engine/frameServer.ts` keeps one forward decoder run**
+  (`canvasSink.canvases(t)`) and serves a request by pulling from it when the
+  frame is at or up to `RUN_REACH` (16) frames ahead. Anything else — behind
+  the run, or further ahead — closes the run and opens one at the target,
+  which costs what `getCanvas` cost, so no gesture got slower. A seek made
+  for a **step back** (at most 3 frames behind the previous request) starts
+  `BACKFILL` (12) frames early and caches what it passes, so the next steps
+  back are free; a jump gets no backfill. Prefetch looks ahead only. Within a
+  priority the queue takes the lowest index the run can reach, else the
+  lowest index, so a batch behind the run is one seek and a walk; a queued
+  job whose frame a walk cached meanwhile is answered from the cache. The
+  tracker's forward walk (`lib/trackerSource.ts`) rides on the same run and
+  was not re-measured — the auto pipeline's timings in §7 are now upper
+  bounds. Prefetch is also capped by the cache: on the 8K clip the cache
+  holds two frames, and a fan of four evicted the frame on screen before
+  the coach could step back.
+- **`hooks/useFrameServer.ts` and `useFollowerFrame.ts` keep one decode in
+  flight.** When it lands, the newest wanted index is requested if it
+  differs; the indices between were never asked for. Playback requests the
+  next frame when the previous has landed, at whatever index the clock has
+  reached, and sets the index and the pixels together — the transport never
+  names a frame the stage has not shown. `hooks/__tests__/useFrameServer.test.ts`
+  provokes both against a decoder with a settable delay.
+
+Tried and dropped, both by measurement:
+
+- Walking the run to any frame in the same GOP. A pull costs ~5 ms and a
+  seek 67–90 ms wherever it lands in the GOP (the decoder runs from the key
+  frame at hardware speed and converts nothing on the way;
+  `verify/pull-probe.html`), so a walk pays for about sixteen frames and a
+  random seek inside one GOP went from 80 ms to 500 with the GOP rule.
+- Backfilling every seek. Twelve pulls are 60 ms a jump the coach may never
+  step back from; scrubbing paid it on every drag.
+
+Bench notes: the hidden Browser pane fires no `requestAnimationFrame` and
+clamps page timers to one tick a second, so the playback probe's clock is a
+Worker (37+ ticks a second). `verify/seek-probe.html` measures mediabunny's
+own paths directly — `getCanvas` against a run per seek, with and without
+the previous run still open (returning one costs under 4 ms). Do not run
+the test suite while measuring: a background `vitest` run made the H.264
+clip open in 9,8 s instead of 0,2.

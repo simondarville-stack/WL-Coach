@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KinEMOS — playback probe</title>
+    <style>
+      body { margin: 0; padding: 20px; font: 13px/1.5 ui-monospace, Menlo, monospace; background: #fafaf9; color: #1a1a18; }
+      h1 { font: 600 16px system-ui, sans-serif; margin: 0 0 8px; }
+      pre { margin: 0 0 12px; white-space: pre-wrap; }
+      canvas { border: 1px solid #ccc; background: #000; }
+    </style>
+  </head>
+  <body>
+    <h1>Playback probe</h1>
+    <pre id="log">starting…</pre>
+    <canvas id="stage" width="270" height="480"></canvas>
+
+    <script type="module">
+      // Measures what the viewer's playhead actually gets from the frame server:
+      //   A. step forward, one frame at a time (the → key held down)
+      //   B. step backward (←)
+      //   C. the play loop exactly as useFrameServer runs it — a rAF clock at
+      //      `speed`, frameAt on every index change, prefetch(4) — for `secs`;
+      //      counts the frames that reach the stage and how long the decoder
+      //      stays busy after the coach pauses.
+      //   D. a scrub: 12 random seeks across the clip.
+      //
+      //   /verify/playback-probe.html?clip=/verify/fixtures/…&start=60&n=40&speed=0.25,1&secs=4
+      const params = new URLSearchParams(location.search);
+      // `server=old` runs the same gestures against a copy of the pre-0.97.1
+      // frame server kept (untracked) at engine/frameServerOld.ts, for a
+      // before/after on one clip in one sitting.
+      const { openFrameServer } = await import(
+        params.get('server') === 'old'
+          ? '/src/kinemos/engine/frameServerOld.ts'
+          : '/src/kinemos/engine/frameServer.ts'
+      );
+      const clip = params.get('clip') ?? '/verify/fixtures/emostestvideo-clip.mp4';
+      const start = Number(params.get('start') ?? 30);
+      const n = Number(params.get('n') ?? 40);
+      const speeds = (params.get('speed') ?? '0.25,1').split(',').map(Number);
+      const secs = Number(params.get('secs') ?? 4);
+      const logEl = document.getElementById('log');
+      const stage = document.getElementById('stage');
+      const ctx = stage.getContext('2d');
+      const lines = [];
+      const results = { clip };
+      const log = (...parts) => {
+        const line = parts.join(' ');
+        lines.push(line);
+        logEl.textContent = lines.join('\n');
+        console.log('[playback-probe]', line);
+      };
+      const paint = () => new Promise(r => setTimeout(r, 20));
+      // The viewer's clock is requestAnimationFrame. A hidden Browser pane
+      // never fires it and clamps page timers to one tick a second, so the
+      // probe's clock is a worker posting every 8 ms — measured at 37+ ticks a
+      // second where setTimeout managed one. The wall-clock maths is the
+      // hook's; what is measured is the decoder, not the scheduler.
+      const ticker = new Worker(
+        URL.createObjectURL(
+          new Blob(['function t(){postMessage(0);setTimeout(t,8)}t()'], { type: 'text/javascript' }),
+        ),
+      );
+      let onTick = null;
+      ticker.onmessage = () => {
+        const fn = onTick;
+        onTick = null;
+        fn?.(performance.now());
+      };
+      const schedule = fn => {
+        onTick = fn;
+      };
+      const stats = arr => {
+        if (arr.length === 0) return { n: 0 };
+        const s = [...arr].sort((a, b) => a - b);
+        const sum = s.reduce((a, b) => a + b, 0);
+        return {
+          n: s.length,
+          mean: +(sum / s.length).toFixed(1),
+          median: +s[Math.floor(s.length / 2)].toFixed(1),
+          p90: +s[Math.floor(s.length * 0.9)].toFixed(1),
+          max: +s[s.length - 1].toFixed(1),
+        };
+      };
+      const fmt = s => (s.n === 0 ? 'n 0' : `n ${s.n} · mean ${s.mean} · median ${s.median} · p90 ${s.p90} · max ${s.max} ms`);
+      const show = frame => {
+        stage.width = Math.round((frame.canvas.width / frame.canvas.height) * 480);
+        ctx.drawImage(frame.canvas, 0, 0, stage.width, stage.height);
+      };
+
+      try {
+        log('clip', clip);
+        const t0 = performance.now();
+        const server = await openFrameServer(clip);
+        log(`opened in ${(performance.now() - t0).toFixed(0)} ms: ${server.frameCount} frames, ${server.averageFps.toFixed(2)} fps, ` +
+            `${server.displayWidth}x${server.displayHeight}, ${server.codec}, rotation ${server.rotation}, ` +
+            `${server.keyframeTimestamps.length} keyframes (GOP ~ ${(server.frameCount / Math.max(1, server.keyframeTimestamps.length)).toFixed(0)} frames)`);
+        results.frames = server.frameCount;
+        results.fps = server.averageFps;
+        results.gop = server.frameCount / Math.max(1, server.keyframeTimestamps.length);
+        const last = server.frameCount - 1;
+        const s0 = Math.min(start, last);
+
+        // A. step forward
+        {
+          const times = [];
+          for (let i = s0; i < Math.min(last, s0 + n); i++) {
+            const t = performance.now();
+            const f = await server.frameAt(i);
+            times.push(performance.now() - t);
+            show(f);
+            server.prefetch(i, 4);
+          }
+          results.stepForward = stats(times);
+          log('A. step forward   ', fmt(results.stepForward));
+          await paint();
+        }
+        // B. step backward
+        {
+          const times = [];
+          const from = Math.min(last, s0 + n);
+          for (let i = from; i > Math.max(0, from - n); i--) {
+            const t = performance.now();
+            const f = await server.frameAt(i);
+            times.push(performance.now() - t);
+            show(f);
+            server.prefetch(i, 4);
+          }
+          results.stepBackward = stats(times);
+          log('B. step backward  ', fmt(results.stepBackward));
+          await paint();
+        }
+
+        // C. the play loop, per speed
+        results.play = {};
+        for (const speed of speeds) {
+          // Idle until the decoder is quiet, so each run starts clean.
+          await new Promise(r => setTimeout(r, 800));
+          const startIndex = s0;
+          const startT = server.timestamps[startIndex];
+          let wanted = startIndex;
+          let lastIndex = -1;
+          let requests = 0;
+          let delivered = 0;
+          const shown = [];
+          let ticks = 0;
+          const runStart = performance.now();
+          await new Promise(resolve => {
+            const tick = now => {
+              ticks++;
+              const elapsed = ((now - runStart) / 1000) * speed;
+              if (elapsed >= secs * speed || startT + elapsed >= server.timestamps[last]) {
+                resolve();
+                return;
+              }
+              const next = server.nearestIndex(startT + elapsed);
+              if (next !== lastIndex) {
+                lastIndex = next;
+                wanted = next;
+                requests++;
+                server
+                  .frameAt(next)
+                  .then(f => {
+                    delivered++;
+                    if (wanted === next) {
+                      shown.push({ i: next, at: performance.now() - runStart });
+                      show(f);
+                    }
+                  })
+                  .catch(() => undefined);
+                server.prefetch(next, 4);
+              }
+              schedule(tick);
+            };
+            schedule(tick);
+          });
+          const wall = (performance.now() - runStart) / 1000;
+          // Pause: how long until the frame the coach now wants arrives?
+          const pauseAt = performance.now();
+          const pauseIndex = Math.min(last, lastIndex + 1);
+          wanted = -1;
+          await server.frameAt(pauseIndex);
+          const pauseLatency = performance.now() - pauseAt;
+          // And how long does the decoder keep grinding through the backlog?
+          // A fresh request that resolves in under 5 ms means the queue is empty
+          // (the frame was prefetched) — that is the moment it went quiet.
+          const idleAt = performance.now();
+          let quietAt = null;
+          for (let k = 0; k < 600; k++) {
+            const t = performance.now();
+            await server.frameAt(Math.min(last, pauseIndex + 1 + (k % 2)));
+            if (performance.now() - t < 5) { quietAt = performance.now(); break; }
+            await new Promise(r => schedule(r));
+          }
+          const expected = wall * speed * server.averageFps;
+          const gaps = [];
+          for (let k = 1; k < shown.length; k++) gaps.push(shown[k].at - shown[k - 1].at);
+          const r = {
+            speed,
+            wallS: +wall.toFixed(2),
+            ticks,
+            requests,
+            delivered,
+            shownFrames: shown.length,
+            expectedFrames: Math.round(expected),
+            shownFps: +(shown.length / wall).toFixed(1),
+            targetFps: +(speed * server.averageFps).toFixed(1),
+            gapMs: stats(gaps),
+            pauseLatencyMs: +pauseLatency.toFixed(0),
+            backlogMs: quietAt === null ? null : +(quietAt - idleAt).toFixed(0),
+          };
+          results.play[speed] = r;
+          log(`C. play ${speed}x      ${r.shownFrames} of ${r.expectedFrames} frames shown in ${r.wallS} s ` +
+              `(${r.shownFps} of ${r.targetFps} fps); ${r.requests} requests, ${r.delivered} delivered; ` +
+              `gap ${fmt(r.gapMs)}; after pause: wanted frame in ${r.pauseLatencyMs} ms, decoder quiet after ${r.backlogMs} ms`);
+          await paint();
+        }
+
+        // D. scrub
+        {
+          const times = [];
+          let seed = 7;
+          const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+          for (let k = 0; k < 12; k++) {
+            const i = Math.floor(rnd() * last);
+            const t = performance.now();
+            const f = await server.frameAt(i);
+            times.push(performance.now() - t);
+            show(f);
+          }
+          results.scrub = stats(times);
+          log('D. random seek    ', fmt(results.scrub));
+        }
+
+        log('done');
+        window.__PROBE__ = results;
+        document.title = 'probe done';
+      } catch (err) {
+        log('FAILED', err instanceof Error ? err.stack ?? err.message : String(err));
+        window.__PROBE__ = { error: String(err) };
+        document.title = 'probe failed';
+      }
+    </script>
+  </body>
+</html>

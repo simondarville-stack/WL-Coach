@@ -16,8 +16,13 @@
  * are usually different frame rates, often one of them variable, and the
  * offset between them is a fraction of a frame that no index arithmetic can
  * carry (design §5, and `frameServer.ts` on VFR).
+ *
+ * Like the leader, it keeps one decode in flight: the leader's clock can hand
+ * it times faster than its decoder answers, and a request for a moment the
+ * leader has already left is a decode nobody sees. When the request in flight
+ * lands, the newest time is requested if it differs.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FrameServerUnavailableError,
   openFrameServer,
@@ -51,6 +56,9 @@ export function useFollowerFrame(src: string | null, atSeconds: number | null): 
   // The index of the newest request. A slow decode that lands after the clock
   // has moved on must not repaint the stage behind it.
   const wantedRef = useRef(-1);
+  // The server a decode is in flight on, or null — keyed by server so a
+  // request outliving its clip cannot free the slot of the one after it.
+  const inFlightRef = useRef<FrameServer | null>(null);
 
   useEffect(() => {
     if (!src) {
@@ -67,6 +75,7 @@ export function useFollowerFrame(src: string | null, atSeconds: number | null): 
     setFrame(null);
     setShownT(null);
     wantedRef.current = -1;
+    inFlightRef.current = null;
 
     openFrameServer(src)
       .then(opened => {
@@ -96,6 +105,40 @@ export function useFollowerFrame(src: string | null, atSeconds: number | null): 
     };
   }, [src]);
 
+  const pump = useCallback(() => {
+    const active = serverRef.current;
+    if (!active || inFlightRef.current === active) return;
+    const wanted = wantedRef.current;
+    if (wanted < 0) return;
+    inFlightRef.current = active;
+    active
+      .frameAt(wanted)
+      .then(
+        next => {
+          if (serverRef.current !== active || wantedRef.current !== wanted) return;
+          setFrame(next);
+          setShownT(active.timestamps[wanted] ?? null);
+          setDecodeError(null);
+        },
+        (err: unknown) => {
+          if (serverRef.current !== active || wantedRef.current !== wanted) return;
+          // Same rule as the leader: a stale frame beside a live one is worse
+          // than no frame, because the whole point of this screen is that the
+          // two are at the same moment.
+          setFrame(null);
+          setShownT(null);
+          setDecodeError(
+            `Frame ${wanted + 1} would not decode (${err instanceof Error ? err.message : 'unknown error'}).`,
+          );
+        },
+      )
+      .finally(() => {
+        if (inFlightRef.current === active) inFlightRef.current = null;
+        if (serverRef.current === active && wantedRef.current !== wanted) pump();
+      });
+    active.prefetch(wanted, 3);
+  }, []);
+
   useEffect(() => {
     const active = serverRef.current;
     if (!active || status !== 'ready' || atSeconds === null) return;
@@ -106,32 +149,8 @@ export function useFollowerFrame(src: string | null, atSeconds: number | null): 
     // frames map to one of the follower's.
     if (index === wantedRef.current) return;
     wantedRef.current = index;
-
-    let stale = false;
-    active
-      .frameAt(index)
-      .then(next => {
-        if (stale || wantedRef.current !== index) return;
-        setFrame(next);
-        setShownT(active.timestamps[index] ?? null);
-        setDecodeError(null);
-      })
-      .catch((err: unknown) => {
-        if (stale || wantedRef.current !== index) return;
-        // Same rule as the leader: a stale frame beside a live one is worse
-        // than no frame, because the whole point of this screen is that the
-        // two are at the same moment.
-        setFrame(null);
-        setShownT(null);
-        setDecodeError(
-          `Frame ${index + 1} would not decode (${err instanceof Error ? err.message : 'unknown error'}).`,
-        );
-      });
-    active.prefetch(index, 3);
-    return () => {
-      stale = true;
-    };
-  }, [atSeconds, status]);
+    pump();
+  }, [atSeconds, status, pump]);
 
   return { status, error, decodeError, server, frame, shownT };
 }

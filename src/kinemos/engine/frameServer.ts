@@ -239,9 +239,11 @@ export class FrameCache<T> {
 }
 
 /**
- * Indices to warm around `index`, nearest first and forward-biased — stepping
- * forward is the common gesture, and the decoder is fastest in presentation
- * order. Pure, so the prefetch policy is testable without a decoder.
+ * Indices to warm around `index`, nearest first and forward-biased. The
+ * server's own prefetch no longer looks behind the playhead (see `prefetch`
+ * below: a frame behind the forward run costs a seek); this stays as the
+ * pure, testable form of the two-sided policy for anyone warming a cache
+ * that is not a decoder run.
  */
 export function prefetchOrder(index: number, radius: number, frameCount: number): number[] {
   const out: number[] = [];
@@ -422,18 +424,146 @@ export async function openFrameServer(
     return result;
   }
 
-  async function decodeAt(index: number): Promise<ServedFrame> {
-    const timestamp = timestamps[index];
-    // One retry. A hardware decoder under memory pressure — the 8K clip
-    // again — can fail a single decode and be perfectly able to do the next;
-    // mediabunny recreates its decoder on the way back in. The second failure
-    // is the real answer.
-    let wrapped = await canvasSink.getCanvas(timestamp).catch(() => null);
-    if (!wrapped) wrapped = await canvasSink.getCanvas(timestamp);
-    if (!wrapped) {
-      throw new FrameServerUnavailableError(`Frame ${index + 1} could not be decoded.`);
+  // ── The decode run ────────────────────────────────────────────────────────
+  //
+  // `CanvasSink.getCanvas(t)` is not a seek into a running decoder. mediabunny
+  // builds a fresh `VideoDecoder` for every call, decodes from the previous
+  // key frame up to `t`, hands that one frame over and closes the decoder
+  // again. On the testset's 1080×1920 HEVC 60 fps clip (GOP 56) that is
+  // 57–75 ms a frame at the median and 200 ms at the 90th percentile
+  // (`verify/playback-probe.html`, 08/09/2026), against 16–25 ms a frame from
+  // one decoder walking forward. Playback at 1× showed 13 of 240 frames; at
+  // 0,25× every other one; a held → key crawled.
+  //
+  // So the server keeps ONE forward run open — `canvasSink.canvases(t)`, a
+  // single decoder in presentation order — and serves a request by pulling
+  // from it whenever the frame is at or a little ahead of where the run
+  // stands. Playback, a held → key, a ⇧→ ten-frame jump and the tracker's
+  // forward walk all become one decode a frame, and the run pre-decodes a
+  // few frames ahead on its own while the coach looks. A request the run
+  // cannot reach — behind it, or far ahead across a key frame — closes the
+  // run and opens one at the target, which costs exactly what `getCanvas`
+  // cost, so no gesture got slower. A run opened for a backward step starts
+  // `BACKFILL` frames early and caches what it passes: the frames between the
+  // key frame and the target are decoded either way, and keeping the last few
+  // is what a ← held down needs.
+  interface DecodeRun {
+    iterator: AsyncIterator<{ canvas: HTMLCanvasElement | OffscreenCanvas; timestamp: number }>;
+    /** Index the next pull will yield. */
+    next: number;
+  }
+  let run: DecodeRun | null = null;
+
+  /** How far ahead of the run a frame may be and still be walked to rather
+   *  than sought. Ten frames is the ⇧→ jump; the rest is the playback loop
+   *  landing a few frames past the run when a decode ran long. Measured
+   *  (`verify/pull-probe.html`, the 60 fps HEVC clip): a pull is ~5 ms, a
+   *  seek 67–90 ms wherever it lands in the GOP — the decoder runs from the
+   *  key frame at hardware speed and converts nothing on the way. So a walk
+   *  pays up to about sixteen frames and not beyond, even inside one GOP:
+   *  the first version walked whole GOPs and turned a random seek from 80 ms
+   *  into 500. */
+  const RUN_REACH = 16;
+  /** Frames a seek for a STEP BACK starts early, so the next steps back are
+   *  served from the cache: twelve pulls at ~5 ms buy twelve free steps. A
+   *  jump — a scrub, a rep, Home — gets no backfill; the coach may never
+   *  step back from it, and every backfilled frame would be paid for on the
+   *  jump itself. Half the cache at most: the frames the coach just looked
+   *  at are worth keeping too. */
+  const BACKFILL = Math.min(12, Math.floor(boundedCacheSize / 2));
+  /** A request this close behind the previous one is a step back. */
+  const STEP_BACK_REACH = 3;
+  /** The index most recently asked for through `frameAt`, cache hits
+   *  included — what "a step back" is measured from. */
+  let lastAsked: number | null = null;
+
+  /** Index of the container's last declared key frame at or before `index`
+   *  — a claim, not a fact (see the packet pass above), so it only ever
+   *  decides where a run starts, never what it yields. */
+  function keyframeIndexBefore(index: number): number {
+    const t = timestamps[index];
+    if (keyframeTimestamps.length === 0 || keyframeTimestamps[0] > t) return 0;
+    let lo = 0;
+    let hi = keyframeTimestamps.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (keyframeTimestamps[mid] <= t) lo = mid;
+      else hi = mid - 1;
     }
-    return { index, timestamp, canvas: wrapped.canvas };
+    return nearestIndexIn(timestamps, keyframeTimestamps[lo]);
+  }
+
+  async function endRun(): Promise<void> {
+    const ending = run;
+    run = null;
+    if (!ending) return;
+    try {
+      await ending.iterator.return?.();
+    } catch {
+      // A run that failed on the way out has nothing left to release.
+    }
+  }
+
+  function openRun(startIndex: number): DecodeRun {
+    const iterator = canvasSink.canvases(timestamps[startIndex])[Symbol.asyncIterator]();
+    return { iterator, next: startIndex };
+  }
+
+  /** Can the open run serve `index` by walking forward? */
+  function runReaches(index: number): boolean {
+    return run !== null && index >= run.next && index - run.next <= RUN_REACH;
+  }
+
+  /** Where a fresh run for `index` starts: `backfill` frames early, but never
+   *  before the key frame the decoder has to start from anyway. */
+  function runStartFor(index: number, backfill: number): number {
+    return Math.max(0, keyframeIndexBefore(index), index - backfill);
+  }
+
+  /** Pull from the open run until `index` comes out, caching every frame on
+   *  the way — they are decoded regardless, and a step back wants them. */
+  async function pullTo(index: number): Promise<ServedFrame> {
+    for (;;) {
+      const active = run;
+      if (!active || closed) throw new FrameServerUnavailableError('Frame server is closed.');
+      const result = await active.iterator.next();
+      if (closed) throw new FrameServerUnavailableError('Frame server is closed.');
+      if (result.done) {
+        run = null;
+        throw new FrameServerUnavailableError(`Frame ${index + 1} could not be decoded.`);
+      }
+      const at = nearestIndexIn(timestamps, result.value.timestamp);
+      active.next = at + 1;
+      const frame: ServedFrame = { index: at, timestamp: timestamps[at], canvas: result.value.canvas };
+      cache.set(at, frame);
+      if (at >= index) return frame;
+    }
+  }
+
+  async function decodeAt(index: number, backfill: number): Promise<ServedFrame> {
+    try {
+      if (!runReaches(index)) {
+        await endRun();
+        run = openRun(runStartFor(index, backfill));
+      }
+      return await pullTo(index);
+    } catch (error) {
+      if (closed) throw error;
+      // One retry, on a fresh run at the frame itself. A hardware decoder
+      // under memory pressure — the 8K clip again — can fail a single decode
+      // and be perfectly able to do the next; the second failure is the real
+      // answer.
+      await endRun();
+      run = openRun(index);
+      try {
+        return await pullTo(index);
+      } catch (again) {
+        await endRun();
+        throw new FrameServerUnavailableError(
+          `Frame ${index + 1} could not be decoded (${again instanceof Error ? again.message : 'unknown error'}).`,
+        );
+      }
+    }
   }
 
   // ── The decode queue ──────────────────────────────────────────────────────
@@ -451,14 +581,20 @@ export async function openFrameServer(
   // second or two. Serialising them costs nothing (there is one decoder either
   // way) and is the whole fix.
   //
-  // What ordering buys, on top: while a queue is draining the coach has usually
-  // moved on, so the newest request is the one they are waiting for. Jobs are
-  // taken by priority — a request the coach is watching for beats a prefetch —
-  // and newest-first within a priority.
+  // What ordering buys, on top: jobs are taken by priority — a request the
+  // coach is watching for beats a prefetch — and within a priority by what
+  // the open run can reach cheapest: the lowest index at or ahead of the run
+  // (a pull), else the lowest index at all (one seek and a walk that serves
+  // the rest from cache, instead of a seek each). The viewer's hooks keep a
+  // single wanted request in flight, so "newest" and "only" are the same job
+  // there; what this order shapes is a batch — the tracker's backward run,
+  // an export, the tests.
   interface DecodeJob {
     index: number;
     priority: number;
     seq: number;
+    /** Frames to start early if this job has to seek — set for a step back. */
+    backfill: number;
     resolve: (frame: ServedFrame) => void;
     reject: (error: unknown) => void;
   }
@@ -479,11 +615,15 @@ export async function openFrameServer(
 
   function takeNext(): DecodeJob | null {
     let best: DecodeJob | null = null;
+    const position = run ? run.next : Number.POSITIVE_INFINITY;
+    // 0 = a pull from the open run, 1 = a seek.
+    const cost = (job: DecodeJob) => (job.index >= position ? 0 : 1);
     for (const job of queued.values()) {
       if (
         !best ||
         job.priority > best.priority ||
-        (job.priority === best.priority && job.seq > best.seq)
+        (job.priority === best.priority &&
+          (cost(job) < cost(best) || (cost(job) === cost(best) && job.index < best.index)))
       ) {
         best = job;
       }
@@ -521,8 +661,17 @@ export async function openFrameServer(
           job.reject(new FrameServerUnavailableError('Frame server is closed.'));
           continue;
         }
+        // A walk for an earlier job may have passed this frame since it was
+        // queued; the cache is checked again so a batch behind the run costs
+        // one seek, not one per frame.
+        const cached = cache.get(job.index);
+        if (cached) {
+          inFlight.delete(job.index);
+          job.resolve(cached);
+          continue;
+        }
         try {
-          const frame = await decodeAt(job.index);
+          const frame = await decodeAt(job.index, job.backfill);
           if (!closed) cache.set(job.index, frame);
           job.resolve(frame);
         } catch (error) {
@@ -536,7 +685,7 @@ export async function openFrameServer(
     }
   }
 
-  function request(index: number, priority = WANTED): Promise<ServedFrame> {
+  function request(index: number, priority = WANTED, backfill = 0): Promise<ServedFrame> {
     const cached = cache.get(index);
     if (cached) return Promise.resolve(cached);
 
@@ -561,7 +710,7 @@ export async function openFrameServer(
       reject = rej;
     });
     inFlight.set(index, promise);
-    queued.set(index, { index, priority, seq: nextSeq++, resolve, reject });
+    queued.set(index, { index, priority, seq: nextSeq++, backfill, resolve, reject });
     if (priority === SPECULATIVE) trimSpeculative();
     void drain();
     return promise;
@@ -582,12 +731,25 @@ export async function openFrameServer(
     frameAt(index: number) {
       if (closed) return Promise.reject(new FrameServerUnavailableError('Frame server is closed.'));
       const clamped = Math.max(0, Math.min(timestamps.length - 1, Math.round(index)));
-      return request(clamped);
+      const previous = lastAsked;
+      lastAsked = clamped;
+      const stepBack =
+        previous !== null && clamped < previous && previous - clamped <= STEP_BACK_REACH;
+      return request(clamped, WANTED, stepBack ? BACKFILL : 0);
     },
 
     prefetch(index: number, radius = 3) {
       if (closed) return;
-      for (const i of prefetchOrder(Math.round(index), radius, timestamps.length)) {
+      // Ahead only. A frame behind the playhead would close the forward run
+      // and reopen one at the key frame — the cost this run exists to avoid
+      // — and the frames behind are already in the cache from the walk that
+      // reached here, or from the backfill of the seek that did.
+      // And never so far that the frame on screen and the one before it are
+      // evicted: on the 8K clip the cache holds two frames, and a fan of four
+      // would push both out before the coach steps back.
+      const from = Math.round(index);
+      const ahead = Math.min(radius, Math.max(0, boundedCacheSize - 2));
+      for (let i = from + 1; i <= from + ahead && i < timestamps.length; i++) {
         if (cache.has(i) || inFlight.has(i)) continue;
         void request(i, SPECULATIVE).catch(() => undefined);
       }
@@ -599,6 +761,9 @@ export async function openFrameServer(
 
     async stream(onFrame, fromIndex = 0) {
       if (closed) throw new FrameServerUnavailableError('Frame server is closed.');
+      // The walk is its own decoder run; the stepping run gives way so the
+      // clip is not on two decoders at once.
+      await endRun();
       let served = 0;
       const start = Math.max(0, Math.min(timestamps.length - 1, Math.round(fromIndex)));
       for await (const wrapped of canvasSink.canvases(timestamps[start])) {
@@ -615,6 +780,7 @@ export async function openFrameServer(
 
     close() {
       closed = true;
+      void endRun();
       cache.clear();
       inFlight.clear();
       sampleSink = null;

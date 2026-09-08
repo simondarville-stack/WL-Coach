@@ -2,11 +2,23 @@
  * useFrameServer — the viewer's playhead.
  *
  * Owns one `FrameServer` for the life of a clip and turns it into React state:
- * which frame is showing, how to step, how to play. Playback is a
- * requestAnimationFrame loop that walks the container's real timestamps rather
- * than an `HTMLVideoElement` — so what plays and what steps are the same frames,
- * and a variable-frame-rate clip plays at its true timing instead of a nominal
- * fps (docs/KINEMOS_P1_PLAN.md decision 2).
+ * which frame is showing, how to step, how to play. Playback walks the
+ * container's real timestamps rather than an `HTMLVideoElement` — so what
+ * plays and what steps are the same frames, and a variable-frame-rate clip
+ * plays at its true timing instead of a nominal fps (docs/KINEMOS_P1_PLAN.md
+ * decision 2).
+ *
+ * The playhead asks the server for ONE frame at a time. A scrub, a held key or
+ * the play clock can move the wanted index faster than the decoder answers,
+ * and every request for a frame the coach has already moved past is a decode
+ * nobody sees — and, behind the server's forward run, a seek each
+ * (`engine/frameServer.ts`, the decode run). So a request goes out only when
+ * none is in flight; when one lands, the newest wanted index is requested if
+ * it differs, and the indices between were never asked for. Playback is the
+ * same rule with a clock: the next frame is requested when the previous one
+ * has landed, at whatever index the clock has reached, and the index and the
+ * pixels change together — the transport never names a frame the stage has
+ * not shown.
  *
  * This is the one place in KinEMOS allowed to bridge the pure engine to React;
  * the engine itself stays free of both (design §4 rule 1).
@@ -47,6 +59,10 @@ export interface UseFrameServer {
   setSpeed(speed: number): void;
 }
 
+function describeDecodeFailure(index: number, err: unknown): string {
+  return `Frame ${index + 1} would not decode (${err instanceof Error ? err.message : 'unknown error'}).`;
+}
+
 export function useFrameServer(src: string | null): UseFrameServer {
   const [status, setStatus] = useState<FrameServerStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -57,9 +73,13 @@ export function useFrameServer(src: string | null): UseFrameServer {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(0.25);
 
-  // The index the newest decode request was made for. A slow frame that
-  // resolves after the coach has stepped past it must not repaint the stage.
+  // The index the stage should show. A slow frame that resolves after the
+  // coach has stepped past it must not repaint the stage.
   const wantedRef = useRef(0);
+  // The server a stage decode is in flight on, or null. Keyed by server rather
+  // than a boolean so a request outliving its clip cannot free the slot of
+  // the one that replaced it.
+  const inFlightRef = useRef<FrameServer | null>(null);
   const serverRef = useRef<FrameServer | null>(null);
 
   useEffect(() => {
@@ -74,6 +94,7 @@ export function useFrameServer(src: string | null): UseFrameServer {
     setFrame(null);
     setIndex(0);
     wantedRef.current = 0;
+    inFlightRef.current = null;
 
     openFrameServer(src)
       .then(opened => {
@@ -103,37 +124,44 @@ export function useFrameServer(src: string | null): UseFrameServer {
     };
   }, [src]);
 
-  // Decode whatever the playhead is on. Kept in an effect rather than inside
-  // `seek` so every route to a new index — keyboard, scrub, playback, a rep
-  // jump — paints through the same path.
-  useEffect(() => {
+  /** Decode the wanted frame, one request at a time; when it lands, go again
+   *  if the wanted index has moved on. Every route to a new index — keyboard,
+   *  scrub, a rep jump — paints through here. */
+  const pump = useCallback(() => {
     const active = serverRef.current;
-    if (!active || status !== 'ready') return;
-    wantedRef.current = index;
-    let stale = false;
+    if (!active || inFlightRef.current === active) return;
+    const wanted = wantedRef.current;
+    inFlightRef.current = active;
     active
-      .frameAt(index)
-      .then(next => {
-        if (stale || wantedRef.current !== index) return;
-        setFrame(next);
-        setDecodeError(null);
-      })
-      .catch((err: unknown) => {
-        if (stale || wantedRef.current !== index) return;
-        // Never leave the previous frame up. It would sit under a transport, a
-        // readout and an overlay that all name a different moment, and a mark
-        // placed on it would be stored against a timestamp it does not belong
-        // to. A blank stage that says why is the honest failure.
-        setFrame(null);
-        setDecodeError(
-          `Frame ${index + 1} would not decode (${err instanceof Error ? err.message : 'unknown error'}).`,
-        );
+      .frameAt(wanted)
+      .then(
+        next => {
+          if (serverRef.current !== active || wantedRef.current !== wanted) return;
+          setFrame(next);
+          setDecodeError(null);
+        },
+        (err: unknown) => {
+          if (serverRef.current !== active || wantedRef.current !== wanted) return;
+          // Never leave the previous frame up. It would sit under a transport,
+          // a readout and an overlay that all name a different moment, and a
+          // mark placed on it would be stored against a timestamp it does not
+          // belong to. A blank stage that says why is the honest failure.
+          setFrame(null);
+          setDecodeError(describeDecodeFailure(wanted, err));
+        },
+      )
+      .finally(() => {
+        if (inFlightRef.current === active) inFlightRef.current = null;
+        if (serverRef.current === active && wantedRef.current !== wanted) pump();
       });
-    active.prefetch(index, 4);
-    return () => {
-      stale = true;
-    };
-  }, [index, status]);
+    active.prefetch(wanted, 4);
+  }, []);
+
+  useEffect(() => {
+    if (!serverRef.current || status !== 'ready') return;
+    wantedRef.current = index;
+    pump();
+  }, [index, status, pump]);
 
   const seek = useCallback((next: number) => {
     const active = serverRef.current;
@@ -161,29 +189,62 @@ export function useFrameServer(src: string | null): UseFrameServer {
 
   // Playback: advance along the container's own timestamps at `speed` of real
   // time. Landing on the nearest frame to a wall-clock target keeps VFR clips
-  // honest — a fixed +1 per tick would play them at the wrong speed.
+  // honest — a fixed +1 per tick would play them at the wrong speed — and
+  // requesting that frame only once the previous one has landed keeps the
+  // decoder on frames that will be seen: when a decode runs long the clock
+  // simply lands further on, and the frames between are never asked for.
   useEffect(() => {
     const active = serverRef.current;
     if (!playing || !active || status !== 'ready') return;
 
+    let cancelled = false;
     let raf = 0;
+    const last = active.frameCount - 1;
     const startWall = performance.now();
     const startT = active.timestamps[index] ?? 0;
+    const clock = () => startT + ((performance.now() - startWall) / 1000) * speed;
+    const vsync = () =>
+      new Promise<void>(resolve => {
+        raf = requestAnimationFrame(() => resolve());
+      });
 
-    const tick = (now: number) => {
-      const elapsed = ((now - startWall) / 1000) * speed;
-      const target = startT + elapsed;
-      const next = active.nearestIndex(target);
-      if (target >= active.timestamps[active.frameCount - 1]) {
-        setIndex(active.frameCount - 1);
-        setPlaying(false);
-        return;
+    void (async () => {
+      let shown = index;
+      while (!cancelled) {
+        const target = clock();
+        if (target >= active.timestamps[last]) {
+          setIndex(last);
+          setPlaying(false);
+          return;
+        }
+        const next = active.nearestIndex(target);
+        if (next === shown) {
+          await vsync();
+          continue;
+        }
+        let decoded: ServedFrame | null = null;
+        try {
+          decoded = await active.frameAt(next);
+        } catch {
+          // Reported by the decode path below once the index lands on it —
+          // the same message a step onto the frame would show.
+        }
+        if (cancelled) return;
+        shown = next;
+        wantedRef.current = next;
+        if (decoded) {
+          setFrame(decoded);
+          setDecodeError(null);
+        }
+        setIndex(next);
+        active.prefetch(next, 4);
       }
-      setIndex(next);
-      raf = requestAnimationFrame(tick);
+    })();
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
     // `index` is read once to anchor the run; re-running on every frame would
     // restart the clock 60 times a second and never advance.
     // eslint-disable-next-line react-hooks/exhaustive-deps

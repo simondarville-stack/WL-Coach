@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KinEMOS — seek probe</title>
+    <style>
+      body { margin: 0; padding: 20px; font: 13px/1.5 ui-monospace, Menlo, monospace; background: #fafaf9; color: #1a1a18; }
+      h1 { font: 600 16px system-ui, sans-serif; margin: 0 0 8px; }
+      pre { margin: 0 0 12px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Seek probe</h1>
+    <pre id="log">starting…</pre>
+
+    <script type="module">
+      // What does a random seek cost on each mediabunny path, and where?
+      //   1. getCanvas(t): fresh decoder per call (the old frame server).
+      //   2. canvases(t) → pull one → return(): a run per seek, no pre-decode.
+      //   3. canvases(t) → pull one → let the pump pre-decode → return():
+      //      the run left open between seeks, as the viewer leaves it.
+      //   4. as 3, but the old run is returned BEFORE the new one opens and
+      //      the return is awaited.
+      //   /verify/seek-probe.html?clip=/verify/fixtures/…&n=12
+      const params = new URLSearchParams(location.search);
+      const clip = params.get('clip') ?? '/verify/fixtures/emostestvideo-clip.mp4';
+      const n = Number(params.get('n') ?? 12);
+      const logEl = document.getElementById('log');
+      const lines = [];
+      const log = (...parts) => {
+        lines.push(parts.join(' '));
+        logEl.textContent = lines.join('\n');
+      };
+      const stats = arr => {
+        const s = [...arr].sort((a, b) => a - b);
+        const sum = s.reduce((a, b) => a + b, 0);
+        return `n ${s.length} · mean ${(sum / s.length).toFixed(0)} · median ${s[Math.floor(s.length / 2)].toFixed(0)} · max ${s[s.length - 1].toFixed(0)} ms`;
+      };
+      const settle = ms => new Promise(r => setTimeout(r, ms));
+
+      try {
+        const mb = await import('mediabunny');
+        const input = new mb.Input({ formats: mb.ALL_FORMATS, source: new mb.UrlSource(clip) });
+        const track = await input.getPrimaryVideoTrack();
+        const timestamps = [];
+        for await (const p of new mb.EncodedPacketSink(track).packets(undefined, undefined, { metadataOnly: true })) timestamps.push(p.timestamp);
+        timestamps.sort((a, b) => a - b);
+        log('clip', clip, timestamps.length, 'frames', track.codec);
+
+        let seed = 7;
+        const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        const targets = Array.from({ length: n }, () => timestamps[Math.floor(rnd() * (timestamps.length - 1))]);
+
+        // 1. getCanvas
+        {
+          const sink = new mb.CanvasSink(track, { poolSize: 0 });
+          const times = [];
+          for (const t of targets) {
+            const t0 = performance.now();
+            await sink.getCanvas(t);
+            times.push(performance.now() - t0);
+          }
+          log('1. getCanvas per seek          ', stats(times));
+        }
+
+        // 2. run per seek, returned at once
+        {
+          const sink = new mb.CanvasSink(track, { poolSize: 0 });
+          const times = [];
+          for (const t of targets) {
+            const t0 = performance.now();
+            const it = sink.canvases(t)[Symbol.asyncIterator]();
+            await it.next();
+            times.push(performance.now() - t0);
+            await it.return();
+          }
+          log('2. run, pull 1, return at once ', stats(times));
+        }
+
+        // 3. run left open ~300 ms (pump pre-decodes), then next seek opens
+        //    before the old one is returned (returned after, awaited).
+        {
+          const sink = new mb.CanvasSink(track, { poolSize: 0 });
+          const times = [];
+          const returns = [];
+          let old = null;
+          for (const t of targets) {
+            const t0 = performance.now();
+            const it = sink.canvases(t)[Symbol.asyncIterator]();
+            await it.next();
+            times.push(performance.now() - t0);
+            if (old) {
+              const r0 = performance.now();
+              await old.return();
+              returns.push(performance.now() - r0);
+            }
+            old = it;
+            await settle(300);
+          }
+          await old?.return();
+          log('3. run left open, new before old', stats(times), '· return', stats(returns));
+        }
+
+        // 4. run left open ~300 ms, old returned (awaited) BEFORE the new opens.
+        {
+          const sink = new mb.CanvasSink(track, { poolSize: 0 });
+          const times = [];
+          const returns = [];
+          let old = null;
+          for (const t of targets) {
+            if (old) {
+              const r0 = performance.now();
+              await old.return();
+              returns.push(performance.now() - r0);
+            }
+            const t0 = performance.now();
+            const it = sink.canvases(t)[Symbol.asyncIterator]();
+            await it.next();
+            times.push(performance.now() - t0);
+            old = it;
+            await settle(300);
+          }
+          await old?.return();
+          log('4. run left open, old returned ', stats(times), '· return', stats(returns));
+        }
+
+        // 5. as 4, but returned and then given 50 ms before the new one opens.
+        {
+          const sink = new mb.CanvasSink(track, { poolSize: 0 });
+          const times = [];
+          let old = null;
+          for (const t of targets) {
+            if (old) {
+              await old.return();
+              await settle(50);
+            }
+            const t0 = performance.now();
+            const it = sink.canvases(t)[Symbol.asyncIterator]();
+            await it.next();
+            times.push(performance.now() - t0);
+            old = it;
+            await settle(300);
+          }
+          await old?.return();
+          log('5. as 4, 50 ms after return    ', stats(times));
+        }
+
+        // 6. a fresh sample sink per run (a decoder per run, like getCanvas).
+        {
+          const times = [];
+          for (const t of targets) {
+            const sink = new mb.CanvasSink(track, { poolSize: 0 });
+            const t0 = performance.now();
+            const it = sink.canvases(t)[Symbol.asyncIterator]();
+            await it.next();
+            times.push(performance.now() - t0);
+            await settle(300);
+            await it.return();
+          }
+          log('6. new sink per run            ', stats(times));
+        }
+
+        log('done');
+        document.title = 'probe done';
+      } catch (err) {
+        log('FAILED', err instanceof Error ? err.stack ?? err.message : String(err));
+        document.title = 'probe failed';
+      }
+    </script>
+  </body>
+</html>
