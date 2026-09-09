@@ -6,7 +6,7 @@
  * delete.
  */
 import { describe, expect, it } from 'vitest';
-import { kinemosObjectUrl, newClipKey, posterKeyFor } from '../kinemosStorage';
+import { isWorkerResponse, kinemosObjectUrl, newClipKey, posterKeyFor } from '../kinemosStorage';
 
 /** The worker's KINEMOS_KEY regex, copied deliberately: if these two ever
  *  disagree, uploads break, and the copy is what makes that a test failure
@@ -56,9 +56,28 @@ describe('posterKeyFor', () => {
 });
 
 describe('kinemosObjectUrl', () => {
-  it('addresses the worker route', () => {
+  it('addresses the worker route (relative: no VITE_API_ORIGIN in test builds)', () => {
     expect(kinemosObjectUrl('0508e555-7384-460c-9c0f-c1ec02144553.mp4')).toBe(
       '/api/kinemos/video/0508e555-7384-460c-9c0f-c1ec02144553.mp4',
     );
+  });
+});
+
+describe('isWorkerResponse', () => {
+  // A host with no worker (the Netlify rollback deploy) answers a PUT to
+  // /api/... with the SPA's index.html and a 200. `res.ok` would take that for
+  // a stored object and the row would keep a key that points at nothing.
+  const withType = (type: string | null) => ({
+    headers: { get: (name: string) => (name === 'content-type' ? type : null) } as unknown as Headers,
+  });
+
+  it("accepts the worker's JSON answer", () => {
+    expect(isWorkerResponse(withType('application/json'))).toBe(true);
+    expect(isWorkerResponse(withType('application/json; charset=utf-8'))).toBe(true);
+  });
+
+  it('rejects the SPA fallback and anything untyped', () => {
+    expect(isWorkerResponse(withType('text/html; charset=utf-8'))).toBe(false);
+    expect(isWorkerResponse(withType(null))).toBe(false);
   });
 });

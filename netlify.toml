@@ -9,6 +9,13 @@
 # (SPA fallback) and public/_headers (cache + security headers) — change both
 # or neither. The .map strip now lives in scripts/strip-sourcemaps.mjs, shared
 # by both platforms via `npm run build:deploy`.
+#
+# Netlify has NO /api worker (worker/index.ts): the SPA fallback below answers
+# /api/kinemos/video/<key> with index.html. The bundle therefore addresses
+# its /api calls to VITE_API_ORIGIN (.env.production, the Cloudflare host),
+# so a share snapshot or an R2 clip still loads for an athlete whose bookmark
+# opens this deploy. A DNS flip back to Netlify keeps working for the same
+# reason — the objects stay on Cloudflare either way.
 
 [build]
   command = "npm run build:deploy"

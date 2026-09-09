@@ -412,6 +412,16 @@ the browser). It is hosted on **Cloudflare Workers static assets**:
 - Build-time env: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are baked
   into the bundle at build time — they are Workers Builds **environment
   variables**, not runtime secrets.
+- `VITE_API_ORIGIN` (`.env.production`, `https://emosapp.com`) is the origin
+  every `/api/*` call is built against (`src/lib/apiOrigin.ts`): KinEMOS
+  objects in R2 — share snapshots, clips, talkovers — and the Stream broker.
+  The worker exists only on the Cloudflare host; the same bundle served from
+  a host without it (the Netlify rollback deploy, which athletes' old
+  bookmarks still open) answers a relative `/api/...` with `index.html` — a
+  broken image on a share card, and a PUT that "succeeds" storing nothing
+  (0.105.1). The worker answers cross-origin (`*`, no credentials), and
+  `kinemosStorage`'s `put` refuses a non-JSON 200. Unset in dev, where vite
+  proxies `/api` to a local `wrangler dev`.
 - `preview_urls = false` in `wrangler.toml`. Versioned preview URLs are public
   and keep serving each version's own assets after it stops being live — that
   is how 0.60.1's sourcemaps outlived the fix on the main hostname. Keep this

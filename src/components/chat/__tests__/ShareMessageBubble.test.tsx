@@ -59,4 +59,16 @@ describe('ShareMessageBubble', () => {
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 'share-1' }));
     expect(screen.getByText(/Watch the clip/)).toBeInTheDocument();
   });
+
+  it('falls back to the caption in words when the picture cannot be loaded', () => {
+    // Seen on a phone opening the app from a host with no storage route: the
+    // browser's broken-image glyph over the numbers. The card must degrade to
+    // its text, and stop offering to open a picture it does not have.
+    render(<ShareMessageBubble share={share} isOwn={false} theme="dark" />);
+    fireEvent.error(screen.getByRole('img', { name: /Snatch · 62,5 kg/ }));
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Open Snatch/ })).toBeNull();
+    expect(screen.getByText('Snatch · 62,5 kg · 03/09 · rep 2')).toBeInTheDocument();
+    expect(screen.getByText('2,31 m/s')).toBeInTheDocument();
+  });
 });

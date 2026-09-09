@@ -25,6 +25,14 @@ interface ImportMetaEnv {
    */
   readonly VITE_KINEMOS_TOKEN?: string;
   /**
+   * Absolute origin of the `/api/*` worker routes (`https://emosapp.com`),
+   * so KinEMOS objects and the Stream broker resolve when the bundle is
+   * served from a host with no worker — the Netlify rollback deploy, a
+   * `vite preview`. Unset (dev) means relative `/api`, which the dev server
+   * proxies to a local `wrangler dev`. See `src/lib/apiOrigin.ts`.
+   */
+  readonly VITE_API_ORIGIN?: string;
+  /**
    * `'1'` turns on the tracker's luma-plane region reads (P6 plan §4) for
    * every user of the build. Off by default; a local session can try the
    * path without a rebuild through the `kinemos.lumaRegion` localStorage

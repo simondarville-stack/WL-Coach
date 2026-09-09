@@ -12,6 +12,8 @@
  * branch on isStreamPlaybackUrl and render an iframe instead of <video>.
  */
 
+import { apiUrl } from './apiOrigin';
+
 /** Build-time switch. Ordinary builds leave this unset and never call /api. */
 export const STREAM_UPLOADS_ENABLED = import.meta.env.VITE_STREAM_UPLOADS === '1';
 
@@ -48,7 +50,7 @@ export function streamEligible(file: File): boolean {
  * Throws on any failure — the caller falls back to Supabase storage.
  */
 export async function uploadToStream(file: File): Promise<StreamUploadResult> {
-  const brokered = await fetch('/api/stream/direct-upload', { method: 'POST' });
+  const brokered = await fetch(apiUrl('/api/stream/direct-upload'), { method: 'POST' });
   if (!brokered.ok) throw new Error('stream-unavailable');
   const { uploadUrl, uid, playbackUrl } = (await brokered.json()) as {
     uploadUrl: string;
@@ -65,5 +67,5 @@ export async function uploadToStream(file: File): Promise<StreamUploadResult> {
 /** Free the Stream copy of a deleted clip. Best-effort — a failure leaves an
  *  orphaned Stream video, never a broken row. */
 export async function deleteStreamVideo(uid: string): Promise<void> {
-  await fetch(`/api/stream/video/${uid}`, { method: 'DELETE' }).catch(() => undefined);
+  await fetch(apiUrl(`/api/stream/video/${uid}`), { method: 'DELETE' }).catch(() => undefined);
 }

@@ -92,6 +92,33 @@ const json = (body: unknown, status = 200) =>
   });
 
 /**
+ * Cross-origin answers. The bundle is also served from hosts this worker is
+ * not in front of — the Netlify rollback deploy an athlete's old bookmark
+ * still opens — and `VITE_API_ORIGIN` points their `/api` calls here. An
+ * `<img>` or `<video>` never needed CORS, but the frame server's Range
+ * fetches, an upload, and the Stream broker do.
+ *
+ * `*` is deliberate and lowers nothing: a GET is already a public capability
+ * (the UUID key, as with the public Supabase buckets — see the header), and
+ * writes stay behind KINEMOS_WRITE_TOKEN, which is baked into the bundle for
+ * every origin alike. No credentials are involved, so `*` is also the only
+ * value the browser accepts here. The auth/RLS phase narrows this along with
+ * everything else.
+ */
+const CORS_HEADERS: Record<string, string> = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, HEAD, PUT, POST, DELETE, OPTIONS',
+  'access-control-allow-headers': 'content-type, range, x-kinemos-token',
+  'access-control-expose-headers': 'content-range, content-length, accept-ranges, etag',
+  'access-control-max-age': '86400',
+};
+
+function withCors(response: Response): Response {
+  for (const [name, value] of Object.entries(CORS_HEADERS)) response.headers.set(name, value);
+  return response;
+}
+
+/**
  * A KinEMOS object key: a v4 UUID plus an allow-listed extension, flat in the
  * bucket. Validated rather than trusted because the key comes straight off the
  * URL — anything looser lets a caller write outside the namespace or fetch a
@@ -151,97 +178,104 @@ async function serveKinemosObject(bucket: R2Bucket, key: string, request: Reques
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
+    // A preflight is answered before any route: the browser sends it for a
+    // cross-origin PUT with the token header, and for a fetch with Range.
+    if (request.method === 'OPTIONS') return withCors(new Response(null, { status: 204 }));
+    return withCors(await route(request, env));
+  },
+};
 
-    if (url.pathname === '/api/stream/direct-upload' && request.method === 'POST') {
-      if (!env.STREAM_ACCOUNT_ID || !env.STREAM_API_TOKEN || !env.STREAM_CUSTOMER_CODE) {
-        return json({ error: 'stream-not-configured' }, 503);
-      }
-      const apiRes = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${env.STREAM_ACCOUNT_ID}/stream/direct_upload`,
-        {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${env.STREAM_API_TOKEN}`,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({ maxDurationSeconds: MAX_DURATION_SECONDS }),
+async function route(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+
+  if (url.pathname === '/api/stream/direct-upload' && request.method === 'POST') {
+    if (!env.STREAM_ACCOUNT_ID || !env.STREAM_API_TOKEN || !env.STREAM_CUSTOMER_CODE) {
+      return json({ error: 'stream-not-configured' }, 503);
+    }
+    const apiRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.STREAM_ACCOUNT_ID}/stream/direct_upload`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${env.STREAM_API_TOKEN}`,
+          'content-type': 'application/json',
         },
-      );
-      const body = (await apiRes.json().catch(() => null)) as {
-        success?: boolean;
-        result?: { uploadURL?: string; uid?: string };
-      } | null;
-      if (!apiRes.ok || !body?.success || !body.result?.uploadURL || !body.result.uid) {
-        return json({ error: 'stream-api-error' }, 502);
-      }
-      return json({
-        uploadUrl: body.result.uploadURL,
-        uid: body.result.uid,
-        playbackUrl: `https://customer-${env.STREAM_CUSTOMER_CODE}.cloudflarestream.com/${body.result.uid}/iframe`,
-      });
+        body: JSON.stringify({ maxDurationSeconds: MAX_DURATION_SECONDS }),
+      },
+    );
+    const body = (await apiRes.json().catch(() => null)) as {
+      success?: boolean;
+      result?: { uploadURL?: string; uid?: string };
+    } | null;
+    if (!apiRes.ok || !body?.success || !body.result?.uploadURL || !body.result.uid) {
+      return json({ error: 'stream-api-error' }, 502);
+    }
+    return json({
+      uploadUrl: body.result.uploadURL,
+      uid: body.result.uid,
+      playbackUrl: `https://customer-${env.STREAM_CUSTOMER_CODE}.cloudflarestream.com/${body.result.uid}/iframe`,
+    });
+  }
+
+  // Clip deletion, so removing a log video also frees the Stream copy.
+  const del = url.pathname.match(/^\/api\/stream\/video\/([a-f0-9]{16,64})$/);
+  if (del && request.method === 'DELETE') {
+    if (!env.STREAM_ACCOUNT_ID || !env.STREAM_API_TOKEN) {
+      return json({ error: 'stream-not-configured' }, 503);
+    }
+    const apiRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.STREAM_ACCOUNT_ID}/stream/${del[1]}`,
+      { method: 'DELETE', headers: { authorization: `Bearer ${env.STREAM_API_TOKEN}` } },
+    );
+    // 404 counts as gone — deletes must be idempotent for retries.
+    if (!apiRes.ok && apiRes.status !== 404) return json({ error: 'stream-api-error' }, 502);
+    return json({ ok: true });
+  }
+
+  // ---- KinEMOS video objects in R2 -------------------------------------
+  const kin = url.pathname.match(/^\/api\/kinemos\/video\/(.+)$/);
+  if (kin) {
+    const key = decodeURIComponent(kin[1]);
+    if (!KINEMOS_KEY.test(key)) return json({ error: 'bad-key' }, 400);
+    const bucket = env.KINEMOS_VIDEOS;
+    if (!bucket) return json({ error: 'kinemos-storage-not-configured' }, 503);
+
+    if (request.method === 'GET' || request.method === 'HEAD') {
+      return serveKinemosObject(bucket, key, request);
     }
 
-    // Clip deletion, so removing a log video also frees the Stream copy.
-    const del = url.pathname.match(/^\/api\/stream\/video\/([a-f0-9]{16,64})$/);
-    if (del && request.method === 'DELETE') {
-      if (!env.STREAM_ACCOUNT_ID || !env.STREAM_API_TOKEN) {
-        return json({ error: 'stream-not-configured' }, 503);
+    // Writes are gated by the shared token where one is configured — see
+    // KINEMOS_WRITE_TOKEN in Env for what this does and does not protect.
+    if (
+      env.KINEMOS_WRITE_TOKEN &&
+      request.headers.get('x-kinemos-token') !== env.KINEMOS_WRITE_TOKEN
+    ) {
+      return json({ error: 'forbidden' }, 403);
+    }
+
+    if (request.method === 'PUT') {
+      if (!request.body) return json({ error: 'empty-body' }, 400);
+      // content-length is advisory (a streamed upload may omit it), so this
+      // rejects the clearly-oversized early rather than guaranteeing a cap.
+      const declared = Number(request.headers.get('content-length') ?? '0');
+      if (declared > KINEMOS_MAX_BYTES) {
+        return json({ error: 'too-large', limitBytes: KINEMOS_MAX_BYTES }, 413);
       }
-      const apiRes = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${env.STREAM_ACCOUNT_ID}/stream/${del[1]}`,
-        { method: 'DELETE', headers: { authorization: `Bearer ${env.STREAM_API_TOKEN}` } },
-      );
-      // 404 counts as gone — deletes must be idempotent for retries.
-      if (!apiRes.ok && apiRes.status !== 404) return json({ error: 'stream-api-error' }, 502);
+      const ext = key.slice(key.lastIndexOf('.') + 1);
+      await bucket.put(key, request.body, {
+        httpMetadata: { contentType: CONTENT_TYPES[ext] ?? 'application/octet-stream' },
+      });
+      return json({ ok: true, key });
+    }
+
+    if (request.method === 'DELETE') {
+      // R2 deletes are already idempotent — a missing key is not an error.
+      await bucket.delete(key);
       return json({ ok: true });
     }
 
-    // ---- KinEMOS video objects in R2 -------------------------------------
-    const kin = url.pathname.match(/^\/api\/kinemos\/video\/(.+)$/);
-    if (kin) {
-      const key = decodeURIComponent(kin[1]);
-      if (!KINEMOS_KEY.test(key)) return json({ error: 'bad-key' }, 400);
-      const bucket = env.KINEMOS_VIDEOS;
-      if (!bucket) return json({ error: 'kinemos-storage-not-configured' }, 503);
+    return json({ error: 'method-not-allowed' }, 405);
+  }
 
-      if (request.method === 'GET' || request.method === 'HEAD') {
-        return serveKinemosObject(bucket, key, request);
-      }
-
-      // Writes are gated by the shared token where one is configured — see
-      // KINEMOS_WRITE_TOKEN in Env for what this does and does not protect.
-      if (
-        env.KINEMOS_WRITE_TOKEN &&
-        request.headers.get('x-kinemos-token') !== env.KINEMOS_WRITE_TOKEN
-      ) {
-        return json({ error: 'forbidden' }, 403);
-      }
-
-      if (request.method === 'PUT') {
-        if (!request.body) return json({ error: 'empty-body' }, 400);
-        // content-length is advisory (a streamed upload may omit it), so this
-        // rejects the clearly-oversized early rather than guaranteeing a cap.
-        const declared = Number(request.headers.get('content-length') ?? '0');
-        if (declared > KINEMOS_MAX_BYTES) {
-          return json({ error: 'too-large', limitBytes: KINEMOS_MAX_BYTES }, 413);
-        }
-        const ext = key.slice(key.lastIndexOf('.') + 1);
-        await bucket.put(key, request.body, {
-          httpMetadata: { contentType: CONTENT_TYPES[ext] ?? 'application/octet-stream' },
-        });
-        return json({ ok: true, key });
-      }
-
-      if (request.method === 'DELETE') {
-        // R2 deletes are already idempotent — a missing key is not an error.
-        await bucket.delete(key);
-        return json({ ok: true });
-      }
-
-      return json({ error: 'method-not-allowed' }, 405);
-    }
-
-    return json({ error: 'not-found' }, 404);
-  },
-};
+  return json({ error: 'not-found' }, 404);
+}

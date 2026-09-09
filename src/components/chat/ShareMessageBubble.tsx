@@ -68,8 +68,12 @@ export function ShareMessageBubble({
 }) {
   const t = THEMES[theme];
   const [showing, setShowing] = useState<'image' | 'clip' | 'talkover' | null>(null);
+  // The picture did not load — the object is gone, or this host cannot reach
+  // it. The card then says what was shared in words rather than showing the
+  // browser's broken-image glyph over the numbers.
+  const [imageFailed, setImageFailed] = useState(false);
   const s = share.summary;
-  const imageUrl = share.asset_key ? kinemosObjectUrl(share.asset_key) : null;
+  const imageUrl = share.asset_key && !imageFailed ? kinemosObjectUrl(share.asset_key) : null;
 
   const what = [s.exerciseName ?? 'Lift', s.loadKg !== null ? `${num(s.loadKg, Number.isInteger(s.loadKg) ? 0 : 1)} kg` : null]
     .filter(Boolean)
@@ -106,7 +110,13 @@ export function ShareMessageBubble({
             aria-label={`Open ${caption}`}
             className="relative block w-44 rounded-md overflow-hidden bg-black"
           >
-            <img src={imageUrl} alt={caption} loading="lazy" className="block w-full h-auto" />
+            <img
+              src={imageUrl}
+              alt={caption}
+              loading="lazy"
+              className="block w-full h-auto"
+              onError={() => setImageFailed(true)}
+            />
             <span className="absolute bottom-0 left-0 right-0 px-1.5 py-0.5 text-[10px] font-medium text-white bg-black/60 truncate text-left">
               {caption}
             </span>

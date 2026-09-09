@@ -8,10 +8,16 @@
  * clock on it to expire halfway through a 250 MB upload on gym wifi.
  *
  * Object keys are v4 UUIDs (`<uuid>.mp4`, poster `<uuid>.jpg`) and the row in
- * `kinemos_videos` stores the KEY, never a URL — `videoUrl()` builds the URL
- * at read time. Baking an origin into stored rows is precisely how the
- * Netlify-era links rotted when hosting moved.
+ * `kinemos_videos` stores the KEY, never a URL — `kinemosObjectUrl()` builds
+ * the URL at read time. Baking an origin into stored rows is precisely how
+ * the Netlify-era links rotted when hosting moved.
+ *
+ * The URL is built against the worker's origin (`src/lib/apiOrigin.ts`), not
+ * the page's: the bundle also runs from hosts with no worker in front of it
+ * (the Netlify rollback deploy an athlete's old bookmark still opens), where
+ * a relative `/api/...` is answered by the SPA fallback with index.html.
  */
+import { apiUrl } from '../../lib/apiOrigin';
 
 /** Client-side cap, mirrored by KINEMOS_MAX_BYTES in the worker. Deliberately
  *  looser than the 200 MB log-video bucket because whole-session footage is
@@ -40,7 +46,15 @@ export class KinemosUploadError extends Error {
 
 /** URL a <video> (or an <img>, for a poster) reads the object from. */
 export function kinemosObjectUrl(key: string): string {
-  return `/api/kinemos/video/${encodeURIComponent(key)}`;
+  return apiUrl(`/api/kinemos/video/${encodeURIComponent(key)}`);
+}
+
+/** True when a response came from the worker route rather than from a host
+ *  that has no such route and answered with the SPA's index.html. Every
+ *  worker answer is JSON; the SPA fallback is text/html with a 200 — which
+ *  `res.ok` alone would take for a stored object. */
+export function isWorkerResponse(res: Pick<Response, 'headers'>): boolean {
+  return /\bapplication\/json\b/i.test(res.headers.get('content-type') ?? '');
 }
 
 /** Shared write token, when this deployment sets one (KINEMOS_WRITE_TOKEN on
@@ -87,6 +101,13 @@ async function put(key: string, body: Blob): Promise<void> {
     );
   }
   if (!res.ok) throw new KinemosUploadError('Upload failed — the clip was not stored.');
+  if (!isWorkerResponse(res)) {
+    // A 200 that is not the worker's JSON is the SPA fallback of a host with
+    // no /api route: nothing was stored, and the key must not be saved.
+    throw new KinemosUploadError(
+      'Upload failed — this host has no KinEMOS storage route. Open EMOS from its main address and try again.',
+    );
+  }
 }
 
 /** Upload a clip. Returns the key to store on the row. */
