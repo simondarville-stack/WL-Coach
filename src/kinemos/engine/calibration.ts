@@ -108,6 +108,14 @@ const MIN_TRUSTWORTHY_SEMI_MAJOR_PX = 8;
 
 /** The documented validity limit of the flat-circle model (design §6.1). */
 export const MAX_VALID_VIEWING_ANGLE_DEG = 30;
+/**
+ * Past this the camera is looking along the bar — a front (or back) view.
+ * The plate's height still gives the vertical scale, so vertical velocity,
+ * the phases and everything read off them are measured; the horizontal
+ * scale is 1/cos θ of nothing, so the bar path, loop width and path length
+ * are not (P9, 09/09/2026: a front view keeps the metrics it can).
+ */
+export const FRONT_VIEW_ANGLE_DEG = 60;
 
 export type CalibrationConfidence = 'ok' | 'wide' | 'degenerate';
 
@@ -136,6 +144,10 @@ export interface Calibration {
   confidence: CalibrationConfidence;
   /** Why the confidence is not `ok`. Null when it is. */
   reason: string | null;
+  /** Whether horizontal distances mean anything: false for a front view
+   *  (`FRONT_VIEW_ANGLE_DEG`) and for a degenerate outline. Vertical
+   *  measures stand either way. */
+  pathUsable: boolean;
 }
 
 /**
@@ -176,6 +188,7 @@ export function calibrateFromEllipse(
       plateDiameterCm: diameter,
       confidence: 'degenerate',
       reason: 'The plate outline has no size — drag the handles onto the plate edge.',
+      pathUsable: false,
     };
   }
 
@@ -193,6 +206,11 @@ export function calibrateFromEllipse(
       `The plate is only ${Math.round(2 * a)} px across — one pixel is ` +
       `${(cmPerPxV * 10).toFixed(0).replace('.', ',')} mm, so nothing measured here is worth quoting. ` +
       'Film closer, or analyse a clip with more resolution.';
+  } else if (viewingAngleDeg > FRONT_VIEW_ANGLE_DEG) {
+    confidence = 'wide';
+    reason =
+      `The camera is ${viewingAngleDeg.toFixed(0).replace('.', ',')}° off perpendicular — a front view. ` +
+      'Vertical velocities, phases and forces are measured; the bar path and horizontal distances are not.';
   } else if (viewingAngleDeg > MAX_VALID_VIEWING_ANGLE_DEG) {
     confidence = 'wide';
     reason =
@@ -210,6 +228,7 @@ export function calibrateFromEllipse(
     plateDiameterCm: diameter,
     confidence,
     reason,
+    pathUsable: confidence !== 'degenerate' && viewingAngleDeg <= FRONT_VIEW_ANGLE_DEG,
   };
 }
 

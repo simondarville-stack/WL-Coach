@@ -114,7 +114,6 @@ const dipDrive = (family: LiftFamily, id: string, label: string, shortLabel: str
 export const LIFT_MODELS: readonly LiftModel[] = [
   // ── Snatch ────────────────────────────────────────────────────────────────
   floor('snatch', 'snatch', 'Snatch', 'Sn', 'From the floor: first pull, knee passage, second pull, turnover, catch, recovery.'),
-  floor('snatch', 'power-snatch', 'Power snatch', 'PSn', 'A snatch caught high: the same phases, a shallower catch.'),
   floor('snatch', 'muscle-snatch', 'Muscle snatch', 'MSn', 'No drop under: the bar keeps rising into the lockout.'),
   belowKnee('snatch', 'snatch-hang-below-knee', 'Snatch from below the knee', 'Sn↓K'),
   aboveKnee('snatch', 'snatch-hang-above-knee', 'Snatch from above the knee', 'Sn↑K'),
@@ -123,7 +122,6 @@ export const LIFT_MODELS: readonly LiftModel[] = [
   dipDrive('snatch', 'snatch-balance', 'Snatch balance', 'SnB', 'From the back: a dip, a drive, and the bar caught overhead — a dip-and-drive, not a pull.'),
   // ── Clean ─────────────────────────────────────────────────────────────────
   floor('clean', 'clean', 'Clean', 'Cl', 'From the floor: first pull, knee passage, second pull, turnover, catch, recovery.'),
-  floor('clean', 'power-clean', 'Power clean', 'PCl', 'A clean caught high: the same phases, a shallower catch.'),
   floor('clean', 'muscle-clean', 'Muscle clean', 'MCl', 'No drop under: the bar is pulled to the shoulders standing.'),
   belowKnee('clean', 'clean-hang-below-knee', 'Clean from below the knee', 'Cl↓K'),
   aboveKnee('clean', 'clean-hang-above-knee', 'Clean from above the knee', 'Cl↑K'),
@@ -131,7 +129,6 @@ export const LIFT_MODELS: readonly LiftModel[] = [
   deadlift('clean', 'clean-deadlift', 'Clean deadlift', 'ClDL'),
   // ── Jerk ──────────────────────────────────────────────────────────────────
   dipDrive('jerk', 'jerk', 'Jerk', 'Jk', 'From the rack: dip, braking, drive, turnover into the split, catch, recovery.'),
-  dipDrive('jerk', 'power-jerk', 'Power jerk', 'PJk', 'Dip, drive and a catch in a quarter squat rather than a split.'),
   dipDrive('jerk', 'push-press', 'Push press', 'PP', 'Dip, drive and a press-out: the catch reads a drop of about zero.'),
   {
     id: 'press',
@@ -173,6 +170,22 @@ export const LIFT_MODELS: readonly LiftModel[] = [
 
 const BY_ID = new Map(LIFT_MODELS.map(m => [m.id, m]));
 
+/**
+ * Ids that once were models and now read as another: a power snatch is a
+ * snatch caught high, the same phases and the same measures (decided
+ * 09/09/2026 — not treated differently), so a rep stored under it before
+ * that reads as the base lift.
+ */
+const ALIASES: Record<string, string> = {
+  'power-snatch': 'snatch',
+  'power-clean': 'clean',
+  'power-jerk': 'jerk',
+};
+
+function canonical(id: string): string {
+  return ALIASES[id] ?? id;
+}
+
 export const UNSPECIFIED_MODEL: LiftModel = BY_ID.get('unspecified')!;
 
 /**
@@ -181,12 +194,12 @@ export const UNSPECIFIED_MODEL: LiftModel = BY_ID.get('unspecified')!;
  * throwing, since a rep with no phases is still a rep.
  */
 export function liftModelById(id: string | null | undefined): LiftModel {
-  return (id && BY_ID.get(id)) || UNSPECIFIED_MODEL;
+  return (id && BY_ID.get(canonical(id))) || UNSPECIFIED_MODEL;
 }
 
 /** Whether an id names a built-in model. */
 export function isKnownLiftModel(id: string | null | undefined): boolean {
-  return !!id && BY_ID.has(id);
+  return !!id && BY_ID.has(canonical(id));
 }
 
 /**
@@ -195,7 +208,7 @@ export function isKnownLiftModel(id: string | null | undefined): boolean {
  * from the floor, and reads as one.
  */
 export function liftModelOfStored(liftModelId: string | null | undefined, phaseSetId: string | null | undefined): LiftModel {
-  if (liftModelId && BY_ID.has(liftModelId)) return BY_ID.get(liftModelId)!;
+  if (liftModelId && BY_ID.has(canonical(liftModelId))) return BY_ID.get(canonical(liftModelId))!;
   if (!liftModelId && (!phaseSetId || phaseSetId === LEGACY_PHASE_SET_ID)) return BY_ID.get('snatch')!;
   return UNSPECIFIED_MODEL;
 }

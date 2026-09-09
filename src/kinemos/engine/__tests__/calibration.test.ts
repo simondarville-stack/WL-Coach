@@ -252,3 +252,23 @@ describe('pathMetrics', () => {
     expect(pathMetrics(vfr, null).durationS).toBeCloseTo(0.052, 6);
   });
 });
+
+describe('calibrateFromEllipse — a front view', () => {
+  it('keeps the vertical scale and drops the path past 60°', () => {
+    // Edge-on: the plate's height is its diameter, its width a sliver.
+    const cal = calibrateFromEllipse({ cx: 0, cy: 0, semiMajorPx: 100, semiMinorPx: 30, tiltDeg: 0 }, 45);
+    expect(cal.confidence).toBe('wide');
+    expect(cal.viewingAngleDeg).toBeGreaterThan(60);
+    expect(cal.pathUsable).toBe(false);
+    expect(cal.cmPerPxV).toBeCloseTo(0.225, 3);
+    expect(cal.reason).toMatch(/front view/);
+  });
+
+  it('keeps the path inside 60°, wide or not', () => {
+    const wide = calibrateFromEllipse({ cx: 0, cy: 0, semiMajorPx: 100, semiMinorPx: 70, tiltDeg: 0 }, 45);
+    expect(wide.confidence).toBe('wide');
+    expect(wide.pathUsable).toBe(true);
+    const ok = calibrateFromEllipse({ cx: 0, cy: 0, semiMajorPx: 100, semiMinorPx: 95, tiltDeg: 0 }, 45);
+    expect(ok.pathUsable).toBe(true);
+  });
+});

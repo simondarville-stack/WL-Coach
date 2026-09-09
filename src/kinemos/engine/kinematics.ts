@@ -97,6 +97,9 @@ export interface KinematicSeries {
   /** Frames whose timestamps were repaired or dropped before resampling.
    *  Empty on a clean clip; worth showing when it is not. */
   timingRepairs: TimingRepair[];
+  /** False for a front view: `xCm` and `vxMs` are computed but mean
+   *  nothing, and the summary's loop width and path length are null. */
+  horizontalUsable: boolean;
 }
 
 /** Per-rep headline figures. Phase-specific numbers live in `phases.ts`, which
@@ -110,8 +113,8 @@ export interface RepSummary {
   /** Highest the bar got above the first mark. */
   peakHeightCm: number;
   apexT: number;
-  /** Total horizontal spread of the path. */
-  loopWidthCm: number;
+  /** Total horizontal spread of the path. Null from a front view. */
+  loopWidthCm: number | null;
   peakPowerW: number | null;
   peakPowerT: number | null;
   /** Mean power while the bar is being driven upward (v > 0 and force > 0) —
@@ -131,8 +134,8 @@ export interface RepSummary {
   /** Rest → Vmax and rest → peak power, s. */
   timeToPeakVelocityS: number | null;
   timeToPeakPowerS: number | null;
-  /** How far the bar end travelled in all, cm. */
-  pathLengthCm: number;
+  /** How far the bar end travelled in all, cm. Null from a front view. */
+  pathLengthCm: number | null;
 }
 
 /**
@@ -202,6 +205,7 @@ export function computeKinematics(
     filter,
     filtered,
     timingRepairs: repaired.repairs,
+    horizontalUsable: calibration.pathUsable !== false,
   };
 }
 
@@ -267,9 +271,10 @@ export function summariseRep(series: KinematicSeries): RepSummary {
     meanRiseVelocityMs: null,
     timeToPeakVelocityS: null,
     timeToPeakPowerS: null,
-    pathLengthCm: 0,
+    pathLengthCm: null,
   };
   if (n === 0) return empty;
+  const horizontal = series.horizontalUsable !== false;
 
   let peakV = -Infinity;
   let peakVI = 0;
@@ -353,7 +358,7 @@ export function summariseRep(series: KinematicSeries): RepSummary {
     peakSpeedMs: peakSpeed,
     peakHeightCm: peakY,
     apexT,
-    loopWidthCm: maxX - minX,
+    loopWidthCm: horizontal ? maxX - minX : null,
     peakPowerW: peakP,
     peakPowerT: peakPT,
     meanPropulsivePowerW: propulsiveCount > 0 ? propulsiveSum / propulsiveCount : null,
@@ -362,7 +367,7 @@ export function summariseRep(series: KinematicSeries): RepSummary {
     meanRiseVelocityMs: riseStartT !== null && riseCount > 0 ? riseSum / riseCount : null,
     timeToPeakVelocityS: riseStartT !== null ? peakVT - riseStartT : null,
     timeToPeakPowerS: riseStartT !== null && peakPT !== null ? peakPT - riseStartT : null,
-    pathLengthCm: pathLength,
+    pathLengthCm: horizontal ? pathLength : null,
   };
 }
 

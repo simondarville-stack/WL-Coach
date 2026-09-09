@@ -15,6 +15,7 @@ import {
   DEFAULT_DISPLAY_PREFS,
   parseDisplayPrefs,
   type DisplayPrefs,
+  type BandsPrefs,
   type PlotLabels,
   type PlotPrefs,
   type StagePrefs,
@@ -44,7 +45,9 @@ export interface DisplayPrefsApi {
   setStage: (patch: Partial<StagePrefs>) => void;
   setPlot: (patch: Partial<PlotPrefs>) => void;
   setLabels: (patch: Partial<PlotLabels>) => void;
-  /** Back to the defaults, for one surface or both. */
+  setBands: (patch: Partial<BandsPrefs>) => void;
+  /** Back to the defaults, for one surface or both. The bands toggle is
+   *  left as it is — it is a reading choice, not a drawing one. */
   reset: (which?: 'stage' | 'plot') => void;
 }
 
@@ -72,14 +75,19 @@ export function useDisplayPrefs(): DisplayPrefsApi {
       update(c => ({ ...c, plot: { ...c.plot, labels: { ...c.plot.labels, ...patch } } })),
     [update],
   );
+  const setBands = useCallback(
+    (patch: Partial<BandsPrefs>) => update(c => ({ ...c, bands: { ...c.bands, ...patch } })),
+    [update],
+  );
   const reset = useCallback(
     (which?: 'stage' | 'plot') =>
       update(c => ({
+        ...c,
         stage: which === 'plot' ? c.stage : DEFAULT_DISPLAY_PREFS.stage,
         plot: which === 'stage' ? c.plot : DEFAULT_DISPLAY_PREFS.plot,
       })),
     [update],
   );
 
-  return { prefs, setStage, setPlot, setLabels, reset };
+  return { prefs, setStage, setPlot, setLabels, setBands, reset };
 }

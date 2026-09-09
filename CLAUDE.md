@@ -252,6 +252,15 @@ All modules are **active** — nothing is currently disabled or hidden:
   of the same shape. The bench takes `?model=` and `?rep=`;
   `verify/fixtures/testset-v3/` holds the 2009 archive clips transcoded
   (384 × 288, 50 fps — for the cutting and phase rules, not accuracy).
+  From 0.104.0: the **BVDG reference bands** (`engine/referenceBands.ts`,
+  Tab. A1–A3 per weight class and sex) sit beside the metrics rows behind a
+  `bands` toggle that is **off by default** (`displayPrefs.bands`, with the
+  class and sex the coach's pick until the athlete carries them); a
+  **front view** (past 60°, `Calibration.pathUsable`) keeps every vertical
+  measure — velocities, phases, forces, power — and drops the bar path,
+  loop width and path length; and power variants are **not separate
+  models** — a power snatch is a snatch (`liftModels.ts` aliases the old
+  ids).
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on

@@ -71,6 +71,9 @@ interface BarPathPanelProps {
   emptyReason: string | null;
   /** The marked knee height, drawn as a height line the way S_max is. */
   kneeCm?: number | null;
+  /** False for a front view: the horizontal is meaningless, so the bar
+   *  path is not offered and the column opens on the velocity plot. */
+  pathUsable?: boolean;
   /** How the plots are drawn (`lib/displayPrefs`). Defaults when absent. */
   display?: PlotPrefs;
   /** The options popover in the header. Absent → no popover. */
@@ -109,15 +112,19 @@ function BarPathPanelImpl({
   onSeekT,
   emptyReason,
   kneeCm = null,
+  pathUsable = true,
   display = DEFAULT_DISPLAY_PREFS.plot,
   onDisplay,
   onLabels,
   onDisplayReset,
   displayModified = false,
 }: BarPathPanelProps) {
-  const [mode, setMode] = useState<PathMode>('path');
+  const [chosenMode, setMode] = useState<PathMode>('path');
   const [exaggeration, setExaggeration] = useState<Exaggeration>(1);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  // A front view has no bar path to draw: the modes that need it are not
+  // offered and a choice of one reads as the velocity plot.
+  const mode: PathMode = !pathUsable && (chosenMode === 'path' || chosenMode === 'both') ? 'velocity' : chosenMode;
   const showPath = mode === 'path' || mode === 'both';
   const showVelocity = mode === 'velocity' || mode === 'both';
   const showForce = mode === 'force';
@@ -254,7 +261,7 @@ function BarPathPanelImpl({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 10px 0', flexShrink: 0, flexWrap: 'wrap' }}>
         <div role="radiogroup" aria-label="Plot" style={{ display: 'flex', gap: 4 }}>
-          {MODES.map(option => (
+          {MODES.filter(option => pathUsable || (option.id !== 'path' && option.id !== 'both')).map(option => (
             <button
               key={option.id}
               type="button"
@@ -268,6 +275,11 @@ function BarPathPanelImpl({
               {option.label}
             </button>
           ))}
+          {!pathUsable && (
+            <span style={{ ...caption, alignSelf: 'center' }} title="The camera looks along the bar: the plate's height gives the vertical scale, its width nothing. Velocities, forces and phases are measured; the path is not.">
+              front view · no bar path
+            </span>
+          )}
         </div>
         {showPath && (
           <div role="radiogroup" aria-label="Horizontal scale" title="Horizontal scale · ×1 is 1:1 with height" style={{ display: 'flex', gap: 2, marginLeft: 'auto' }}>

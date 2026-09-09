@@ -730,6 +730,25 @@ export function KinemosViewer() {
    *  from the athlete's phone, or that there are none (P8 plan §4). */
   const embedNote = embedded ? (points.length > 0 ? EMBED_ANALYSED_NOTE : EMBED_UNANALYSED_NOTE) : null;
 
+  /**
+   * A front view (P9, 09/09/2026): the plate's height still scales the
+   * vertical, so velocities, phases and forces stand; the horizontal means
+   * nothing, so the path is not drawn on the stage or in the column, and
+   * loop width and path length are null (`engine/calibration.ts`
+   * `pathUsable`).
+   */
+  const pathUsable = calibration?.pathUsable ?? true;
+  const stageDisplay = useMemo(
+    () => (pathUsable ? display.prefs.stage : { ...display.prefs.stage, path: 'off' as const }),
+    [pathUsable, display.prefs.stage],
+  );
+  const frontViewNote = !pathUsable && points.length > 0 ? 'Front view: velocities, phases and forces are measured; the bar path is not drawn.' : null;
+  /** The bands toggle for the metrics panel, stable across frame steps. */
+  const bandsApi = useMemo(
+    () => ({ prefs: display.prefs.bands, onChange: display.setBands }),
+    [display.prefs.bands, display.setBands],
+  );
+
   // ── The rail's composition ────────────────────────────────────────────────
   const panels = useViewerPanels(clip?.athleteId ?? null);
   const notesPanelRef = useRef<HTMLElement | null>(null);
@@ -2628,7 +2647,7 @@ export function KinemosViewer() {
           onAnchor={setAlignment}
           onClose={() => setComparing(false)}
           playback={playback}
-          stageNote={embedNote}
+          stageNote={embedNote ?? frontViewNote}
         />
       )}
 
@@ -2734,6 +2753,20 @@ export function KinemosViewer() {
               padding: 'var(--space-sm)',
             }}
           >
+            {!embedded && frontViewNote && (
+              <p
+                style={{
+                  margin: 0,
+                  padding: 'var(--space-sm) var(--space-md)',
+                  fontSize: 'var(--text-caption)',
+                  color: 'var(--color-text-secondary)',
+                  background: 'var(--color-bg-secondary)',
+                  borderRadius: 'var(--radius-md)',
+                }}
+              >
+                {frontViewNote}
+              </p>
+            )}
             {embedded && (
               <>
                 <p
@@ -2798,7 +2831,7 @@ export function KinemosViewer() {
                 tool={tool}
                 points={points}
                 currentT={currentT}
-                display={display.prefs.stage}
+                display={stageDisplay}
                 onDisplay={display.setStage}
                 onDisplayReset={() => display.reset('stage')}
                 displayModified={stageModified}
@@ -2915,6 +2948,7 @@ export function KinemosViewer() {
             onSeekT={seekT}
             emptyReason={railEmptyReason}
             kneeCm={kneeCm}
+            pathUsable={pathUsable}
             display={display.prefs.plot}
             onDisplay={display.setPlot}
             onLabels={display.setLabels}
@@ -3014,6 +3048,7 @@ export function KinemosViewer() {
               knee={kneeReadout}
               earlier={earlierForMetrics}
               marginMs={grade.expectedVelocityErrorMs}
+              bands={bandsApi}
             />
           </RailPanel>
 

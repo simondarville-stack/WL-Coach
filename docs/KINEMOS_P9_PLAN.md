@@ -600,3 +600,23 @@ P9a, P9b and P9c shipped together, plus the force and power curves of
   on the athlete (§11.1).
 - `ImportControl` does not resolve a model for a direct import's exercise
   at analyse-on-import time; the library sweep and the viewer do.
+
+## 13. Follow-up — 0.104.0 (09/09/2026)
+
+Three decisions from Simon after the first ship:
+
+- **Reference bands, toggled, off by default.** `engine/referenceBands.ts`
+  carries Tab. A1–A3 keyed by catalogue metric id; the metrics panel gets
+  a `bands` toggle with weight class and sex selects (stored in the
+  browser's display preferences, never on by itself). A band is printed
+  beside the value in the material's form — `1,70–1,85`, `Ø 137`, `≤ 145`
+  — and is never a verdict. §11.1 (class and sex on the athlete) stays
+  open; the coach's pick stands in.
+- **No power variants.** A power snatch is a snatch: the same phases and
+  measures, a shallower catch that S_fall already shows. The ids are
+  aliased so a rep stored under them still reads.
+- **A front view keeps what it can.** Past 60° off perpendicular
+  (`FRONT_VIEW_ANGLE_DEG`) the plate's height still scales the vertical,
+  so every velocity, phase, force and power measure stands; the bar path
+  is not drawn on the stage or in the column, and loop width and path
+  length are null. The archive's *for* clips are the test material.
