@@ -46,6 +46,7 @@ import {
   samplePlateColour,
   type PlateColourModel,
 } from '../engine/plateColour';
+import type { MotionShape } from '../engine/phases';
 import { splitReps, type RepSegment } from '../engine/reps';
 import { medianInterval } from '../engine/signal';
 import {
@@ -111,6 +112,13 @@ export interface TrackSetOptions {
   ellipse: PlateEllipse;
   plateDiameterCm: number;
   rollDeg?: number;
+  /**
+   * What the bar does in this set (P9): a pull from the floor, a
+   * dip-and-drive from the rack, or a compound to be cut into both. Decides
+   * how the track is cut into reps (`splitReps`). Default: a pull that is
+   * caught, as every set was before P9.
+   */
+  shape?: MotionShape;
   /** Whether to use the plate's colour. On by default; off is for finding
    *  out what colour bought. */
   colour?: boolean;
@@ -418,7 +426,7 @@ export async function trackSet(
     const lowConfidenceIndices = [...new Set(low.filter(i => keptLow.has(i)))].sort((a, b) => a - b);
     const points: KinemosTrackPoint[] = all.map(toTrackPoint);
     const setCalibration = calibrateFromEllipse(options.ellipse, options.plateDiameterCm, { rollDeg: options.rollDeg ?? 0 });
-    const segments = splitReps(points, setCalibration);
+    const segments = splitReps(points, setCalibration, { shape: options.shape ?? 'pull-catch' });
 
     const reps: TrackedRep[] = [];
     for (const [k, segment] of segments.entries()) {

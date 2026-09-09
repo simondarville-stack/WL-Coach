@@ -1,0 +1,26 @@
+-- KinEMOS P9 — lift models (docs/KINEMOS_P9_PLAN.md §4–§5).
+--
+-- Until P9 every clip was segmented as a snatch from the floor and the
+-- exercise on it was a label nothing read. A lift model says what the bar
+-- does — rises from the floor and is caught, rises and is lowered, dips and
+-- drives overhead — and which phases and measures follow from that. The
+-- registry of models is engine data (src/kinemos/engine/liftModels.ts);
+-- these two columns are where a coach's declaration and an analysis's
+-- record of it live.
+--
+--   exercises.kinemos_lift_model — the coach's declaration on the exercise,
+--     a model id ('snatch', 'clean-pull', 'jerk', 'clean-and-jerk', …). Null
+--     means "not declared": the library then resolves one from the parent
+--     exercise, the lift slot, or the name, and shows how it got there.
+--
+--   kinemos_analyses.lift_model_id — what segmented THIS rep. Null on every
+--     row from before P9, which were all analysed under the five-phase
+--     snatch/clean model and read as a snatch from the floor. Stored beside
+--     phase_set_id rather than replacing it: several models share one phase
+--     set (a snatch and a power snatch), and a reader comparing two analyses
+--     cares which SET named their phases.
+--
+-- Both are free text, not enums: a coach-defined model is a row in the
+-- registry, not a migration (CLAUDE.md core principle 1).
+ALTER TABLE exercises ADD COLUMN IF NOT EXISTS kinemos_lift_model text NULL;
+ALTER TABLE kinemos_analyses ADD COLUMN IF NOT EXISTS lift_model_id text NULL;

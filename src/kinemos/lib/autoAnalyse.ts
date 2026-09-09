@@ -30,7 +30,15 @@
  */
 import { DEFAULT_FILTER } from '../engine/signal';
 import { computeKinematics, summariseRep } from '../engine/kinematics';
-import { computeLiftMetrics, proposePhases, spansFrom } from '../engine/phases';
+import {
+  DEFAULT_PHASE_END_RULE,
+  DEFAULT_PHASE_THRESHOLDS,
+  computeLiftMetrics,
+  proposePhases,
+  spansFrom,
+  type PhaseProposal,
+} from '../engine/phases';
+import { liftModelById, partForKind, type LiftModel } from '../engine/liftModels';
 import { toStoredMetrics } from '../engine/metricCatalogue';
 import { windowRanges, type LiftWindow } from '../engine/activity';
 import type { Calibration, PlateEllipse } from '../engine/calibration';
@@ -57,6 +65,27 @@ export interface PersistRepArgs {
   massSource: 'logged' | 'manual' | null;
   camera: 'tripod' | 'stabilised' | 'handheld' | 'unknown';
   tier?: 'manual' | 'assisted' | 'marker' | 'ml';
+  /** The lift model this rep is segmented and stored under (P9). A
+   *  compound's caller passes the PART — the clean or the jerk — not the
+   *  compound. Default: a snatch from the floor, as before P9. */
+  model?: LiftModel;
+}
+
+/**
+ * Propose the phases of a series under a lift model: its set, its end rule,
+ * its shape, its thresholds. A model with no phases (an unspecified lift, a
+ * compound not yet cut) proposes nothing. The one place the model's parts
+ * are handed to the detector, so every caller segments the same way.
+ */
+export function proposePhasesFor(series: Parameters<typeof proposePhases>[0], model: LiftModel): PhaseProposal {
+  if (!model.phaseSet || !model.endRule) return { boundaries: [], fullyDetected: true };
+  return proposePhases(
+    series,
+    model.phaseSet,
+    { ...DEFAULT_PHASE_THRESHOLDS, ...(model.thresholds ?? {}) },
+    model.endRule ?? DEFAULT_PHASE_END_RULE,
+    model.shape,
+  );
 }
 
 /**
@@ -87,14 +116,16 @@ export async function persistRep(args: PersistRepArgs): Promise<string> {
     filter: DEFAULT_FILTER,
   });
   if (series) {
-    const proposal = proposePhases(series);
-    const metrics = computeLiftMetrics(series, spansFrom(proposal.boundaries));
+    const model = args.model ?? liftModelById('snatch');
+    const proposal = proposePhasesFor(series, model);
+    const metrics = computeLiftMetrics(series, spansFrom(proposal.boundaries, model.phaseSet ?? []));
     await saveAnalysisState(analysis.id, {
       massKg: args.massKg,
       massSource: args.massSource,
       camera: args.camera,
       phaseBoundaries: proposal.boundaries,
-      phaseSetId: 'default',
+      phaseSetId: model.phaseSetId,
+      liftModelId: model.id,
       metrics: toStoredMetrics(metrics, summariseRep(series)),
     });
   }
@@ -109,6 +140,10 @@ export interface AutoAnalyseOptions {
   massKg?: number | null;
   massSource?: 'logged' | 'manual' | null;
   camera?: 'tripod' | 'stabilised' | 'handheld' | 'unknown';
+  /** The clip's lift model id (P9): how the set is cut into reps and which
+   *  model each rep is stored under. A compound stores each rep under the
+   *  part the bar's motion says it is. Default: a snatch from the floor. */
+  liftModelId?: string | null;
   /** Which frame to look for the bar at rest on when the clip is tracked
    *  whole. Default: the start. */
   anchorIndex?: number;
@@ -162,6 +197,10 @@ export async function autoAnalyse(
 ): Promise<AutoAnalyseResult> {
   const plateDiameterCm = options.plateDiameterCm ?? 45;
   const stopped = () => options.shouldStop?.() === true;
+  const model = liftModelById(options.liftModelId ?? 'snatch');
+  // An unspecified lift is cut on any rest for any motion; the shape the
+  // set tracker reads is the model's.
+  const shape = model.shape;
 
   let activity: ActivityScanResult | null = options.activity ?? null;
   if (!activity && options.src !== undefined) {
@@ -211,6 +250,7 @@ export async function autoAnalyse(
         {
           ellipse: found.ellipse,
           plateDiameterCm,
+          shape,
           range: { from: range.from, to: range.to },
           shouldStop: options.shouldStop,
           onProgress: (done, total) => options.onProgress?.(`Following the bar, lift ${k + 1} of ${ranges.length}`, done, total),
@@ -246,6 +286,7 @@ export async function autoAnalyse(
     {
       ellipse,
       plateDiameterCm,
+      shape,
       shouldStop: options.shouldStop,
       onProgress: (done, total) => options.onProgress?.('Following the bar', done, total),
     },
@@ -262,6 +303,7 @@ export async function autoAnalyse(
 
 async function storeReps(server: FrameServer, options: AutoAnalyseOptions, reps: TrackedRep[]): Promise<string[]> {
   const analysisIds: string[] = [];
+  const model = liftModelById(options.liftModelId ?? 'snatch');
   for (const [k, rep] of reps.entries()) {
     options.onProgress?.('Storing the reps', k, reps.length);
     analysisIds.push(
@@ -278,6 +320,9 @@ async function storeReps(server: FrameServer, options: AutoAnalyseOptions, reps:
         massKg: options.massKg ?? null,
         massSource: options.massSource ?? null,
         camera: options.camera ?? 'unknown',
+        // A clean & jerk's reps land on the clean and the jerk by what the
+        // bar did; a plain model is its own part.
+        model: partForKind(model, rep.segment.kind),
       }),
     );
   }

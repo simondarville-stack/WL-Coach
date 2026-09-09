@@ -540,11 +540,30 @@ function nearestIndex(timestamps: readonly number[], t: number): number {
  * timestamps, but mapping by time rather than by position keeps this honest
  * if they ever differ by a dropped frame.
  */
-export function windowRanges(windows: readonly LiftWindow[], timestamps: readonly number[]): WindowRange[] {
-  return windows.map(w => {
+export function windowRanges(
+  windows: readonly LiftWindow[],
+  timestamps: readonly number[],
+  options: { tailS?: number } = {},
+): WindowRange[] {
+  // A window ends where the motion does. For a jerk that is the bar fixed
+  // overhead — still, so the burst ends at the apex — and a track cut there
+  // has no drop into the fix and no settle to read (P9, first bench run on
+  // the 2009 jerk: catch and recovery fell back on every clip). So the
+  // range carries on past the burst for a moment, stopping before the next
+  // lift's rest and at the clip's end; a track through a drop stops at the
+  // drop as before, and stillness costs the tracker nothing.
+  const tailS = options.tailS ?? DEFAULT_WINDOW_TAIL_S;
+  const last = timestamps.length - 1;
+  return windows.map((w, k) => {
     const from = nearestIndex(timestamps, w.fromT);
-    const to = Math.max(from, nearestIndex(timestamps, w.toT));
+    const next = windows[k + 1];
+    const nextRest = next ? nearestIndex(timestamps, next.restT) : last + 1;
+    const to = Math.min(nextRest - 1, last, Math.max(from, nearestIndex(timestamps, w.toT + tailS)));
     const restIndex = Math.min(to, Math.max(from, nearestIndex(timestamps, w.restT)));
     return { restIndex, from, to };
   });
 }
+
+/** How far past the burst a lift's frame range runs, s. COACH-CONFIG candidate
+ *  in spirit; a settle is found within half a second of the bar stopping. */
+export const DEFAULT_WINDOW_TAIL_S = 0.75;

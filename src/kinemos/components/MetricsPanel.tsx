@@ -14,6 +14,7 @@
  */
 import { memo, type CSSProperties } from 'react';
 import { Input } from '../../components/ui';
+import type { LiftModel } from '../engine/liftModels';
 import type { ComputedLift } from '../engine/metricCatalogue';
 import type { LiftMetrics } from '../engine/phases';
 import type { RepSummary } from '../engine/kinematics';
@@ -23,6 +24,9 @@ import { num } from '../lib/viewerFormat';
 interface MetricsPanelProps {
   metrics: LiftMetrics | null;
   summary: RepSummary | null;
+  /** The lift model the rep is segmented under (P9): which rows can exist
+   *  at all. Absent: every row, as before P9. */
+  model?: LiftModel | null;
   massKg: number | null;
   massSource: 'logged' | 'manual' | null;
   onMass: (kg: number | null) => void;
@@ -42,6 +46,7 @@ interface MetricsPanelProps {
 function MetricsPanelImpl({
   metrics,
   summary,
+  model = null,
   massKg,
   massSource,
   onMass,
@@ -50,8 +55,13 @@ function MetricsPanelImpl({
   earlier = null,
   marginMs = null,
 }: MetricsPanelProps) {
-  const firstPull = metrics?.phases.find(p => p.phaseId === 'first_pull') ?? metrics?.phases[0];
-  const secondPull = metrics?.phases.find(p => p.phaseId === 'second_pull') ?? metrics?.phases[2];
+  const firstPull = metrics?.phases.find(p => p.phaseId === 'first_pull') ?? null;
+  const secondPull = metrics?.phases.find(p => p.phaseId === 'second_pull') ?? null;
+  // What this lift can have at all. A row for a phase the model does not
+  // name is not a dash, it is absent (P9 plan §3.3).
+  const has = (phaseId: string) => (model ? (model.phaseSet ?? []).some(p => p.id === phaseId) : true);
+  const caught = model ? model.shape === 'pull-catch' || model.shape === 'dip-drive' : true;
+  const jerk = metrics?.jerk ?? null;
 
   // The Δ column. Rows that are catalogue metrics go through the catalogue
   // (its thresholds and its sense of better); the analyzer's own rows that
@@ -87,35 +97,71 @@ function MetricsPanelImpl({
           <p style={hint}>{emptyReason ?? 'Mark the bar to get velocities.'}</p>
         ) : (
           <dl style={list}>
-            <Row
-              term="First pull"
-              value={metrics.phases.length ? unit(firstPull?.peakVelocityMs, 'm/s') : '—'}
-              hint="Peak upward velocity through the first pull."
-              delta={d('firstPull', ['faster', 'slower'])}
-              withDelta={withDelta}
-            />
-            <Row
-              term="Second pull"
-              value={unit(secondPull?.peakVelocityMs, 'm/s')}
-              hint="Peak upward velocity through the second pull."
-              delta={d('secondPull')}
-              withDelta={withDelta}
-            />
-            <Row
-              term="Loss 1st → 2nd"
-              value={transitionLoss(metrics.transitionVelocityLossMs)}
-              hint="The transition dip · a coaching signal, not an error"
-              delta={d('transitionLoss')}
-              withDelta={withDelta}
-            />
+            {has('first_pull') && (
+              <Row
+                term="First pull"
+                value={unit(firstPull?.peakVelocityMs, 'm/s')}
+                hint="Peak upward velocity through the first pull."
+                delta={d('firstPull', ['faster', 'slower'])}
+                withDelta={withDelta}
+              />
+            )}
+            {has('second_pull') && (
+              <Row
+                term="Second pull"
+                value={unit(secondPull?.peakVelocityMs, 'm/s')}
+                hint="Peak upward velocity through the second pull."
+                delta={d('secondPull')}
+                withDelta={withDelta}
+              />
+            )}
+            {has('first_pull') && has('transition') && (
+              <Row
+                term="Loss 1st → 2nd"
+                value={transitionLoss(metrics.transitionVelocityLossMs)}
+                hint="The transition dip · a coaching signal, not an error"
+                delta={d('transitionLoss')}
+                withDelta={withDelta}
+              />
+            )}
             <Row term="Peak" value={unit(metrics.peakVelocityMs, 'm/s')} strong delta={d('peakVelocity')} withDelta={withDelta} />
             <Row
-              term="Turnover"
-              value={unit(metrics.turnoverVelocityMs, 'm/s')}
-              hint="Mean vertical velocity while the bar is being pulled under."
-              delta={d('turnover')}
+              term="Mean, rise"
+              value={unit(summary.meanRiseVelocityMs, 'm/s')}
+              hint="Average upward velocity from the bar leaving its rest to its apex."
+              delta={d('meanRiseVelocity')}
               withDelta={withDelta}
             />
+            <Row
+              term="Time to Vmax"
+              value={unit(summary.timeToPeakVelocityS, 's')}
+              hint="From the bar leaving its rest to peak velocity."
+              delta={d('timeToPeakVelocity')}
+              withDelta={withDelta}
+            />
+            <Row
+              term="Time to peak power"
+              value={unit(summary.timeToPeakPowerS, 's')}
+              hint="From the bar leaving its rest to peak barbell power · needs a mass"
+              delta={d('timeToPeakPower')}
+              withDelta={withDelta}
+            />
+            <Row
+              term="Rise"
+              value={unit(summary.concentricS, 's')}
+              hint="From the bar leaving its rest to its apex."
+              delta={d('concentric')}
+              withDelta={withDelta}
+            />
+            {has('turnover') && (
+              <Row
+                term="Turnover"
+                value={unit(metrics.turnoverVelocityMs, 'm/s')}
+                hint="Mean vertical velocity while the bar is being pulled under."
+                delta={d('turnover')}
+                withDelta={withDelta}
+              />
+            )}
             <Row
               term="Peak power"
               value={metrics.peakPowerW === null ? '—' : `${num(metrics.peakPowerW, 0)} W`}
@@ -127,6 +173,13 @@ function MetricsPanelImpl({
               term="Peak height"
               value={summary.peakHeightCm ? `${num(summary.peakHeightCm, 1)} cm` : '—'}
               delta={d('peakHeight')}
+              withDelta={withDelta}
+            />
+            <Row
+              term="Path length"
+              value={summary.pathLengthCm ? `${num(summary.pathLengthCm, 0)} cm` : '—'}
+              hint="How far the bar end travelled in all."
+              delta={d('pathLength')}
               withDelta={withDelta}
             />
           </dl>
@@ -178,7 +231,35 @@ function MetricsPanelImpl({
         </div>
       </section>
 
-      {metrics && metrics.analyzer.vmaxMs !== null && (
+      {jerk && (
+        <section style={section}>
+          <header style={header}>
+            <span style={label}>JERK</span>
+            <span style={{ ...label, letterSpacing: 0 }} title="The Weightlifting Analyzer's jerk measures · BVDG parameter table">
+              BVDG model
+            </span>
+          </header>
+          <dl style={list}>
+            <Row term="v_Auft · dip velocity" value={unit(jerk.vDipMs, 'm/s')} hint="Peak downward velocity in the dip · about −1,0 to −1,1 m/s in the tables" delta={d('vDip')} withDelta={withDelta} />
+            <Row term="δ_Auf · dip depth" value={cm(jerk.sDipCm)} hint="Start to the lower turning point · 16–22 cm by weight class" delta={d('sDip', ['deeper', 'shallower'])} withDelta={withDelta} />
+            <Row term="δv_Auf · to fastest descent" value={cm(jerk.sToVDipCm)} hint="How far the bar had descended at v_Auft · about 10 cm" />
+            <Row term="δ_Stoß · drive path" value={cm(jerk.sDriveCm)} hint="Lower turning point to the height at Vmax" delta={d('sDrive', ['longer', 'shorter'])} withDelta={withDelta} />
+            <Row term="Drive − dip" value={cm(jerk.driveMinusDipCm)} strong hint="3–4 cm is the target: the drive goes on past where the dip began" delta={d('driveMinusDip')} withDelta={withDelta} />
+            <Row term="F_Auf · braking" value={pct(jerk.fDipPct)} hint="Peak vertical force while the dip is braked · about 180 %" delta={d('fDip')} withDelta={withDelta} />
+            <Row
+              term="F_Stoß · drive"
+              value={jerk.fDrivePct === null ? '—' : `${pct(jerk.fDrivePct)}${jerk.driveForcePeaks !== null ? ` · ${jerk.driveForcePeaks} ${jerk.driveForcePeaks === 1 ? 'peak' : 'peaks'}` : ''}`}
+              hint="Peak vertical force in the drive · 180–190 % with two maxima, 220–230 % with one"
+              delta={d('fDrive')}
+              withDelta={withDelta}
+            />
+            <Row term="Auftakt" value={unit(jerk.dipS !== null ? jerk.dipS + (jerk.brakingS ?? 0) : null, 's')} hint="Dip and braking together · 0,45–0,50 s in the material" delta={d('dipDuration')} withDelta={withDelta} />
+            <Row term="Anstoß" value={unit(jerk.driveS, 's')} hint="The drive · about 0,25 s" delta={d('driveDuration')} withDelta={withDelta} />
+          </dl>
+        </section>
+      )}
+
+      {metrics && metrics.analyzer.vmaxMs !== null && caught && (
         <section style={section}>
           <header style={header}>
             <span style={label}>ANALYZER</span>
@@ -187,8 +268,12 @@ function MetricsPanelImpl({
             </span>
           </header>
           <dl style={list}>
-            <Row term="V1 · end of first pull" value={unit(metrics.analyzer.v1Ms, 'm/s')} hint="Peak vertical velocity at the end of the first pull." delta={dv(l => l.metrics.analyzer?.v1Ms ?? null, ['faster', 'slower'])} withDelta={withDelta} />
-            <Row term="V2 · knee passing" value={unit(metrics.analyzer.v2Ms, 'm/s')} hint="Minimum vertical velocity through the transition." delta={d('v2', ['faster', 'slower'])} withDelta={withDelta} />
+            {has('first_pull') && (
+              <Row term="V1 · end of first pull" value={unit(metrics.analyzer.v1Ms, 'm/s')} hint="Peak vertical velocity at the end of the first pull." delta={dv(l => l.metrics.analyzer?.v1Ms ?? null, ['faster', 'slower'])} withDelta={withDelta} />
+            )}
+            {has('transition') && (
+              <Row term="V2 · knee passing" value={unit(metrics.analyzer.v2Ms, 'm/s')} hint="Minimum vertical velocity through the transition." delta={d('v2', ['faster', 'slower'])} withDelta={withDelta} />
+            )}
             {knee && (
               <Row
                 term={`V at the knee · ${num(knee.heightCm, 0)} cm`}
@@ -225,9 +310,15 @@ function MetricsPanelImpl({
             />
             <Row term="S_sit · catch height" value={cm(metrics.analyzer.sSitCm)} hint="The bar at the deepest point of the catch, above the start." delta={d('sSit')} withDelta={withDelta} />
             <Row term="S_fall · into the catch" value={cm(metrics.analyzer.sFallCm)} hint="S_max − S_sit." delta={d('sFall', ['further', 'less far'])} withDelta={withDelta} />
-            <Row term="F1 · first pull" value={pct(metrics.analyzer.f1Pct)} hint="Peak vertical force, % of load · 100 % holds the bar still" delta={d('f1')} withDelta={withDelta} />
-            <Row term="F2 · knee passing" value={pct(metrics.analyzer.f2Pct)} hint="Minimum vertical force through the transition." delta={d('f2')} withDelta={withDelta} />
-            <Row term="F3 · second pull" value={pct(metrics.analyzer.f3Pct)} hint="Peak vertical force in the second pull." delta={d('f3')} withDelta={withDelta} />
+            {has('first_pull') && (
+              <Row term="F1 · first pull" value={pct(metrics.analyzer.f1Pct)} hint="Peak vertical force, % of load · 100 % holds the bar still" delta={d('f1')} withDelta={withDelta} />
+            )}
+            {has('transition') && (
+              <Row term="F2 · knee passing" value={pct(metrics.analyzer.f2Pct)} hint="Minimum vertical force through the transition." delta={d('f2')} withDelta={withDelta} />
+            )}
+            {has('second_pull') && (
+              <Row term="F3 · second pull" value={pct(metrics.analyzer.f3Pct)} hint="Peak vertical force in the second pull." delta={d('f3')} withDelta={withDelta} />
+            )}
             <Row term="Fbr · catch" value={pct(metrics.analyzer.fbrPct)} hint="Peak vertical force braking the bar in the catch." delta={d('fbr')} withDelta={withDelta} />
             <Row
               term="PSK · load × Vmax"

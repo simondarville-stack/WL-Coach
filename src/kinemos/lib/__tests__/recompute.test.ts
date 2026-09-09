@@ -46,7 +46,7 @@ function analysis(over: Partial<KinemosAnalysis> = {}): KinemosAnalysis {
     status: 'draft',
     notes: null,
     phase_boundaries: null,
-    phase_set_id: 'default',
+    phase_set_id: 'default', lift_model_id: null,
     metrics: null,
     grade: null,
     grade_error_ms: null,

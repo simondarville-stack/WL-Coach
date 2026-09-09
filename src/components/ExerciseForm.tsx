@@ -4,6 +4,7 @@ import { DEFAULT_UNITS } from '../lib/constants';
 import { useExercises } from '../hooks/useExercises';
 import { buildParentIndex, wouldCreateCycle } from '../lib/exerciseHierarchy';
 import { describeError } from '../lib/errorMessage';
+import { liftModelOptions } from '../kinemos/lib/liftModelOptions';
 
 interface ExerciseFormProps {
   editingExercise: Exercise | null;
@@ -59,6 +60,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
   const [trackPr, setTrackPr] = useState(true);
   const [prReferenceId, setPrReferenceId] = useState<string | null>(null);
   const [parentId, setParentId] = useState<string | null>(null);
+  const [kinemosLiftModel, setKinemosLiftModel] = useState<string | null>(null);
   const [libraryId, setLibraryId] = useState<string | null>(defaultLibraryId);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -86,6 +88,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       setTrackPr(editingExercise.track_pr ?? true);
       setPrReferenceId(editingExercise.pr_reference_exercise_id ?? null);
       setParentId(editingExercise.parent_exercise_id ?? null);
+      setKinemosLiftModel(editingExercise.kinemos_lift_model ?? null);
       setLibraryId(editingExercise.library_id ?? defaultLibraryId);
     } else {
       resetForm();
@@ -112,6 +115,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     // suggests it as the %/PR reference (still editable).
     setPrReferenceId(initialParentId ?? null);
     setParentId(initialParentId ?? null);
+    setKinemosLiftModel(null);
     setLibraryId(defaultLibraryId);
   };
 
@@ -134,6 +138,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         track_pr: trackPr,
         pr_reference_exercise_id: prReferenceId,
         parent_exercise_id: parentId,
+        kinemos_lift_model: kinemosLiftModel,
         notes: notes.trim() || null,
         link: link.trim() || null,
         // Only the library screen offers catalogue placement; other callers
@@ -395,6 +400,32 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
             </div>
           );
         })()}
+      </div>
+
+      <div>
+        <label htmlFor="kinemosLiftModel" className="block text-sm font-medium text-gray-700 mb-1">
+          KinEMOS lift model (Optional)
+        </label>
+        <select
+          id="kinemosLiftModel"
+          value={kinemosLiftModel ?? ''}
+          onChange={(e) => setKinemosLiftModel(e.target.value || null)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
+        >
+          <option value="">— Resolve automatically (parent, lift slot, name) —</option>
+          {liftModelOptions().map(group => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map(o => (
+                <option key={o.id} value={o.id} title={o.note}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-gray-500">
+          What the bar does in a clip of this exercise — a pull that is caught, a pull, a dip and drive, a clean & jerk to be cut in two — and so which phases KinEMOS reads. Variations inherit it from their parent.
+        </p>
       </div>
 
       <div>

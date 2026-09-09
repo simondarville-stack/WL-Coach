@@ -119,18 +119,22 @@ describe('proposePhases — a lift with a clear double knee bend', () => {
     expect(at('peak-velocity')).toBeCloseTo(1.3, 1);
   });
 
-  it('puts the turnover’s end at the apex', () => {
-    expect(at('apex')).toBeCloseTo(1.5, 1);
+  it('puts the turnover’s end at Vmin — the drop under, past the apex', () => {
+    // Decided 09/09/2026: the turnover runs Vmax → Vmin. The apex (1,5 s)
+    // is inside it; the fastest descent is at 1,7 s.
+    expect(at('velocity-min')).toBeCloseTo(1.7, 1);
+    expect(at('velocity-min')).toBeGreaterThan(1.5);
   });
 
-  it('gives the catch a real duration', () => {
-    // The rule that fires on the apex collapses the catch to nothing, because
-    // the apex is where velocity crosses zero. The bar has to be followed
-    // through the descent before "it has stopped" means anything.
+  it('runs the catch from Vmin to the lowest point of the sit', () => {
+    // The bar stops falling at 1,9 s, which is where the catch ends and the
+    // recovery starts; the settle closes the set at the same moment on a
+    // clip with no recovery movement.
+    const sitT = at('sit');
+    expect(sitT).toBeGreaterThan(at('velocity-min') + 0.1);
+    expect(sitT).toBeCloseTo(1.9, 0);
     const settleT = boundaries.find(b => b.rule === 'settle')!.t;
-    const apexT = boundaries.find(b => b.rule === 'apex')!.t;
-    expect(settleT).toBeGreaterThan(apexT + 0.1);
-    expect(settleT).toBeCloseTo(1.9, 0);
+    expect(settleT).toBeGreaterThanOrEqual(sitT);
   });
 
   it('keeps boundaries in order', () => {
@@ -546,12 +550,19 @@ describe('proposePhases — a clip that runs on through the recovery', () => {
   const { boundaries } = proposePhases(withRecovery);
   const at = (rule: string) => boundaries.find(b => b.rule === rule)!.t;
 
-  it('puts the apex at the top of the flight, not at the lock-out', () => {
-    expect(at('apex')).toBeCloseTo(1.5, 1);
+  it('puts Vmin in the drop under the flight, not in the lock-out', () => {
+    expect(at('velocity-min')).toBeCloseTo(1.7, 1);
   });
 
-  it('and so gives the catch its real span', () => {
+  it('and so gives the catch its real span, ending at the sit', () => {
+    expect(at('sit')).toBeCloseTo(1.9, 0);
+    expect(at('sit') - at('velocity-min')).toBeGreaterThan(0.1);
     expect(at('settle')).toBeCloseTo(1.9, 0);
-    expect(at('settle') - at('apex')).toBeGreaterThan(0.2);
+  });
+
+  it('gives the recovery the stand-up', () => {
+    const recovery = spansFrom(boundaries).find(s => s.definition.id === 'recovery');
+    expect(recovery).toBeDefined();
+    expect(recovery!.fromT).toBeCloseTo(1.9, 0);
   });
 });

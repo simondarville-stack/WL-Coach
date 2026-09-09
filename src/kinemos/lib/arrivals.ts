@@ -70,6 +70,8 @@ export interface ArrivalTarget {
   url?: string;
   massKg?: number | null;
   massSource?: 'logged' | 'manual' | null;
+  /** The clip's lift model id (P9), when its exercise says. */
+  liftModelId?: string | null;
 }
 
 export interface ArrivalOutcome {
@@ -138,6 +140,7 @@ export async function analyseArrival(
       ownerId: options.ownerId,
       massKg: target.massKg ?? null,
       massSource: target.massSource ?? null,
+      liftModelId: target.liftModelId ?? null,
       shouldStop: options.shouldStop,
       onProgress: options.onProgress,
     });
@@ -236,5 +239,6 @@ export function targetFor(row: LibraryVideo): ArrivalTarget {
     url: row.playbackUrl,
     massKg: row.loadKg,
     massSource: row.loadKg == null ? null : 'logged',
+    liftModelId: row.liftModelId,
   };
 }

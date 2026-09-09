@@ -76,7 +76,7 @@ const plate = (cx: number, cy: number) => ({
 });
 const rep = (n: number, liftOffT: number) => ({
   rep: n,
-  segment: { from: 0, to: 10, liftOffT, apexT: liftOffT + 1, catchT: liftOffT + 1.3, riseCm: 120 },
+  segment: { from: 0, to: 10, liftOffT, apexT: liftOffT + 1, catchT: liftOffT + 1.3, riseCm: 120 , kind: 'pull' as const, dipCm: 0},
   points: [{ t: liftOffT, x: 0, y: 0, s: 't' as const }],
   ellipse: plate(0, 0).ellipse,
   calibration: calibrateFromEllipse(plate(0, 0).ellipse, 45),
@@ -122,8 +122,8 @@ describe('autoAnalyse by lifts', () => {
     expect(trackSet).toHaveBeenCalledTimes(2);
     const firstCall = trackSet.mock.calls[0];
     expect(firstCall[1]).toEqual({ index: server.nearestIndex(0.9), x: 500, y: 1400 });
-    expect(firstCall[2].range).toEqual({ from: server.nearestIndex(0.7), to: server.nearestIndex(2.7) });
-    expect(trackSet.mock.calls[1][2].range).toEqual({ from: server.nearestIndex(6.4), to: server.nearestIndex(8.4) });
+    expect(firstCall[2].range).toEqual({ from: server.nearestIndex(0.7), to: server.nearestIndex(2.7 + 0.75) });
+    expect(trackSet.mock.calls[1][2].range).toEqual({ from: server.nearestIndex(6.4), to: server.nearestIndex(8.4 + 0.75) });
     expect(result.reps.map(r => r.rep)).toEqual([1, 2]);
     expect(persisted).toEqual([1, 2]);
     expect(result.windows).toHaveLength(2);

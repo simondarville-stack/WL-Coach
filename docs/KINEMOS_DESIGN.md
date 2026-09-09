@@ -510,7 +510,12 @@ dedicated `git worktree` (shared-working-tree hazard).
 
 ## 13. Open questions
 
-1. **Authoritative metric list** — Simon to supply; replaces §7 placeholder.
+1. **Authoritative metric list** — **SUPPLIED 09/09/2026** as
+   `KinEMOS Resources/` (the BVDG Rahmentrainingskonzeption 2019 §4.4 and
+   Tab. A1–A3, the Weightlifting Analyzer's parameter tables for snatch,
+   clean and jerk, and the 2018 DTU measurement-systems report). The
+   snatch/clean set was built in P3f; the jerk set and the per-class
+   reference bands are scoped in `docs/KINEMOS_P9_PLAN.md` §5.5 and §6.
 2. Literature drop → seeds `kinemos-research` (P4, or earlier if it should
    inform P2's tracker/filter choices).
 3. Exact relationship between KinEMOS metric registry and the existing

@@ -28,6 +28,7 @@ import { supabase } from '../../lib/supabase';
 import { fetchAllRows, fetchByIds } from '../../lib/queryPaging';
 import { isStreamPlaybackUrl } from '../../lib/streamUploads';
 import { kinemosObjectUrl } from './kinemosStorage';
+import { resolveLiftModel, type ExerciseForModel, type LiftModelHow } from './liftModelResolve';
 
 export type LibrarySource = 'log' | 'event' | 'direct';
 
@@ -41,6 +42,17 @@ export interface LibraryVideo {
   athleteId: string | null;
   athleteName: string | null;
   exerciseName: string | null;
+  /** The catalogue exercise, where the clip names one. Competition attempts
+   *  name a lift type instead and carry null here. */
+  exerciseId: string | null;
+  /**
+   * The KinEMOS lift model the exercise resolves to (`lib/liftModelResolve`,
+   * P9): what the bar does, and so how a clip of it is cut and segmented.
+   * Null when nothing about the exercise says — the viewer then assumes and
+   * says so. `liftModelHow` is how the answer was reached, for the chip.
+   */
+  liftModelId: string | null;
+  liftModelHow: LiftModelHow | null;
 
   /** Training/competition date (YYYY-MM-DD) where one exists, else the day
    *  the clip was recorded or imported. Drives the library's sort. */
@@ -275,15 +287,36 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       ...directVideos.map(v => v.exercise_id).filter((id): id is string => !!id),
     ]),
   ];
-  const exercises = await fetchByIds<{ id: string; name: string }>(exerciseIds, (chunk, from, to) =>
-    supabase
-      .from('exercises')
-      .select('id, name')
-      .in('id', chunk)
-      .order('id', { ascending: true })
-      .range(from, to),
-  );
-  const exerciseNameById = new Map(exercises.map(e => [e.id, e.name]));
+  // The exercises on the clips, and their ancestors: a lift model declared
+  // on "Snatch" is what "Snatch from blocks" inherits (P9 plan §4), so the
+  // walk up the tree needs the parents loaded. A few rounds cover any
+  // sensible hierarchy; a cycle ends when nothing new turns up.
+  const exerciseById = new Map<string, ExerciseForModel>();
+  let wanted = exerciseIds;
+  for (let round = 0; round < 6 && wanted.length > 0; round++) {
+    const rows = await fetchByIds<ExerciseForModel>(wanted, (chunk, from, to) =>
+      supabase
+        .from('exercises')
+        .select('id, name, parent_exercise_id, lift_slot, kinemos_lift_model')
+        .in('id', chunk)
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    for (const row of rows) exerciseById.set(row.id, row);
+    wanted = [
+      ...new Set(
+        rows
+          .map(r => r.parent_exercise_id)
+          .filter((id): id is string => !!id && !exerciseById.has(id)),
+      ),
+    ];
+  }
+  const exerciseNameById = new Map([...exerciseById.values()].map(e => [e.id, e.name]));
+  const modelFor = (exerciseId: string | null | undefined): { id: string | null; how: LiftModelHow | null } => {
+    const e = exerciseId ? exerciseById.get(exerciseId) : undefined;
+    const resolved = e ? resolveLiftModel(e, exerciseById) : null;
+    return resolved ?? { id: null, how: null };
+  };
 
   const athleteIds = [
     ...new Set(
@@ -334,6 +367,9 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       // row; the library does not load planned data, and a catalogue name is
       // the right altitude for a filterable list.
       exerciseName: le?.exercise_id ? exerciseNameById.get(le.exercise_id) ?? null : null,
+      exerciseId: le?.exercise_id ?? null,
+      liftModelId: modelFor(le?.exercise_id).id,
+      liftModelHow: modelFor(le?.exercise_id).how,
       date: session?.date ?? dayOf(v.created_at),
       sortedAt: v.created_at,
       loadKg: loadSource?.performed_load ?? null,
@@ -362,6 +398,11 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       athleteId: v.athlete_id,
       athleteName: athleteNameById.get(v.athlete_id) ?? null,
       exerciseName: `${LIFT_LABEL[v.lift_type]} ${v.attempt_number}`,
+      exerciseId: null,
+      // A competition attempt IS its lift type: the snatch, or the clean
+      // and jerk as one clip to be cut into its two parts.
+      liftModelId: v.lift_type === 'snatch' ? 'snatch' : 'clean-and-jerk',
+      liftModelHow: 'slot',
       date: event?.event_date ?? dayOf(v.created_at),
       sortedAt: v.created_at,
       loadKg: null,
@@ -389,6 +430,9 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       athleteId: v.athlete_id,
       athleteName: v.athlete_id ? athleteNameById.get(v.athlete_id) ?? null : null,
       exerciseName: v.exercise_id ? exerciseNameById.get(v.exercise_id) ?? null : null,
+      exerciseId: v.exercise_id,
+      liftModelId: modelFor(v.exercise_id).id,
+      liftModelHow: modelFor(v.exercise_id).how,
       date: dayOf(v.recorded_at ?? v.created_at),
       sortedAt: v.created_at,
       loadKg: null,

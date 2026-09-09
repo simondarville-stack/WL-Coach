@@ -42,6 +42,8 @@
       import { gradeAnalysis } from '/src/kinemos/engine/grade.ts';
       import { DEFAULT_FILTER } from '/src/kinemos/engine/signal.ts';
       import { splitReps } from '/src/kinemos/engine/reps.ts';
+      import { liftModelById, partForKind } from '/src/kinemos/engine/liftModels.ts';
+      import { DEFAULT_PHASE_THRESHOLDS } from '/src/kinemos/engine/phases.ts';
       import { scanActivity, windowLabel } from '/src/kinemos/lib/activityScan.ts';
       import { windowRanges } from '/src/kinemos/engine/activity.ts';
       import { findPlateOnFrame } from '/src/kinemos/lib/assists.ts';
@@ -63,6 +65,13 @@
       // scan=1: run the activity scan first (P7 plan) and anchor/track inside
       // the first lift it finds instead of from `frame`.
       const SCAN = Boolean(params.get('scan'));
+      // model=<id>: the lift model (P9) the track is cut and segmented under —
+      // 'jerk', 'clean-and-jerk', 'snatch-pull', 'unspecified', … Default:
+      // a snatch from the floor, as every clip was before P9.
+      const MODEL = liftModelById(params.get('model') ?? 'snatch');
+      // rep=<n>: which cut rep to analyse (1-based); default: the one the
+      // anchor sits in, else the first.
+      const REP = params.get('rep') ? Number(params.get('rep')) : null;
 
       const $ = id => document.getElementById(id);
       const logEl = $('log');
@@ -433,17 +442,29 @@
         const all = B.track.points.map(p => ({ t: p.t, x: p.x, y: p.y })).sort((a, b) => a.t - b.t);
         // Only the lift: the rep containing the anchor (else the first), lift-off
         // to the deepest point of the catch — the drop and the walk-away are out.
-        const segments = splitReps(all, cal);
+        const segments = splitReps(all, cal, { shape: MODEL.shape });
         const anchorT = server.timestamps[B.anchor.index];
-        const seg = segments.find(s => all[s.from].t <= anchorT && anchorT <= all[s.to].t) ?? segments[0] ?? null;
+        const seg =
+          (REP !== null ? segments[REP - 1] : null) ??
+          segments.find(s => all[s.from].t <= anchorT && anchorT <= all[s.to].t) ??
+          segments[0] ??
+          null;
+        // The model this rep is segmented under: a compound's part, by what
+        // the bar did first.
+        const repModel = seg ? partForKind(MODEL, seg.kind) : MODEL.shape === 'compound' ? partForKind(MODEL, 'pull') : MODEL;
         // Lead the rep with the rest before it (up to 0,4 s): lift-off is a
         // rise out of stillness, and a series that starts at the first moving
         // sample has no stillness for the phase detector to find it in.
+        // A dip-and-drive cut from the top of a clean's recovery gets a
+        // short lead only: the clean's catch is right behind it, and on
+        // jittery footage its spikes would out-run the jerk's own Vmax.
         let from = seg ? seg.from : 0;
-        if (seg) while (from > 0 && all[seg.from].t - all[from - 1].t <= 0.4) from--;
+        const leadS = seg?.kind === 'dip-drive' ? 0 : 0.4;
+        if (seg) while (from > 0 && all[seg.from].t - all[from - 1].t <= leadS) from--;
         const pts = seg ? all.slice(from, seg.to + 1) : all;
         B.reps = segments;
-        log('reps:', segments.length ? segments.map((s, i) => `#${i + 1} ${fmt(s.liftOffT, 2)}→${fmt(s.catchT, 2)}s rise ${fmt(s.riseCm, 0)}cm`).join(' | ') : 'none found — analysing the whole track');
+        log(`model: ${MODEL.id} (${MODEL.shape})${repModel !== MODEL ? ` → rep as ${repModel.id}` : ''}`);
+        log('reps:', segments.length ? segments.map((s, i) => `#${i + 1} ${s.kind}${s.dipCm ? ` dip ${fmt(s.dipCm, 0)}cm` : ''} ${fmt(s.liftOffT, 2)}→${fmt(s.catchT, 2)}s rise ${fmt(s.riseCm, 0)}cm`).join(' | ') : 'none found — analysing the whole track');
         if (seg) log(`  analysing rep ${segments.indexOf(seg) + 1}: ${pts.length} of ${all.length} points (${all.length - pts.length} dropped as not the lift)`);
         const series = computeKinematics(pts, cal, { massKg: mass });
         if (!series) {
@@ -452,8 +473,10 @@
           return null;
         }
         const rep = summariseRep(series);
-        const proposal = proposePhases(series);
-        const spans = spansFrom(proposal.boundaries);
+        const proposal = repModel.phaseSet
+          ? proposePhases(series, repModel.phaseSet, { ...DEFAULT_PHASE_THRESHOLDS, ...(repModel.thresholds ?? {}) }, repModel.endRule, repModel.shape)
+          : { boundaries: [], fullyDetected: true };
+        const spans = spansFrom(proposal.boundaries, repModel.phaseSet ?? []);
         const metrics = computeLiftMetrics(series, spans);
         const grade = gradeAnalysis({
           sampleRateHz: series.sampleRateHz,
@@ -483,6 +506,13 @@
         log('phases:', proposal.fullyDetected ? 'fully detected' : 'FALLBACKS', proposal.boundaries.map(b => `${b.phaseId ?? 'end'}@${fmt(b.t, 2)}(${b.source === 'detected' ? 'd' : 'F'})`).join(' '));
         log('metrics:', metrics.phases.map(p => `${p.phaseId}: ${fmt(p.durationS, 2)}s mean ${fmt(p.meanVelocityMs, 2)} peak ${fmt(p.peakVelocityMs, 2)} +${fmt(p.heightGainedCm, 0)}cm`).join(' | '));
         log('  transition loss', fmt(metrics.transitionVelocityLossMs, 3), 'turnover v', fmt(metrics.turnoverVelocityMs, 3));
+        const a = metrics.analyzer;
+        log('analyzer:', `v1 ${fmt(a.v1Ms, 2)} v2 ${fmt(a.v2Ms, 2)} vmax ${fmt(a.vmaxMs, 2)} vmin ${fmt(a.vminMs, 2)} t_turn ${fmt(a.tTurnS, 3)} | s_vmax ${fmt(a.sVmaxCm, 1)} s_max ${fmt(a.sMaxCm, 1)} s_fly ${fmt(a.sFlyCm, 1)} s_rest ${fmt(a.sRemainPct, 0)}% s_sit ${fmt(a.sSitCm, 1)} s_fall ${fmt(a.sFallCm, 1)} | F1 ${fmt(a.f1Pct, 0)} F2 ${fmt(a.f2Pct, 0)} F3 ${fmt(a.f3Pct, 0)} Fbr ${fmt(a.fbrPct, 0)}`);
+        if (metrics.jerk) {
+          const j = metrics.jerk;
+          log('jerk:', `v_auft ${fmt(j.vDipMs, 2)} δ_auf ${fmt(j.sDipCm, 1)} δv_auf ${fmt(j.sToVDipCm, 1)} δ_stoß ${fmt(j.sDriveCm, 1)} (drive−dip ${fmt(j.driveMinusDipCm, 1)}) | F_auf ${fmt(j.fDipPct, 0)} F_stoß ${fmt(j.fDrivePct, 0)} (${j.driveForcePeaks ?? '—'} peaks) | auftakt ${fmt((j.dipS ?? 0) + (j.brakingS ?? 0), 2)}s anstoß ${fmt(j.driveS, 2)}s`);
+        }
+        log('universal:', `rise ${fmt(rep.concentricS, 2)}s mean v ${fmt(rep.meanRiseVelocityMs, 2)} t→vmax ${fmt(rep.timeToPeakVelocityS, 2)}s t→Pmax ${fmt(rep.timeToPeakPowerS, 2)}s path ${fmt(rep.pathLengthCm, 0)}cm`);
         log('grade:', grade.grade, fmt(grade.expectedVelocityErrorMs, 3), grade.summary);
         // Velocity extremes for sanity (m/s): a bar cannot exceed ~3 m/s.
         const vmax = Math.max(...series.vyMs);

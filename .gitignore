@@ -49,3 +49,7 @@ verify/fixtures/
 
 # KinEMOS viewer walk output (verify/drive-viewer.mjs)
 verify/out/
+
+# KinEMOS source material and test footage (hundreds of MB; never committed)
+KinEMOS Resources/
+KinEMOS Testset v2.zip
