@@ -556,3 +556,47 @@ the bands. What they cannot settle:
    silent until asked.
 6. **A 60 fps jerk clip** from a phone, side-on, plate in view through
    the rack rest — the one thing the archive cannot supply.
+
+## 12. Built — 0.101.0 (09/09/2026)
+
+P9a, P9b and P9c shipped together, plus the force and power curves of
+§5.6; P9d (the shape check) and P9e (live jerks) are not built.
+
+**Decisions taken while building** (Simon, 09/09/2026):
+
+- **Turnover = Vmax → Vmin, catch = Vmin → S_sit**, then a `recovery` phase
+  to the settle. The default set is six phases; a rep stored before P9
+  keeps its five-phase edges and reads as a snatch from the floor
+  (`liftModelOfStored`).
+- **A clean & jerk is two analyses**, rep 1 the clean and rep 2 the jerk,
+  swapped between in the rep pills, which name the parts.
+- **The 2009 archive is the testset for now** (`verify/fixtures/testset-v3/`,
+  transcoded from the WMV); accuracy waits for phone footage.
+
+**What the 2009 clips said**, and what changed because of it:
+
+| Clip | Model | Outcome |
+| --- | --- | --- |
+| Opadstød side (jerk) | jerk | dip 17,3 cm, v_Auft −0,94 m/s, δ_Stoß 22,5 cm (drive − dip +5,2), Auftakt 0,26 s, Anstoß 0,24 s — inside or beside the BVDG bands. Needed: the lift window to run 0,75 s past the burst (a bar fixed overhead is still, so the burst ends at the apex); a rep to carry a tail past its sit and to run into the following rest; a drop under believed from −0,05 m/s and a rise from 25 cm for a dip-and-drive. This lifter locks out with no drop, so the catch reads as a fallback — honestly. |
+| Stød side (clean & jerk) | clean-and-jerk | cut into a clean (rise 46 cm, all six phases found) and a jerk (dip 36 cm, all six found once the dip's start was allowed at the top of the clean's recovery). The lifter never rests at the rack, which is why `splitReps` now seeds a rest at the recovery's top after a cut rep. The tracker loses the plate around the clean's catch on this footage (a 16 cm jump in two frames), which the bar path shows; the cut and the phases survive it, the numbers do not. |
+| Træk side (snatch) | snatch | rise 122 cm, Vmax 2,25, turnover 0,92 → 1,34 s, catch to the sit at 1,90 s, S_sit 98,7 cm, S_fall 23,7 cm — the new turnover and catch definitions on a real snatch. No knee-passage dip on this lifter, so the transition edges fall back. |
+| Trækhiv side (snatch pull) | snatch-pull | first pull, transition and second pull found, the rep ending at the apex; no catch measures offered. |
+| Styrketræk side (snatch deadlift) | snatch-deadlift | one `pull` phase, lift-off to apex. |
+
+**Known gaps after this ship:**
+
+- The tracker on 384 × 288 footage jumps around a catch; the phase
+  detector takes the global velocity maximum and can lock onto such a
+  jump when it sits inside the series. The rep cut keeps it out of the
+  jerk's series (the rep starts at the recovery's top); a position-jump
+  repair in `engine/timing.ts` is the general fix.
+- A jerk whose drop into the fix is under 0,05 m/s gets no catch edge and
+  says so (fallback). Whether that lifter's fix should read as a catch of
+  zero depth rather than none is a coaching question.
+- The activity scan looks for a rising motion centroid; a jerk's rise is
+  short and it was still found on every clip tried, but a push press with
+  a small drive may not be.
+- Reference bands (§6) are not shown yet: they need weight class and sex
+  on the athlete (§11.1).
+- `ImportControl` does not resolve a model for a direct import's exercise
+  at analyse-on-import time; the library sweep and the viewer do.
