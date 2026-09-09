@@ -1,7 +1,7 @@
 {
   "name": "emos",
   "private": true,
-  "version": "0.100.0",
+  "version": "0.101.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "prepare": "husky",
-    "bench": "node verify/bench.mjs"
+    "bench": "node verify/bench.mjs",
+    "emos": "node scripts/emos.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
