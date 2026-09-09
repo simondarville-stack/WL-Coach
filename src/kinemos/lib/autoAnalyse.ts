@@ -205,6 +205,7 @@ export async function autoAnalyse(
   // An unspecified lift is cut on any rest for any motion; the shape the
   // set tracker reads is the model's.
   const shape = model.shape;
+  const fromFloor = model.fromFloor;
 
   let activity: ActivityScanResult | null = options.activity ?? null;
   if (!activity && options.src !== undefined) {
@@ -255,6 +256,7 @@ export async function autoAnalyse(
           ellipse: found.ellipse,
           plateDiameterCm,
           shape,
+          fromFloor,
           range: { from: range.from, to: range.to },
           shouldStop: options.shouldStop,
           onProgress: (done, total) => options.onProgress?.(`Following the bar, lift ${k + 1} of ${ranges.length}`, done, total),
@@ -291,6 +293,7 @@ export async function autoAnalyse(
       ellipse,
       plateDiameterCm,
       shape,
+      fromFloor,
       shouldStop: options.shouldStop,
       onProgress: (done, total) => options.onProgress?.('Following the bar', done, total),
     },

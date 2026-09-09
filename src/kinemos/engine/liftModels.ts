@@ -44,6 +44,14 @@ export interface LiftModel {
   /** For a chip or a rep pill. */
   shortLabel: string;
   shape: MotionShape;
+  /**
+   * Whether the rep starts from the floor. The rep cutter takes a rest from
+   * the floor only for such a model — a pause at the knee is not a rest —
+   * and from anywhere for one that starts at the hang, on blocks or at the
+   * rack (P9, the 2009 hang snatch: its rest is 60 cm above where the bar
+   * ends up, and was filtered away as "not the floor").
+   */
+  fromFloor: boolean;
   /** Null for a shape with no phases (`free`, `compound`). */
   phaseSet: readonly PhaseDefinition[] | null;
   /** What an analysis records as its `phase_set_id`. Distinct from the model
@@ -75,31 +83,31 @@ export const PHASE_SET_IDS = {
 } as const;
 
 const floor = (family: LiftFamily, id: string, label: string, shortLabel: string, note: string): LiftModel => ({
-  id, family, label, shortLabel, shape: 'pull-catch',
+  id, family, label, shortLabel, shape: 'pull-catch', fromFloor: true,
   phaseSet: PULL_CATCH_FLOOR_PHASES, phaseSetId: PHASE_SET_IDS.floor, endRule: DEFAULT_PHASE_END_RULE, note,
 });
 const belowKnee = (family: LiftFamily, id: string, label: string, shortLabel: string): LiftModel => ({
-  id, family, label, shortLabel, shape: 'pull-catch',
+  id, family, label, shortLabel, shape: 'pull-catch', fromFloor: false,
   phaseSet: PULL_CATCH_BELOW_KNEE_PHASES, phaseSetId: PHASE_SET_IDS.belowKnee, endRule: DEFAULT_PHASE_END_RULE,
   note: 'From a hang or blocks below the knee: no first pull; the knee passage and the second pull remain.',
 });
 const aboveKnee = (family: LiftFamily, id: string, label: string, shortLabel: string): LiftModel => ({
-  id, family, label, shortLabel, shape: 'pull-catch',
+  id, family, label, shortLabel, shape: 'pull-catch', fromFloor: false,
   phaseSet: PULL_CATCH_ABOVE_KNEE_PHASES, phaseSetId: PHASE_SET_IDS.aboveKnee, endRule: DEFAULT_PHASE_END_RULE,
   note: 'From above the knee: only the second pull is left of the acceleration.',
 });
 const pull = (family: LiftFamily, id: string, label: string, shortLabel: string): LiftModel => ({
-  id, family, label, shortLabel, shape: 'pull',
+  id, family, label, shortLabel, shape: 'pull', fromFloor: true,
   phaseSet: PULL_PHASES, phaseSetId: PHASE_SET_IDS.pull, endRule: PULL_END_RULE,
   note: 'The acceleration only; the rep ends at the apex and nothing is read after it.',
 });
 const deadlift = (family: LiftFamily, id: string, label: string, shortLabel: string): LiftModel => ({
-  id, family, label, shortLabel, shape: 'pull',
+  id, family, label, shortLabel, shape: 'pull', fromFloor: true,
   phaseSet: DEADLIFT_PHASES, phaseSetId: PHASE_SET_IDS.deadlift, endRule: PULL_END_RULE,
   note: 'One phase, lift-off to apex.',
 });
 const dipDrive = (family: LiftFamily, id: string, label: string, shortLabel: string, note: string): LiftModel => ({
-  id, family, label, shortLabel, shape: 'dip-drive',
+  id, family, label, shortLabel, shape: 'dip-drive', fromFloor: false,
   phaseSet: DIP_DRIVE_PHASES, phaseSetId: PHASE_SET_IDS.dipDrive, endRule: DEFAULT_PHASE_END_RULE, note,
   // The bar falls 2–6 cm into the fix, not 20 into a squat: a drop under
   // is believed from −0,05 m/s (2009 bench: −0,14 on the jerk from the
@@ -136,6 +144,7 @@ export const LIFT_MODELS: readonly LiftModel[] = [
     label: 'Press',
     shortLabel: 'Pr',
     shape: 'free',
+    fromFloor: false,
     phaseSet: null,
     phaseSetId: PHASE_SET_IDS.none,
     endRule: null,
@@ -148,6 +157,7 @@ export const LIFT_MODELS: readonly LiftModel[] = [
     label: 'Clean & jerk',
     shortLabel: 'C&J',
     shape: 'compound',
+    fromFloor: false,
     phaseSet: null,
     phaseSetId: PHASE_SET_IDS.none,
     endRule: null,
@@ -161,6 +171,7 @@ export const LIFT_MODELS: readonly LiftModel[] = [
     label: 'Unspecified lift',
     shortLabel: '—',
     shape: 'free',
+    fromFloor: false,
     phaseSet: null,
     phaseSetId: PHASE_SET_IDS.none,
     endRule: null,

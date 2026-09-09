@@ -68,6 +68,12 @@ export interface SplitRepsOptions {
    * classify each rep by what came first. Default: `pull-catch`.
    */
   shape?: MotionShape;
+  /**
+   * Whether a rest must be near the floor. Default: yes for the pull shapes,
+   * no for the others. A lift from the hang or blocks is a pull whose rest
+   * is a knee's height above where the bar ends up, so its model says no.
+   */
+  fromFloor?: boolean;
   /** A rep must rise at least this far above its rest, cm. Below it the bar
    *  was shifted, not lifted. COACH-CONFIG candidate. */
   minRiseCm?: number;
@@ -117,6 +123,8 @@ export const DROP_SPEED_MS = 2;
 
 const DEFAULTS: Required<SplitRepsOptions> = {
   shape: 'pull-catch',
+  // Read from `options`, not `opt`: the default is decided by the shape.
+  fromFloor: true,
   minRiseCm: 40,
   minRiseDipCm: 25,
   minDipCm: 8,
@@ -177,7 +185,7 @@ export function splitReps(
       start = -1;
     }
   }
-  const fromFloor = opt.shape === 'pull-catch' || opt.shape === 'pull';
+  const fromFloor = options.fromFloor ?? (opt.shape === 'pull-catch' || opt.shape === 'pull');
   const rests = fromFloor
     ? slowRuns.filter(run => {
         const t0 = sorted[run.from].t;

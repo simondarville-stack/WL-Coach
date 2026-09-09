@@ -444,7 +444,7 @@
         const all = B.track.points.map(p => ({ t: p.t, x: p.x, y: p.y })).sort((a, b) => a.t - b.t);
         // Only the lift: the rep containing the anchor (else the first), lift-off
         // to the deepest point of the catch — the drop and the walk-away are out.
-        const segments = splitReps(all, cal, { shape: MODEL.shape });
+        const segments = splitReps(all, cal, { shape: MODEL.shape, fromFloor: MODEL.fromFloor });
         const anchorT = server.timestamps[B.anchor.index];
         const seg =
           (REP !== null ? segments[REP - 1] : null) ??

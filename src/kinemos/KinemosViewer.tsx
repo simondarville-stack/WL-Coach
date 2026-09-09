@@ -1262,6 +1262,7 @@ export function KinemosViewer() {
         ellipse: outline,
         plateDiameterCm,
         shape: clipModel.shape,
+        fromFloor: clipModel.fromFloor,
         range: { from, to: server.frameCount - 1 },
         onProgress: (done, total) => setTrackProgress({ done, total }),
       });
@@ -1301,7 +1302,7 @@ export function KinemosViewer() {
       const anchorIndex = server.nearestIndex(anchorPoint.t);
       const onProgress = (done: number, total: number) => setTrackProgress({ done, total });
       const whole = () =>
-        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, shape: clipModel.shape, onProgress });
+        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, shape: clipModel.shape, fromFloor: clipModel.fromFloor, onProgress });
 
       // Inside the lifts the scan found (P7 plan), when it found any. The
       // coach's mark anchors the lift it sits in; every other lift is
@@ -1331,6 +1332,7 @@ export function KinemosViewer() {
             ellipse: outline,
             plateDiameterCm,
             shape: clipModel.shape,
+            fromFloor: clipModel.fromFloor,
             range: { from: range.from, to: range.to },
             onProgress,
           });
