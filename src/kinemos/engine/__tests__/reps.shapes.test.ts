@@ -116,3 +116,29 @@ describe('splitReps — a clean & jerk', () => {
     expect(reps[0].kind).toBe('pull');
   });
 });
+
+describe('splitReps — a hang snatch taken out of a turnaround', () => {
+  /** The clip opens with the bar already being lowered to the hang — 15 cm
+   *  in 0,3 s, never still — and pulled straight out of the bottom to an
+   *  80 cm apex; caught at 65; still. No rest anywhere before the catch. */
+  function hangHeight(t: number): number {
+    if (t < 0.3) return -15 * Math.sin((Math.PI * t) / 0.6);
+    if (t < 1.0) return -15 + 95 * ease((t - 0.3) / 0.7);
+    if (t < 1.3) return 80 - 15 * ease((t - 1.0) / 0.3);
+    return 65;
+  }
+  const points = track(hangHeight, 2.0);
+
+  it('is a rep when the model starts above the floor', () => {
+    const reps = splitReps(points, cal, { shape: 'pull-catch', fromFloor: false });
+    expect(reps).toHaveLength(1);
+    expect(reps[0].kind).toBe('pull');
+    expect(reps[0].liftOffT).toBeCloseTo(0.3, 1);
+    expect(reps[0].riseCm).toBeCloseTo(95, 0);
+    expect(reps[0].catchT).toBeCloseTo(1.3, 1);
+  });
+
+  it('is not one from the floor, where a turnaround is not a rest', () => {
+    expect(splitReps(points, cal, { shape: 'pull-catch' })).toHaveLength(0);
+  });
+});
