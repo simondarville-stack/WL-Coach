@@ -7,6 +7,12 @@
 //                               [--exercise <name>]… [--category <name>]… [--id <uuid>]…
 //                               [--day <n>]… [--include-combos] [--round-kg 2.5] [--round-pct 1]
 //                               [--apply] [--json]
+//   npm run emos -- new-week    --athlete <name|id> [--week next] [--like this|YYYY-MM-DD]
+//   npm run emos -- add-exercise --athlete <name|id> [--week next] --day <n> --exercise <name|id>
+//                               [--prescription "87.5×5, 100×5, 115×5-10"] [--unit kg|%|rpe|free|free-reps]
+//                               [--note "..."] [--display-name "..."] [--position <n>]
+//   npm run emos -- remove-exercise --id <planned_exercise_id>
+//   npm run emos -- prs         --athlete <name|id> [--exercise <name>]
 //   global: [--env .env] [--json]
 //
 // Every write goes through the same modules the planner uses
@@ -34,6 +40,15 @@ import {
   type RoundingRule,
 } from '../src/lib/loadScaleService';
 import type { EmosClient } from '../src/lib/prescriptionWriteService';
+import {
+  ensureIndividualWeek,
+  addPlannedExercise,
+  removePlannedExercise,
+  pickExercise,
+  resolveUnitAlias,
+  chooseUnit,
+  type PickableExercise,
+} from '../src/lib/plannedRowService';
 
 // ─── Plumbing ────────────────────────────────────────────────────────────────
 
@@ -136,9 +151,10 @@ function table(rows: string[][], header: string[]): string {
   return [line(header), widths.map(w => '─'.repeat(w)).join('  '), ...rows.map(line)].join('\n');
 }
 
+/** Slots are 1-based and unbounded (DISPLAY_CONVENTIONS §4): day_index 1 is the planner's D1. */
 function dayName(plan: WeekPlan, dayIndex: number): string {
   const label = plan.day_labels?.[dayIndex];
-  return label ? `D${dayIndex + 1} ${label}` : `D${dayIndex + 1}`;
+  return label ? `D${dayIndex} ${label}` : `D${dayIndex}`;
 }
 
 // ─── Commands ────────────────────────────────────────────────────────────────
@@ -237,8 +253,8 @@ async function cmdScaleLoads(ctx: Ctx, v: Args): Promise<void> {
   };
   const days = (v.day ?? []).map(d => {
     const n = Number(d);
-    if (!Number.isInteger(n) || n < 1) throw new UsageError(`--day takes 1-based day numbers (got ${d})`);
-    return n - 1;
+    if (!Number.isInteger(n) || n < 1) throw new UsageError(`--day takes the planner's slot numbers, D1 = 1 (got ${d})`);
+    return n;
   });
 
   const apply = !!v.apply;
@@ -268,12 +284,144 @@ async function cmdScaleLoads(ctx: Ctx, v: Args): Promise<void> {
     : `\n${n} row${n === 1 ? '' : 's'} would change. Re-run with --apply to write.`);
 }
 
+
+// ─── Rows & weeks ────────────────────────────────────────────────────────────
+
+type CatalogueRow = PickableExercise & { default_unit: string; category: string | null; library_id: string | null };
+
+async function loadCatalogue(client: EmosClient): Promise<{ rows: CatalogueRow[]; libraryName: Map<string, string> }> {
+  const [{ data, error }, { data: libs }] = await Promise.all([
+    client.from('exercises').select('id, name, exercise_code, aliases, owner_id, is_archived, default_unit, category, library_id').order('name'),
+    client.from('exercise_libraries').select('id, name'),
+  ]);
+  if (error) throw error;
+  const libraryName = new Map(((libs as unknown as { id: string; name: string }[]) ?? []).map(l => [l.id, l.name]));
+  return { rows: (data as unknown as CatalogueRow[]) ?? [], libraryName };
+}
+
+/** Every exercise this coach has planned, in any week they own — the best tie-break for a duplicate name. */
+async function exercisesUsedByCoach(client: EmosClient, ownerId: string): Promise<Set<string>> {
+  const { data, error } = await client
+    .from('planned_exercises')
+    .select('exercise_id, week_plans!inner(owner_id)')
+    .eq('week_plans.owner_id', ownerId);
+  if (error) return new Set();
+  return new Set(((data as unknown as { exercise_id: string }[]) ?? []).map(r => r.exercise_id));
+}
+
+async function resolveExercise(client: EmosClient, term: string | undefined, preferOwnerId: string): Promise<CatalogueRow> {
+  if (!term) throw new UsageError('--exercise <name|id> is required');
+  const [{ rows, libraryName }, preferIds] = await Promise.all([loadCatalogue(client), exercisesUsedByCoach(client, preferOwnerId)]);
+  const pick = pickExercise(term, rows, { preferIds, preferOwnerId });
+  if (pick.kind === 'one') return pick.exercise;
+  if (pick.kind === 'none') throw new UsageError(`no exercise matches "${term}" — check the name in \`week\` or the catalogue`);
+  const describe = (c: CatalogueRow) => {
+    const bits = [c.category ? `category ${c.category}` : null, c.library_id ? `library ${libraryName.get(c.library_id) ?? c.library_id}` : null,
+      preferIds.has(c.id) ? 'used by this coach' : null, c.is_archived ? 'archived' : null].filter(Boolean);
+    return `  ${c.id}  ${c.name}  (${bits.join('; ')})`;
+  };
+  throw new UsageError(`"${term}" is ambiguous — pass the id:\n` + pick.candidates.map(describe).join('\n'));
+}
+
+async function cmdNewWeek(ctx: Ctx, v: Args): Promise<void> {
+  const athlete = await resolveAthlete(ctx.client, v.athlete);
+  const weekStart = resolveWeek(v.week, 'next');
+  const like = v.like ? resolveWeek(v.like, 'this') : undefined;
+  const r = await ensureIndividualWeek(ctx.client, {
+    athleteId: athlete.id, weekStart, likeWeekStart: like, editorCoachId: v.coach,
+  });
+  if (ctx.json) { console.log(JSON.stringify({ athlete, weekStart, ...r }, null, 2)); return; }
+  const days = (r.weekPlan.active_days ?? []).map(d => dayName(r.weekPlan, d)).join(', ') || '(no active days)';
+  if (r.created) {
+    console.log(`created ${athlete.name}'s week of ${ddmm(weekStart)} — empty, days ${days}${r.rhythmFrom ? ` (structure from ${ddmm(r.rhythmFrom)})` : ''}  (week_plans.id ${r.weekPlan.id})`);
+  } else {
+    console.log(`${athlete.name}'s week of ${ddmm(weekStart)} already exists — days ${days}  (week_plans.id ${r.weekPlan.id}). Nothing written.`);
+  }
+}
+
+async function cmdAddExercise(ctx: Ctx, v: Args): Promise<void> {
+  const athlete = await resolveAthlete(ctx.client, v.athlete);
+  const weekStart = resolveWeek(v.week, 'next');
+  const dayArg = v.day?.[0];
+  const dayNo = Number(dayArg);
+  if (!dayArg || !Number.isInteger(dayNo) || dayNo < 1) throw new UsageError("--day <n> is required (the planner's slot number: D1 = 1)");
+  const exercise = await resolveExercise(ctx.client, v.exercise?.[0], athlete.owner_id);
+  const explicitUnit = v.unit ? resolveUnitAlias(v.unit) : null;
+  if (v.unit && !explicitUnit) throw new UsageError(`unknown --unit "${v.unit}" — use kg | % | rpe | free | free-reps | other`);
+  const prescription = v.prescription?.trim() || null;
+  const unit = chooseUnit(explicitUnit, prescription, exercise.default_unit as import('../src/lib/database.types').DefaultUnit);
+  const position = v.position != null ? Number(v.position) : null;
+  if (position != null && (!Number.isInteger(position) || position < 1)) throw new UsageError('--position must be a positive integer');
+
+  const plan = await findIndividualPlan(ctx.client, athlete.id, weekStart);
+  if (!plan) throw new UsageError(`${athlete.name} has no individual plan in the week of ${ddmm(weekStart)} — run new-week or copy-week first`);
+
+  const r = await addPlannedExercise(ctx.client, {
+    weekPlanId: plan.id, dayIndex: dayNo, exerciseId: exercise.id, unit, prescription,
+    notes: v.note ?? null, displayName: v['display-name'] ?? null, position,
+  });
+  if (ctx.json) { console.log(JSON.stringify({ athlete, weekStart, weekPlanId: plan.id, exercise: { id: exercise.id, name: exercise.name }, unit, prescription, ...r }, null, 2)); return; }
+  console.log(`added ${athlete.name} ${ddmm(weekStart)} ${dayName(plan, dayNo)} #${r.position}: ${v['display-name'] ?? exercise.name}  [${unit}]  ${prescription ?? '(empty)'}${v.note ? `  — ${v.note}` : ''}`);
+  if (r.dayActivated) console.log(`note: ${dayName(plan, dayNo)} was not an active slot on this week — switched it on.`);
+  console.log(`planned_exercises.id ${r.plannedExerciseId}`);
+}
+
+async function cmdRemoveExercise(ctx: Ctx, v: Args): Promise<void> {
+  const id = v.id?.[0];
+  if (!id || !UUID_RE.test(id)) throw new UsageError('--id <planned_exercise_id> is required (from week --json or add-exercise)');
+  const r = await removePlannedExercise(ctx.client, id);
+  if (ctx.json) { console.log(JSON.stringify({ id, ...r }, null, 2)); return; }
+  if (!r.removed) { console.log(`no planned row with id ${id} — nothing removed.`); process.exitCode = 2; return; }
+  console.log(`removed planned row ${id} (week_plans.id ${r.weekPlanId}, D${r.dayIndex}).`);
+}
+
+async function cmdPrs(ctx: Ctx, v: Args): Promise<void> {
+  const athlete = await resolveAthlete(ctx.client, v.athlete);
+  const { rows: catalogue } = await loadCatalogue(ctx.client);
+  const nameOf = new Map(catalogue.map(c => [c.id, c.name]));
+  let only: string | null = null;
+  if (v.exercise?.[0]) only = (await resolveExercise(ctx.client, v.exercise[0], athlete.owner_id)).id;
+
+  let prq = ctx.client.from('athlete_prs').select('exercise_id, pr_value_kg, pr_date').eq('athlete_id', athlete.id);
+  if (only) prq = prq.eq('exercise_id', only);
+  const { data: prs, error: prErr } = await prq;
+  if (prErr) throw prErr;
+  let hq = ctx.client.from('athlete_pr_history').select('exercise_id, rep_count, value_kg, achieved_date').eq('athlete_id', athlete.id).order('achieved_date', { ascending: false });
+  if (only) hq = hq.eq('exercise_id', only);
+  const { data: hist, error: hErr } = await hq;
+  if (hErr) throw hErr;
+
+  type Pr = { exercise_id: string; pr_value_kg: number | null; pr_date: string | null };
+  type Hist = { exercise_id: string; rep_count: number; value_kg: number; achieved_date: string };
+  const prRows = ((prs as unknown as Pr[]) ?? []).map(r => ({ ...r, exercise: nameOf.get(r.exercise_id) ?? r.exercise_id }));
+  // Best per exercise × rep count, newest wins a tie.
+  const best = new Map<string, Hist>();
+  for (const h of (hist as unknown as Hist[]) ?? []) {
+    const k = `${h.exercise_id}|${h.rep_count}`;
+    if (!best.has(k) || best.get(k)!.value_kg < h.value_kg) best.set(k, h);
+  }
+  const histRows = [...best.values()]
+    .map(h => ({ ...h, exercise: nameOf.get(h.exercise_id) ?? h.exercise_id }))
+    .sort((a, b) => a.exercise.localeCompare(b.exercise) || a.rep_count - b.rep_count);
+
+  if (ctx.json) { console.log(JSON.stringify({ athlete, prs: prRows, repMaxes: histRows }, null, 2)); return; }
+  console.log(`${athlete.name} — PRs (athlete_prs: implied 1RM the planner resolves % against)`);
+  console.log(prRows.length
+    ? table(prRows.sort((a, b) => a.exercise.localeCompare(b.exercise)).map(r => [r.exercise, r.pr_value_kg != null ? String(r.pr_value_kg) : '', r.pr_date ? ddmm(r.pr_date) : '']), ['Exercise', '1RM kg', 'Date'])
+    : '(none)');
+  console.log(`\nRep maxes (athlete_pr_history, best per rep count)`);
+  console.log(histRows.length
+    ? table(histRows.map(h => [h.exercise, `${h.rep_count}RM`, String(h.value_kg), ddmm(h.achieved_date)]), ['Exercise', 'Reps', 'kg', 'Date'])
+    : '(none)');
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 type Args = {
   athlete?: string; week?: string; from?: string; to?: string; coach?: string;
   factor?: string; by?: string; exercise?: string[]; category?: string[]; id?: string[]; day?: string[];
   'include-combos'?: boolean; 'round-kg'?: string; 'round-pct'?: string; apply?: boolean;
+  like?: string; unit?: string; prescription?: string; note?: string; 'display-name'?: string; position?: string;
   all?: boolean; json?: boolean; env?: string; help?: boolean;
 };
 
@@ -285,6 +433,12 @@ const USAGE = `usage:
                               [--exercise <name>]... [--category <name>]... [--id <uuid>]...
                               [--day <n>]... [--include-combos] [--round-kg 2.5] [--round-pct 1]
                               [--apply]
+  npm run emos -- new-week    --athlete <name|id> [--week next] [--like this|YYYY-MM-DD]
+  npm run emos -- add-exercise --athlete <name|id> [--week next] --day <n> --exercise <name|id>
+                              [--prescription "87.5×5, 100×5, 115×5-10"] [--unit kg|%|rpe|free|free-reps]
+                              [--note "..."] [--display-name "..."] [--position <n>]
+  npm run emos -- remove-exercise --id <planned_exercise_id>
+  npm run emos -- prs         --athlete <name|id> [--exercise <name>]
   global: [--env .env] [--json]`;
 
 async function main(): Promise<void> {
@@ -298,6 +452,8 @@ async function main(): Promise<void> {
       id: { type: 'string', multiple: true }, day: { type: 'string', multiple: true },
       'include-combos': { type: 'boolean' }, 'round-kg': { type: 'string' }, 'round-pct': { type: 'string' },
       apply: { type: 'boolean' }, all: { type: 'boolean' }, json: { type: 'boolean' },
+      like: { type: 'string' }, unit: { type: 'string' }, prescription: { type: 'string' }, note: { type: 'string' },
+      'display-name': { type: 'string' }, position: { type: 'string' },
       env: { type: 'string' }, help: { type: 'boolean' },
     },
   });
@@ -315,6 +471,10 @@ async function main(): Promise<void> {
     case 'week': return cmdWeek(ctx, v);
     case 'copy-week': return cmdCopyWeek(ctx, v);
     case 'scale-loads': return cmdScaleLoads(ctx, v);
+    case 'new-week': return cmdNewWeek(ctx, v);
+    case 'add-exercise': return cmdAddExercise(ctx, v);
+    case 'remove-exercise': return cmdRemoveExercise(ctx, v);
+    case 'prs': return cmdPrs(ctx, v);
     default: throw new UsageError(`unknown command "${command}"\n${USAGE}`);
   }
 }

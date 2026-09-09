@@ -1,6 +1,6 @@
 ---
 name: emos
-description: Operate EMOS, the Olympic weightlifting coaching app, as the coach's assistant — read or change an athlete's weekly programme (copy this week to next, taper or scale loads in named lifts, inspect a plan) and answer questions about EMOS's data model, prescription grammar and invariants. Use whenever the coach mentions an athlete's programme, plan, week, taper, "lighter", "heavier", "copy this week", or asks what is planned, and for any read or write against the EMOS Supabase database.
+description: Operate EMOS, the Olympic weightlifting coaching app, as the coach's assistant — read or change an athlete's weekly programme (start a week, copy this week to next, taper or scale loads in named lifts, add exercise lines, write a lift from a named method such as 5/3/1 from the athlete's PRs, inspect a plan or PRs) and answer questions about EMOS's data model, prescription grammar and invariants. Use whenever the coach mentions an athlete's programme, plan, week, taper, "lighter", "heavier", "copy this week", "start on", a training method, or asks what is planned, and for any read or write against the EMOS Supabase database.
 ---
 
 # EMOS assistant
@@ -26,6 +26,12 @@ npm run emos -- scale-loads --athlete "<name|id>" [--week next] (--factor 0.8 | 
                             [--exercise "<name>"]... [--category "<name>"]... [--id <uuid>]...
                             [--day <n>]... [--include-combos] [--round-kg 2.5] [--round-pct 1]
                             [--apply]
+npm run emos -- new-week    --athlete "<name|id>" [--week next] [--like this|YYYY-MM-DD]
+npm run emos -- add-exercise --athlete "<name|id>" [--week next] --day <slot> --exercise "<name|id>"
+                            [--prescription "87.5×5, 100×5, 115×5-10"] [--unit kg|%|rpe|free|free-reps]
+                            [--note "..."] [--display-name "..."] [--position <n>]
+npm run emos -- remove-exercise --id <planned_exercise_id>
+npm run emos -- prs         --athlete "<name|id>" [--exercise "<name>"]
 # global: --json (machine output on stdout), --env .env (which Supabase project)
 ```
 
@@ -38,6 +44,19 @@ npm run emos -- scale-loads --athlete "<name|id>" [--week next] (--factor 0.8 | 
 - Athlete names resolve exactly, then by unique substring; an ambiguous name
   lists candidates and stops — pass the id.
 - A non-Monday `--week` snaps back to its Monday and says so.
+- `--day` is the planner's **slot number** (D1 = 1), not a weekday. Slots are
+  unbounded; the week's active slots are what `week` and `new-week` show.
+  Adding to an inactive slot switches it on and says so.
+- `add-exercise` and `remove-exercise` write immediately (one row each).
+  Propose the lines in chat first, get a yes, then run them. Every add prints
+  the row id, which is the undo (`remove-exercise --id`).
+- An **ambiguous exercise name** lists the candidates with category and
+  library and stops. Prefer one the coach has planned before (the CLI
+  already does), otherwise ask — never pick a duplicate by yourself. A
+  catalogue with two "Back Squat" rows in the same library is a hygiene
+  problem worth mentioning to the coach once.
+- `--unit` is optional: a `%` in the prescription means percentage, letters
+  mean free text, otherwise the exercise's default unit applies.
 
 **Reads** may use the CLI (`week --json` is the reliable picture of a plan)
 or the Supabase MCP `execute_sql` — **SELECT only**. Useful reads: an
@@ -48,8 +67,10 @@ athlete's PRs (`athlete_prs`, `athlete_pr_history`), the exercise catalogue
 Source of the verbs, if the coach asks for a change to the tool:
 `scripts/emos-cli.ts` → `src/lib/weekDraftService.ts` (copy),
 `src/lib/loadScaleService.ts` (scale + selection),
-`src/lib/prescriptionWriteService.ts` (the one prescription write). Tests in
-`src/lib/__tests__/loadScale.test.ts`.
+`src/lib/plannedRowService.ts` (new week, add / remove a row, exercise
+picking), `src/lib/prescriptionWriteService.ts` (the one prescription
+write). Tests in `src/lib/__tests__/loadScale.test.ts` and
+`plannedRow.test.ts`.
 
 ## The standard job: "next week like this week, but X"
 
@@ -66,6 +87,35 @@ Source of the verbs, if the coach asks for a change to the tool:
    the result.
 
 Report what you wrote, which rows were skipped and why, and the project host.
+
+## Writing a lift from a method ("back squat in the 5/3/1 method")
+
+The knowledge is yours. Use what you know about the method; search the web
+when you are unsure or the coach names something obscure, and say which
+reading you used (5/3/1: Wendler, training max 90 % of 1RM; week 1
+65/75/85 % × 5/5/5+, week 2 70/80/90 % × 3/3/3+, week 3 75/85/95 % ×
+5/3/1+, week 4 40/50/60 % × 5; warm-ups 40/50/60 % × 5/5/3). Then:
+
+1. `prs --athlete A --exercise "Back Squat"` — the 1RM (`athlete_prs`,
+   the planner's implied 1RM) and rep maxes. No PR → ask for one or for a
+   training max; do not invent it.
+2. Compute. **Percent in EMOS means percent of the athlete's PR**, not of a
+   training max. Write **kg** computed from the training max (rounded to
+   2,5 kg), or write % rescaled onto the PR (65 % of a 90 % TM = 58,5 % of
+   PR) with a note. Say which you did.
+3. **AMRAP / "+" sets have no grammar marker.** Write the top set as a reps
+   range (`115×5-10`) or as `115×5` with an AMRAP note on the row. Ask the
+   coach once which they prefer and reuse it.
+4. `week --athlete A --week next` — is there a week? "Start on A's next
+   week" can mean an empty week (`new-week`, which inherits the athlete's
+   day structure) or a copy of this one (`copy-week`). If it is not obvious
+   from what the coach said, ask once, then remember.
+5. Present the proposal as a table (slot, exercise, prescription, note),
+   with the arithmetic visible (PR, TM, rounding). Get a yes.
+6. `add-exercise` per line, `week` to show the result, report row ids.
+
+Multi-week methods: write the week asked for; offer to write the following
+weeks in one go once the coach has seen the first.
 
 ## Interpreting the coach
 
@@ -89,8 +139,8 @@ Report what you wrote, which rows were skipped and why, and the project host.
 - **Rounding.** kg rounds to 2,5 kg and % to whole points by default.
   Override with `--round-kg 1` / `--round-pct 0.5`, or `0` for no rounding.
   Mention rounding when it changes a number visibly.
-- **Days.** `--day 1 --day 3` restricts to the week's 1st and 3rd training
-  slots (the planner's D1, D2 …), not weekdays.
+- **Days.** `--day 1 --day 3` restricts to slots D1 and D3 (the planner's
+  slot numbers), not weekdays.
 
 ## Invariants you protect
 
@@ -101,8 +151,10 @@ Report what you wrote, which rows were skipped and why, and the project host.
 - **Group plans are refused** by the CLI. They are planned and synced in the
   planner so the athletes receive them — tell the coach to do it there.
 - **Do not edit set lines, summaries or `prescription_raw` by SQL.** If a
-  job needs a verb the CLI lacks (swap an exercise, add a day, change reps),
-  say so and offer to add the verb rather than improvising SQL.
+  job needs a verb the CLI lacks (swap an exercise, reorder rows, edit one
+  row's reps in place), say so and offer to add the verb rather than
+  improvising SQL. Editing an existing row's prescription = `remove-exercise`
+  + `add-exercise --position` for now; say so when you do it.
 - **No schema changes** from this skill. Migrations are a separate job.
 - The name is **EMOS**, always.
 
@@ -113,7 +165,7 @@ Report what you wrote, which rows were skipped and why, and the project host.
   plan: `athlete_id` set, `group_id` null. Group plan: `is_group_plan`,
   `group_id`. `active_days`, `day_labels` give the week's slots.
 - `planned_exercises`: one row per exercise line: `weekplan_id`,
-  `day_index` (0-based slot), `position`, `exercise_id`, `unit`,
+  `day_index` (slot number, 1-based, unbounded), `position`, `exercise_id`, `unit`,
   **`prescription_raw` (truth)**, `summary_*` (cache), `display_name`
   (coach's label override), `is_combo` + `combo_notation`, `source`
   (`group` | `individual`), `metadata` (features, GPP, hidden flags).

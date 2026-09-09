@@ -247,8 +247,11 @@ All modules are **active** — nothing is currently disabled or hidden:
 - **Assistant skill + CLI verbs** (0.101.0): `.claude/skills/emos/SKILL.md`
   teaches a Claude session to operate EMOS as the coach's assistant, and
   `npm run emos -- <command>` (`scripts/emos-cli.ts`) is its hands —
-  `athletes`, `week`, `copy-week` and `scale-loads` (dry run unless
-  `--apply`; group plans refused). The verbs are pure modules that take the
+  `athletes`, `week`, `prs`, `copy-week`, `scale-loads` (dry run unless
+  `--apply`), and from 0.102.0 `new-week`, `add-exercise` and
+  `remove-exercise` (`src/lib/plannedRowService.ts`), so a lift can be
+  written from a named method and the athlete's PRs; group plans refused.
+  `day_index` is the planner's 1-based slot number. The verbs are pure modules that take the
   Supabase client: `src/lib/weekDraftService.ts` (copy a week, never
   overwrites) and `src/lib/loadScaleService.ts` (scale selected loads by a
   factor, selection by name / alias / code / ancestor / category), both
