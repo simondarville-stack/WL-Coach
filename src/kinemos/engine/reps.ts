@@ -319,10 +319,14 @@ export function splitReps(
     // still run.
     if (!fromFloor) {
       const nextFrom = r + 1 < rests.length ? rests[r + 1].from : n;
+      // The top: the highest the bar gets before it has come down a dip's
+      // worth from there. Judged against `minDipCm`, not a couple of
+      // centimetres, because a raw track jitters that much around a catch
+      // (2009 bench: 23 → 19 → 23 → 40 cm across three frames).
       let top = sitI;
       for (let i = sitI + 1; i < nextFrom; i++) {
         if (h[i] > h[top]) top = i;
-        else if (h[i] < h[top] - 2) break;
+        else if (h[top] - h[i] >= opt.minDipCm) break;
       }
       if (top > sitI) {
         let low = top;
