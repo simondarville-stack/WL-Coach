@@ -102,6 +102,13 @@ export interface PhaseThresholds {
   minProminenceMs: number;
   /** Velocity below which the bar counts as settled after the catch, m/s. */
   settleMs: number;
+  /**
+   * Downward velocity after the apex that counts as a drop under — Vmin
+   * believed, and the catch given a start. A snatch drops under at −0,5 m/s
+   * and more; a jerk's bar falls 2–6 cm into the fix and barely reaches
+   * −0,1, so the dip-and-drive models set this lower (P9, 2009 bench).
+   */
+  dropUnderMs: number;
   /** When velocity shows no dip, the transition is looked for in
    *  acceleration: the bar stops speeding up through the knee and speeds up
    *  again in the second pull. How deep that acceleration trough must be,
@@ -123,6 +130,7 @@ export const DEFAULT_PHASE_THRESHOLDS: PhaseThresholds = {
   liftoffHoldS: 0.05,
   minProminenceMs: 0.05,
   settleMs: 0.15,
+  dropUnderMs: 0.15,
   // 1 m/s² is about a tenth of gravity — a tenth of the load coming off the
   // bar through the knee. The first phone footage sat at 1,3–1,7.
   minUnweightingMs2: 1,
@@ -563,7 +571,7 @@ function findSettle(series: KinematicSeries, apexIndex: number, th: PhaseThresho
     }
   }
   // No descent at all: the clip ends at the apex, so there is nothing to find.
-  if (dropValue > -th.settleMs) return null;
+  if (dropValue > -th.dropUnderMs) return null;
 
   for (let i = dropIndex; i < series.vyMs.length; i++) {
     if (Math.abs(series.vyMs[i]) < th.settleMs) return series.t[i];
@@ -586,7 +594,7 @@ function velocityMinIndex(series: KinematicSeries, apexIndex: number, th: PhaseT
       best = i;
     }
   }
-  return best >= 0 && value <= -th.settleMs ? best : null;
+  return best >= 0 && value <= -th.dropUnderMs ? best : null;
 }
 
 /**

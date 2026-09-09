@@ -122,8 +122,8 @@ describe('autoAnalyse by lifts', () => {
     expect(trackSet).toHaveBeenCalledTimes(2);
     const firstCall = trackSet.mock.calls[0];
     expect(firstCall[1]).toEqual({ index: server.nearestIndex(0.9), x: 500, y: 1400 });
-    expect(firstCall[2].range).toEqual({ from: server.nearestIndex(0.7), to: server.nearestIndex(2.7) });
-    expect(trackSet.mock.calls[1][2].range).toEqual({ from: server.nearestIndex(6.4), to: server.nearestIndex(8.4) });
+    expect(firstCall[2].range).toEqual({ from: server.nearestIndex(0.7), to: server.nearestIndex(2.7 + 0.75) });
+    expect(trackSet.mock.calls[1][2].range).toEqual({ from: server.nearestIndex(6.4), to: server.nearestIndex(8.4 + 0.75) });
     expect(result.reps.map(r => r.rep)).toEqual([1, 2]);
     expect(persisted).toEqual([1, 2]);
     expect(result.windows).toHaveLength(2);

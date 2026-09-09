@@ -281,10 +281,33 @@ describe('windowRanges', () => {
     const [range] = windowRanges(
       [{ restT: 0.51, fromT: 0.5, liftT: 1.0, toT: 2.0, confidence: 0.8, evidence }],
       timestamps,
+      { tailS: 0 },
     );
     expect(range.from).toBe(15);
     expect(range.restIndex).toBe(15);
     expect(range.to).toBe(60);
+  });
+
+  it('runs on past the burst for a moment, so a bar fixed overhead still settles', () => {
+    // A jerk's burst ends at the apex (P9): 0,75 s of tail by default.
+    const [range] = windowRanges(
+      [{ restT: 0.51, fromT: 0.5, liftT: 1.0, toT: 2.0, confidence: 0.8, evidence }],
+      timestamps,
+    );
+    expect(range.to).toBeGreaterThan(60 + Math.floor(0.7 * FPS));
+    expect(range.to).toBeLessThanOrEqual(60 + Math.ceil(0.75 * FPS));
+  });
+
+  it('never runs into the next lift’s rest', () => {
+    const [first, second] = windowRanges(
+      [
+        { restT: 0.5, fromT: 0.5, liftT: 1.0, toT: 2.0, confidence: 0.8, evidence },
+        { restT: 2.2, fromT: 2.2, liftT: 2.5, toT: 3.0, confidence: 0.8, evidence },
+      ],
+      timestamps,
+    );
+    expect(first.to).toBeLessThan(second.restIndex);
+    expect(first.to).toBe(Math.round(2.2 * FPS) - 1);
   });
 
   it('clamps to the clip', () => {

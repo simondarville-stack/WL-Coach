@@ -101,6 +101,10 @@ const deadlift = (family: LiftFamily, id: string, label: string, shortLabel: str
 const dipDrive = (family: LiftFamily, id: string, label: string, shortLabel: string, note: string): LiftModel => ({
   id, family, label, shortLabel, shape: 'dip-drive',
   phaseSet: DIP_DRIVE_PHASES, phaseSetId: PHASE_SET_IDS.dipDrive, endRule: DEFAULT_PHASE_END_RULE, note,
+  // The bar falls 2–6 cm into the fix, not 20 into a squat: a drop under
+  // is believed from −0,05 m/s (2009 bench: −0,14 on the jerk from the
+  // side, rejected at the pull's −0,15).
+  thresholds: { dropUnderMs: 0.05 },
 });
 
 /**

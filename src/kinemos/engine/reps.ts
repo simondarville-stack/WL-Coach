@@ -38,7 +38,8 @@ export type RepKind = 'pull' | 'dip-drive';
 
 export interface RepSegment {
   /** Positions in the SORTED input of the rest sample the rep starts from
-   *  and the sample it ends at — the deepest point of the catch — inclusive. */
+   *  and the sample it ends at — the deepest point of the catch plus a short
+   *  tail (`tailS`) so the settle is in the rep — inclusive. */
   from: number;
   to: number;
   /** Lift-off: the last rest sample, s. For a dip-and-drive, where the dip
@@ -70,6 +71,11 @@ export interface SplitRepsOptions {
   /** A rep must rise at least this far above its rest, cm. Below it the bar
    *  was shifted, not lifted. COACH-CONFIG candidate. */
   minRiseCm?: number;
+  /** The same for a dip-and-drive, whose rest is already at the shoulders:
+   *  rack to overhead is 40–60 cm on a tall lifter and under 40 on a short
+   *  one (2009 bench: 39 cm on the jerk from the side). COACH-CONFIG
+   *  candidate. */
+  minRiseDipCm?: number;
   /** A dip-and-drive must descend at least this far below its rest before
    *  rising, cm — a jerk's Auftakt is 16–22 cm; a dynamic start in the
    *  snatch is a few. COACH-CONFIG candidate. */
@@ -96,6 +102,9 @@ export interface SplitRepsOptions {
   dropSpeedMs?: number;
   /** How far either side of a rest, s, the local floor is looked for. */
   localFloorS?: number;
+  /** How long past the sit a rep's samples run, s, so the settle is in the
+   *  rep. Cut short by a drop or the next rest. */
+  tailS?: number;
 }
 
 /**
@@ -109,6 +118,7 @@ export const DROP_SPEED_MS = 2;
 const DEFAULTS: Required<SplitRepsOptions> = {
   shape: 'pull-catch',
   minRiseCm: 40,
+  minRiseDipCm: 25,
   minDipCm: 8,
   restSpeedMs: 0.25,
   minRestS: 0.15,
@@ -116,6 +126,7 @@ const DEFAULTS: Required<SplitRepsOptions> = {
   maxSpeedMs: 6,
   dropSpeedMs: DROP_SPEED_MS,
   localFloorS: 5,
+  tailS: 0.5,
 };
 
 /**
@@ -182,7 +193,12 @@ export function splitReps(
   const reps: RepSegment[] = [];
   for (let r = 0; r < rests.length; r++) {
     const liftOff = rests[r].to;
-    let limit = r + 1 < rests.length ? rests[r + 1].from : n - 1;
+    // A rep may run to the END of the next rest, not its start: a jerk's bar
+    // is still the moment it is fixed overhead, and that stillness is both
+    // where this rep settles and where the next movement starts from. A rep
+    // that starts from that rest is judged on its own — a lowering to the
+    // rack is a descent with no rise, and is not one.
+    let limit = r + 1 < rests.length ? rests[r + 1].to : n - 1;
     // A step no barbell makes — faster than `maxSpeedMs` — is the tracker
     // losing the plate, usually on the drop. The rep ends there, whatever
     // the samples after it say.
@@ -207,7 +223,7 @@ export function splitReps(
       let lowI = liftOff;
       for (let i = liftOff + 1; i <= limit; i++) {
         if (h[i] < h[lowI]) lowI = i;
-        if (h[i] - base >= opt.minRiseCm) break;
+        if (h[i] - base >= opt.minRiseDipCm) break;
         // Turned upward after a real dip: the lowest point is the bottom.
         if (base - h[lowI] >= opt.minDipCm && h[i] > h[lowI] + 2) {
           kind = 'dip-drive';
@@ -218,10 +234,11 @@ export function splitReps(
       }
       if (opt.shape === 'dip-drive' && kind !== 'dip-drive') continue;
     }
+    const minRise = kind === 'dip-drive' ? opt.minRiseDipCm : opt.minRiseCm;
 
     // The lift is the FIRST rise from the rest (or the dip's bottom) that
     // gets high enough: the first sample at which the bar, at least
-    // `minRiseCm` above the REST, stops rising is its apex. Not the fastest
+    // `minRise` above the REST, stops rising is its apex. Not the fastest
     // rise between this rest and the next — a bar dropped from overhead
     // bounces off the platform faster than it was ever lifted, and a tracker
     // that follows the drop (found again by colour) would hand that bounce
@@ -229,7 +246,7 @@ export function splitReps(
     let apexI = -1;
     for (let i = riseFrom + 1; i <= limit; i++) {
       const stops = i === limit || h[i + 1] <= h[i];
-      if (stops && h[i] - base >= opt.minRiseCm) {
+      if (stops && h[i] - base >= minRise) {
         apexI = i;
         break;
       }
@@ -269,9 +286,21 @@ export function splitReps(
       if (speed[i] > opt.restSpeedMs) falling = true;
       else if (falling) break;
     }
+    // The rep carries on for a moment past the sit — the bar fixed overhead,
+    // or the start of the recovery — so the phase layer can see it settle
+    // (P9: a jerk cut at its sit had no fix and no settle to read). Never
+    // through a drop, a gap in the samples, or into the next rest.
+    let endI = sitI;
+    const tailUntil = sorted[sitI].t + opt.tailS;
+    for (let i = sitI + 1; i <= limit && sorted[i].t <= tailUntil; i++) {
+      if (sorted[i].t - sorted[i - 1].t > 3 * medianDt) break;
+      const vy = (h[i] - h[i - 1]) / 100 / Math.max(1e-6, sorted[i].t - sorted[i - 1].t);
+      if (vy < -opt.dropSpeedMs) break;
+      endI = i;
+    }
     reps.push({
       from: liftOff,
-      to: sitI,
+      to: endI,
       liftOffT: sorted[liftOff].t,
       apexT: sorted[apexI].t,
       catchT: sorted[sitI].t,
