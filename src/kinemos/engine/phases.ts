@@ -123,6 +123,9 @@ export interface PhaseThresholds {
    * first pull of no length at all.
    */
   minTransitionRiseCm: number;
+  /** A dip-and-drive's descent must be at least this deep, cm, for its top
+   *  to count as the dip's start when the bar was never still before it. */
+  minDipCm: number;
 }
 
 export const DEFAULT_PHASE_THRESHOLDS: PhaseThresholds = {
@@ -131,6 +134,7 @@ export const DEFAULT_PHASE_THRESHOLDS: PhaseThresholds = {
   minProminenceMs: 0.05,
   settleMs: 0.15,
   dropUnderMs: 0.15,
+  minDipCm: 8,
   // 1 m/s² is about a tenth of gravity — a tenth of the load coming off the
   // bar through the knee. The first phone footage sat at 1,3–1,7.
   minUnweightingMs2: 1,
@@ -653,7 +657,7 @@ function findDipStart(series: KinematicSeries, th: PhaseThresholds, bottomIdx: n
   // there; a series that begins mid-descent has no start to give.
   let top = 0;
   for (let i = 0; i <= bottomIdx; i++) if (series.yCm[i] > series.yCm[top]) top = i;
-  if (top < bottomIdx && series.yCm[top] - series.yCm[bottomIdx] > 0 && (top > 0 || series.vyMs[0] > -th.liftoffMs)) return top;
+  if (top < bottomIdx && series.yCm[top] - series.yCm[bottomIdx] >= th.minDipCm) return top;
   return null;
 }
 
