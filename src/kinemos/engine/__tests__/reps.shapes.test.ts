@@ -94,6 +94,20 @@ describe('splitReps — a clean & jerk', () => {
     expect(reps[1].riseCm).toBeCloseTo(60, 0);
   });
 
+  it('cuts the jerk even when the lifter never rests at the rack', () => {
+    // Competition style: out of the clean, straight into the dip. The
+    // stand-up tops out at 140 cm and the dip begins at once.
+    const noRest = (t: number): number => {
+      if (t < 2.5) return cleanAndJerkHeight(t);
+      return 140 + jerkHeight(t - 2.5 + 0.5);
+    };
+    const reps = splitReps(track(noRest, 5.5), cal, { shape: 'compound' });
+    expect(reps.map(r => r.kind)).toEqual(['pull', 'dip-drive']);
+    expect(reps[1].liftOffT).toBeCloseTo(2.5, 1);
+    expect(reps[1].dipCm).toBeCloseTo(20, 0);
+    expect(reps[1].riseCm).toBeCloseTo(60, 0);
+  });
+
   it('gives only the clean when read as a lift from the floor', () => {
     // The rest at the rack is 140 cm above the floor and is not a rest a
     // lift from the floor starts from.

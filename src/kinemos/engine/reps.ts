@@ -188,7 +188,7 @@ export function splitReps(
         const height = Math.min(...h.slice(run.from, run.to + 1));
         return height - local <= opt.restBandCm;
       })
-    : slowRuns;
+    : [...slowRuns];
 
   const reps: RepSegment[] = [];
   for (let r = 0; r < rests.length; r++) {
@@ -308,6 +308,44 @@ export function splitReps(
       kind,
       dipCm,
     });
+
+    // A dip-and-drive that starts with no rest: a competition clean & jerk
+    // where the lifter stands out of the clean and dips straight into the
+    // jerk, never still at the rack for the 0,15 s a rest needs (2009
+    // bench, the clean & jerk from the side). The top of the recovery —
+    // where the bar stops rising after this rep's sit — is where the jerk
+    // starts, and it serves as the next rep's rest when the bar goes down
+    // from it by `minDipCm` and up past it by `minRiseDipCm` before any
+    // still run.
+    if (!fromFloor) {
+      const nextFrom = r + 1 < rests.length ? rests[r + 1].from : n;
+      let top = sitI;
+      for (let i = sitI + 1; i < nextFrom; i++) {
+        if (h[i] > h[top]) top = i;
+        else if (h[i] < h[top] - 2) break;
+      }
+      if (top > sitI) {
+        let low = top;
+        let bottom = -1;
+        for (let i = top + 1; i < nextFrom; i++) {
+          if (h[i] < h[low]) low = i;
+          if (h[top] - h[low] >= opt.minDipCm && h[i] > h[low] + 2) {
+            bottom = low;
+            break;
+          }
+        }
+        let rises = false;
+        if (bottom >= 0) {
+          for (let i = bottom + 1; i < nextFrom; i++) {
+            if (h[i] - h[top] >= opt.minRiseDipCm) {
+              rises = true;
+              break;
+            }
+          }
+        }
+        if (rises) rests.splice(r + 1, 0, { from: top, to: top });
+      }
+    }
   }
   return reps;
 }
