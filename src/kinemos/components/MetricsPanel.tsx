@@ -14,8 +14,10 @@
  */
 import { memo, type CSSProperties } from 'react';
 import { Input } from '../../components/ui';
-import type { LiftModel } from '../engine/liftModels';
+import type { LiftFamily, LiftModel } from '../engine/liftModels';
 import type { ComputedLift } from '../engine/metricCatalogue';
+import { SEXES, WEIGHT_CLASSES, formatBand, referenceBand } from '../engine/referenceBands';
+import type { BandsPrefs } from '../lib/displayPrefs';
 import type { LiftMetrics } from '../engine/phases';
 import type { RepSummary } from '../engine/kinematics';
 import { catalogueDelta, describeDelta, velocityThreshold, type MetricDelta } from '../lib/metricDeltas';
@@ -41,6 +43,13 @@ interface MetricsPanelProps {
   /** The grade's error margin on velocity, m/s: a velocity difference
    *  inside it is "same" here as in the verdict. */
   marginMs?: number | null;
+  /**
+   * The BVDG orientation values beside each number (P9 plan §6), a toggle
+   * that is OFF by default: national-squad figures per weight class and
+   * sex, picked by the coach here until the athlete carries them. Absent:
+   * no toggle.
+   */
+  bands?: { prefs: BandsPrefs; onChange: (patch: Partial<BandsPrefs>) => void };
 }
 
 function MetricsPanelImpl({
@@ -54,7 +63,16 @@ function MetricsPanelImpl({
   knee = null,
   earlier = null,
   marginMs = null,
+  bands,
 }: MetricsPanelProps) {
+  // A band beside a value, as the material prints it, when the coach has
+  // switched them on and the tables cover this lift's family.
+  const family: LiftFamily = model?.family ?? 'snatch';
+  const bandFor = (metricId: string, decimals: number): string | null => {
+    if (!bands?.prefs.on) return null;
+    const band = referenceBand(metricId, family, bands.prefs.weightClass, bands.prefs.sex);
+    return band ? formatBand(band, decimals) : null;
+  };
   const firstPull = metrics?.phases.find(p => p.phaseId === 'first_pull') ?? null;
   const secondPull = metrics?.phases.find(p => p.phaseId === 'second_pull') ?? null;
   // What this lift can have at all. A row for a phase the model does not
@@ -86,11 +104,54 @@ function MetricsPanelImpl({
       <section style={section}>
         <header style={header}>
           <span style={label}>VELOCITY</span>
-          {deltaHeader && (
-            <span style={{ ...label, letterSpacing: 0 }} title="Against the lift the verdict uses · inside the threshold = same">
-              {deltaHeader}
-            </span>
-          )}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {bands && (
+              <>
+                {bands.prefs.on && (
+                  <>
+                    <select
+                      value={bands.prefs.weightClass}
+                      onChange={e => bands.onChange({ weightClass: e.target.value as BandsPrefs['weightClass'] })}
+                      aria-label="Weight class for the reference bands"
+                      style={miniSelect}
+                    >
+                      {WEIGHT_CLASSES.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={bands.prefs.sex}
+                      onChange={e => bands.onChange({ sex: e.target.value as BandsPrefs['sex'] })}
+                      aria-label="Sex for the reference bands"
+                      style={miniSelect}
+                    >
+                      {SEXES.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+                <button
+                  type="button"
+                  aria-pressed={bands.prefs.on}
+                  onClick={() => bands.onChange({ on: !bands.prefs.on })}
+                  title="The BVDG orientation values (Sandau, Jentsch & Lippmann) beside each number, per weight class and sex. National-squad figures: a reference, not a verdict."
+                  style={miniToggle(bands.prefs.on)}
+                >
+                  bands
+                </button>
+              </>
+            )}
+            {deltaHeader && (
+              <span style={{ ...label, letterSpacing: 0 }} title="Against the lift the verdict uses · inside the threshold = same">
+                {deltaHeader}
+              </span>
+            )}
+          </span>
         </header>
 
         {!metrics || !summary ? (
@@ -99,7 +160,7 @@ function MetricsPanelImpl({
           <dl style={list}>
             {has('first_pull') && (
               <Row
-                term="First pull"
+                term="First pull" band={bandFor('firstPull', 2)}
                 value={unit(firstPull?.peakVelocityMs, 'm/s')}
                 hint="Peak upward velocity through the first pull."
                 delta={d('firstPull', ['faster', 'slower'])}
@@ -117,14 +178,14 @@ function MetricsPanelImpl({
             )}
             {has('first_pull') && has('transition') && (
               <Row
-                term="Loss 1st → 2nd"
+                term="Loss 1st → 2nd" band={bandFor('transitionLoss', 2)}
                 value={transitionLoss(metrics.transitionVelocityLossMs)}
                 hint="The transition dip · a coaching signal, not an error"
                 delta={d('transitionLoss')}
                 withDelta={withDelta}
               />
             )}
-            <Row term="Peak" value={unit(metrics.peakVelocityMs, 'm/s')} strong delta={d('peakVelocity')} withDelta={withDelta} />
+            <Row term="Peak" band={bandFor('peakVelocity', 2)} value={unit(metrics.peakVelocityMs, 'm/s')} strong delta={d('peakVelocity')} withDelta={withDelta} />
             <Row
               term="Mean, rise"
               value={unit(summary.meanRiseVelocityMs, 'm/s')}
@@ -240,14 +301,14 @@ function MetricsPanelImpl({
             </span>
           </header>
           <dl style={list}>
-            <Row term="v_Auft · dip velocity" value={unit(jerk.vDipMs, 'm/s')} hint="Peak downward velocity in the dip · about −1,0 to −1,1 m/s in the tables" delta={d('vDip')} withDelta={withDelta} />
-            <Row term="δ_Auf · dip depth" value={cm(jerk.sDipCm)} hint="Start to the lower turning point · 16–22 cm by weight class" delta={d('sDip', ['deeper', 'shallower'])} withDelta={withDelta} />
+            <Row term="v_Auft · dip velocity" band={bandFor('vDip', 2)} value={unit(jerk.vDipMs, 'm/s')} hint="Peak downward velocity in the dip · about −1,0 to −1,1 m/s in the tables" delta={d('vDip')} withDelta={withDelta} />
+            <Row term="δ_Auf · dip depth" band={bandFor('sDip', 1)} value={cm(jerk.sDipCm)} hint="Start to the lower turning point · 16–22 cm by weight class" delta={d('sDip', ['deeper', 'shallower'])} withDelta={withDelta} />
             <Row term="δv_Auf · to fastest descent" value={cm(jerk.sToVDipCm)} hint="How far the bar had descended at v_Auft · about 10 cm" />
             <Row term="δ_Stoß · drive path" value={cm(jerk.sDriveCm)} hint="Lower turning point to the height at Vmax" delta={d('sDrive', ['longer', 'shorter'])} withDelta={withDelta} />
             <Row term="Drive − dip" value={cm(jerk.driveMinusDipCm)} strong hint="3–4 cm is the target: the drive goes on past where the dip began" delta={d('driveMinusDip')} withDelta={withDelta} />
-            <Row term="F_Auf · braking" value={pct(jerk.fDipPct)} hint="Peak vertical force while the dip is braked · about 180 %" delta={d('fDip')} withDelta={withDelta} />
+            <Row term="F_Auf · braking" band={bandFor('fDip', 0)} value={pct(jerk.fDipPct)} hint="Peak vertical force while the dip is braked · about 180 %" delta={d('fDip')} withDelta={withDelta} />
             <Row
-              term="F_Stoß · drive"
+              term="F_Stoß · drive" band={bandFor('fDrive', 0)}
               value={jerk.fDrivePct === null ? '—' : `${pct(jerk.fDrivePct)}${jerk.driveForcePeaks !== null ? ` · ${jerk.driveForcePeaks} ${jerk.driveForcePeaks === 1 ? 'peak' : 'peaks'}` : ''}`}
               hint="Peak vertical force in the drive · 180–190 % with two maxima, 220–230 % with one"
               delta={d('fDrive')}
@@ -272,7 +333,7 @@ function MetricsPanelImpl({
               <Row term="V1 · end of first pull" value={unit(metrics.analyzer.v1Ms, 'm/s')} hint="Peak vertical velocity at the end of the first pull." delta={dv(l => l.metrics.analyzer?.v1Ms ?? null, ['faster', 'slower'])} withDelta={withDelta} />
             )}
             {has('transition') && (
-              <Row term="V2 · knee passing" value={unit(metrics.analyzer.v2Ms, 'm/s')} hint="Minimum vertical velocity through the transition." delta={d('v2', ['faster', 'slower'])} withDelta={withDelta} />
+              <Row term="V2 · knee passing" band={bandFor('v2', 2)} value={unit(metrics.analyzer.v2Ms, 'm/s')} hint="Minimum vertical velocity through the transition." delta={d('v2', ['faster', 'slower'])} withDelta={withDelta} />
             )}
             {knee && (
               <Row
@@ -285,9 +346,9 @@ function MetricsPanelImpl({
                 }
               />
             )}
-            <Row term="Vmax" value={unit(metrics.analyzer.vmaxMs, 'm/s')} strong delta={dv(l => l.metrics.analyzer?.vmaxMs ?? null, undefined, 'higher')} withDelta={withDelta} />
-            <Row term="Vmin · drop under" value={unit(metrics.analyzer.vminMs, 'm/s')} hint="The lowest (negative) vertical velocity after Vmax." delta={d('vmin')} withDelta={withDelta} />
-            <Row term="t_turn · Vmax → Vmin" value={unit(metrics.analyzer.tTurnS, 's')} hint="Vmax → Vmin · the lifter under the bar" delta={d('tTurn')} withDelta={withDelta} />
+            <Row term="Vmax" band={bandFor('peakVelocity', 2)} value={unit(metrics.analyzer.vmaxMs, 'm/s')} strong delta={dv(l => l.metrics.analyzer?.vmaxMs ?? null, undefined, 'higher')} withDelta={withDelta} />
+            <Row term="Vmin · drop under" band={bandFor('vmin', 2)} value={unit(metrics.analyzer.vminMs, 'm/s')} hint="The lowest (negative) vertical velocity after Vmax." delta={d('vmin')} withDelta={withDelta} />
+            <Row term="t_turn · Vmax → Vmin" band={bandFor('tTurn', 3)} value={unit(metrics.analyzer.tTurnS, 's')} hint="Vmax → Vmin · the lifter under the bar" delta={d('tTurn')} withDelta={withDelta} />
             <Row term="S_vmax · height at Vmax" value={cm(metrics.analyzer.sVmaxCm)} delta={d('sVmax', ['later in the pull', 'earlier in the pull'])} withDelta={withDelta} />
             <Row
               term="S_max · top of flight"
@@ -302,24 +363,24 @@ function MetricsPanelImpl({
             />
             <Row term="S_fly · flight" value={cm(metrics.analyzer.sFlyCm)} hint="S_max − S_vmax: how far the bar rises after peak velocity." delta={d('sFly', ['longer', 'shorter'])} withDelta={withDelta} />
             <Row
-              term="S_remain · beyond ballistic"
+              term="S_remain · beyond ballistic" band={bandFor('sRemain', 0)}
               value={metrics.analyzer.sRemainPct === null ? '—' : `${num(metrics.analyzer.sRemainPct, 1)} % (${num(metrics.analyzer.sRemainCm ?? 0, 1)} cm)`}
               hint="Flight beyond Vmax²/2g · what the arms and pull-under added"
               delta={d('sRemain', ['more', 'less'])}
               withDelta={withDelta}
             />
             <Row term="S_sit · catch height" value={cm(metrics.analyzer.sSitCm)} hint="The bar at the deepest point of the catch, above the start." delta={d('sSit')} withDelta={withDelta} />
-            <Row term="S_fall · into the catch" value={cm(metrics.analyzer.sFallCm)} hint="S_max − S_sit." delta={d('sFall', ['further', 'less far'])} withDelta={withDelta} />
+            <Row term="S_fall · into the catch" band={bandFor('sFall', 1)} value={cm(metrics.analyzer.sFallCm)} hint="S_max − S_sit." delta={d('sFall', ['further', 'less far'])} withDelta={withDelta} />
             {has('first_pull') && (
-              <Row term="F1 · first pull" value={pct(metrics.analyzer.f1Pct)} hint="Peak vertical force, % of load · 100 % holds the bar still" delta={d('f1')} withDelta={withDelta} />
+              <Row term="F1 · first pull" band={bandFor('f1', 0)} value={pct(metrics.analyzer.f1Pct)} hint="Peak vertical force, % of load · 100 % holds the bar still" delta={d('f1')} withDelta={withDelta} />
             )}
             {has('transition') && (
-              <Row term="F2 · knee passing" value={pct(metrics.analyzer.f2Pct)} hint="Minimum vertical force through the transition." delta={d('f2')} withDelta={withDelta} />
+              <Row term="F2 · knee passing" band={bandFor('f2', 0)} value={pct(metrics.analyzer.f2Pct)} hint="Minimum vertical force through the transition." delta={d('f2')} withDelta={withDelta} />
             )}
             {has('second_pull') && (
-              <Row term="F3 · second pull" value={pct(metrics.analyzer.f3Pct)} hint="Peak vertical force in the second pull." delta={d('f3')} withDelta={withDelta} />
+              <Row term="F3 · second pull" band={bandFor('f3', 0)} value={pct(metrics.analyzer.f3Pct)} hint="Peak vertical force in the second pull." delta={d('f3')} withDelta={withDelta} />
             )}
-            <Row term="Fbr · catch" value={pct(metrics.analyzer.fbrPct)} hint="Peak vertical force braking the bar in the catch." delta={d('fbr')} withDelta={withDelta} />
+            <Row term="Fbr · catch" band={bandFor('fbr', 0)} value={pct(metrics.analyzer.fbrPct)} hint="Peak vertical force braking the bar in the catch." delta={d('fbr')} withDelta={withDelta} />
             <Row
               term="PSK · load × Vmax"
               value={metrics.analyzer.pskNs === null ? '—' : `${num(metrics.analyzer.pskNs, 0)} N·s`}
@@ -433,6 +494,7 @@ function Row({
   strong,
   delta = null,
   withDelta = false,
+  band = null,
 }: {
   term: string;
   value: string;
@@ -443,6 +505,8 @@ function Row({
   /** Whether the Δ column exists on this table at all — a row with nothing
    *  to say still keeps the column, so the values stay aligned. */
   withDelta?: boolean;
+  /** The reference band, printed, when the coach has them on. */
+  band?: string | null;
 }) {
   return (
     <div
@@ -450,6 +514,14 @@ function Row({
       style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}
     >
       <dt style={{ flexGrow: 1, minWidth: 0, fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>{term}</dt>
+      {band && (
+        <dd
+          style={{ margin: 0, fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}
+          title="BVDG orientation value"
+        >
+          {band}
+        </dd>
+      )}
       <dd
         style={{
           margin: 0,
@@ -522,5 +594,30 @@ const hint: CSSProperties = {
 };
 
 const list: CSSProperties = { margin: 0, display: 'grid', gap: 2 };
+
+const miniSelect: CSSProperties = {
+  padding: '0 4px',
+  height: 20,
+  borderRadius: 'var(--radius-sm)',
+  border: '0.5px solid var(--color-border-secondary)',
+  background: 'var(--color-bg-primary)',
+  color: 'var(--color-text-secondary)',
+  fontFamily: 'inherit',
+  fontSize: 'var(--text-caption)',
+};
+
+function miniToggle(on: boolean): CSSProperties {
+  return {
+    padding: '0 8px',
+    height: 20,
+    borderRadius: 'var(--radius-sm)',
+    border: on ? '0.5px solid var(--color-accent)' : '0.5px solid var(--color-border-secondary)',
+    background: on ? 'var(--color-accent)' : 'var(--color-bg-primary)',
+    color: on ? 'var(--color-text-on-accent)' : 'var(--color-text-tertiary)',
+    fontFamily: 'inherit',
+    fontSize: 'var(--text-caption)',
+    cursor: 'pointer',
+  };
+}
 
 export const MetricsPanel = memo(MetricsPanelImpl);

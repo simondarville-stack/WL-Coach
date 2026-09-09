@@ -75,12 +75,29 @@ export interface PlotPrefs {
   cursor: boolean;
 }
 
+// ── The reference bands ────────────────────────────────────────────────────
+
+/**
+ * The BVDG orientation values beside a metric (`engine/referenceBands.ts`),
+ * OFF by default — they are national-squad figures per weight class and
+ * sex, and a value shown against them reads as judged (decided 09/09/2026:
+ * a toggle, never on by itself). The class and sex are the coach's pick
+ * until the athlete carries them.
+ */
+export interface BandsPrefs {
+  on: boolean;
+  weightClass: 'lower' | 'middle' | 'upper';
+  sex: 'men' | 'women';
+}
+
 export interface DisplayPrefs {
   stage: StagePrefs;
   plot: PlotPrefs;
+  bands: BandsPrefs;
 }
 
 export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
+  bands: { on: false, weightClass: 'middle', sex: 'men' },
   stage: {
     path: 'line',
     lineWidthPx: 2,
@@ -140,7 +157,13 @@ export function parseDisplayPrefs(raw: unknown): DisplayPrefs {
   const s = obj.stage && typeof obj.stage === 'object' ? (obj.stage as Record<string, unknown>) : {};
   const p = obj.plot && typeof obj.plot === 'object' ? (obj.plot as Record<string, unknown>) : {};
   const l = p.labels && typeof p.labels === 'object' ? (p.labels as Record<string, unknown>) : {};
+  const b = obj.bands && typeof obj.bands === 'object' ? (obj.bands as Record<string, unknown>) : {};
   return {
+    bands: {
+      on: bool(b.on, d.bands.on),
+      weightClass: oneOf(b.weightClass, ['lower', 'middle', 'upper'] as const, d.bands.weightClass),
+      sex: oneOf(b.sex, ['men', 'women'] as const, d.bands.sex),
+    },
     stage: {
       path: oneOf(s.path, STAGE_PATHS, d.stage.path),
       lineWidthPx: numberIn(s.lineWidthPx, 0.5, 8, d.stage.lineWidthPx),

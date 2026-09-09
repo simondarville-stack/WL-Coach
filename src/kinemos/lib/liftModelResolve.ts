@@ -94,7 +94,7 @@ export function modelFromName(name: string): string | null {
   // makes either the muscle variant.
   if (phrase('power pull')) {
     const family = exact('stød') ? 'clean' : 'snatch';
-    return exact('strict') ? `muscle-${family}` : `power-${family}`;
+    return exact('strict') ? `muscle-${family}` : family;
   }
 
   const snatch = exact('snatch') || stem('reiß', 'reiss', 'træk', 'traek', 'råtræk') || words.some(w => w.endsWith('træk'));
@@ -102,7 +102,6 @@ export function modelFromName(name: string): string | null {
   const jerk = exact('jerk') || stem('ausstoß', 'ausstoss', 'opadstød', 'knickstød') || phrase('push press', 'push pres') || exact('pushpress', 'pushpres');
   const deadlift = exact('deadlift', 'dl') || stem('styrketræk', 'kreuzheb', 'dødløft', 'dodloft') || words.some(w => w.endsWith('dødløft'));
   const pull = exact('pull', 'zug') || words.some(w => w.endsWith('hiv'));
-  const power = exact('power', 'fri') || stem('frivend');
   const muscle = exact('muscle', 'strict', 'rå') || stem('råtræk');
   const balance = words.some(w => w.includes('balance'));
   const press = exact('press', 'pres', 'stem', 'drücken');
@@ -116,7 +115,6 @@ export function modelFromName(name: string): string | null {
 
   if (jerk) {
     if (phrase('push press', 'push pres') || exact('pushpress', 'pushpres')) return 'push-press';
-    if (power || phrase('push jerk') || stem('knickstød', 'knick')) return 'power-jerk';
     return 'jerk';
   }
 
@@ -129,7 +127,6 @@ export function modelFromName(name: string): string | null {
   const position = positionFromName(n);
   if (position) return `${family}-hang-${position}-knee`;
   if (muscle) return `muscle-${family}`;
-  if (power) return `power-${family}`;
   return family;
 }
 
@@ -158,7 +155,6 @@ function refineByName(parentModel: string, childName: string): string {
   if (/\b(pull|hiv|zug)\b/.test(n) && !/power pull/.test(n)) return `${family}-pull`;
   if (/\b(deadlift|styrketræk|kreuzheben)\b/.test(n)) return `${family}-deadlift`;
   if (/\b(muscle|strict|rå)\b/.test(n)) return `muscle-${family}`;
-  if (/\b(power|fri)\b/.test(n)) return `power-${family}`;
   return parentModel;
 }
 

@@ -62,3 +62,13 @@ describe('heatScaleMs', () => {
     expect(heatScaleMs([])).toBe(1);
   });
 });
+
+describe('the reference bands preference', () => {
+  it('is off by default and survives a stored value from before it existed', () => {
+    expect(DEFAULT_DISPLAY_PREFS.bands.on).toBe(false);
+    const parsed = parseDisplayPrefs({ stage: {}, plot: {} });
+    expect(parsed.bands).toEqual({ on: false, weightClass: 'middle', sex: 'men' });
+    expect(parseDisplayPrefs({ bands: { on: true, weightClass: 'upper', sex: 'women' } }).bands).toEqual({ on: true, weightClass: 'upper', sex: 'women' });
+    expect(parseDisplayPrefs({ bands: { on: 'yes', weightClass: 'heavy' } }).bands).toEqual({ on: false, weightClass: 'middle', sex: 'men' });
+  });
+});

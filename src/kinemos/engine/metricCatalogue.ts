@@ -538,7 +538,7 @@ export function fromStoredMetrics(raw: unknown): StoredMetrics | null {
           peakSpeedMs: numberOr(s.peakSpeedMs, 0),
           peakHeightCm: numberOr(s.peakHeightCm, 0),
           apexT: numberOr(s.apexT, 0),
-          loopWidthCm: numberOr(s.loopWidthCm, 0),
+          loopWidthCm: numberOrNull(s.loopWidthCm),
           peakPowerW: numberOrNull(s.peakPowerW),
           peakPowerT: numberOrNull(s.peakPowerT),
           meanPropulsivePowerW: numberOrNull(s.meanPropulsivePowerW),
@@ -547,7 +547,7 @@ export function fromStoredMetrics(raw: unknown): StoredMetrics | null {
           meanRiseVelocityMs: numberOrNull(s.meanRiseVelocityMs),
           timeToPeakVelocityS: numberOrNull(s.timeToPeakVelocityS),
           timeToPeakPowerS: numberOrNull(s.timeToPeakPowerS),
-          pathLengthCm: numberOr(s.pathLengthCm, 0),
+          pathLengthCm: numberOrNull(s.pathLengthCm),
         }
       : null;
 
