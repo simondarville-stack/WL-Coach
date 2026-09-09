@@ -145,3 +145,26 @@ describe('missingReason', () => {
     expect(missingReason('v1', detected)).toMatch(/nothing to read inside the first pull/);
   });
 });
+
+describe('BarPathPanel — a front view', () => {
+  it('offers no bar path and opens on the velocity plot', () => {
+    render(
+      <BarPathPanel
+        series={series}
+        spans={detected}
+        analyzer={analyzer}
+        summary={null}
+        currentT={null}
+        onSeekT={() => undefined}
+        emptyReason={null}
+        pathUsable={false}
+      />,
+    );
+    expect(screen.queryByRole('radio', { name: 'Bar path' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Combined' })).toBeNull();
+    expect(screen.getByRole('radio', { name: 'Velocity' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('front view · no bar path')).toBeTruthy();
+    expect(document.querySelector('[data-layer="path"]')).toBeNull();
+    expect(document.querySelector('[data-layer="velocity"]')).not.toBeNull();
+  });
+});
