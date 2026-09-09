@@ -138,7 +138,8 @@ export function formatBand(band: Band, decimals: number): string {
   const f = (v: number) => v.toFixed(decimals).replace('.', ',').replace('-', '−');
   switch (band.kind) {
     case 'range':
-      return `${f(band.lo)}–${f(band.hi)}`;
+      // A dash between two negative numbers reads as a sum; say "to".
+      return band.lo < 0 || band.hi < 0 ? `${f(band.lo)} to ${f(band.hi)}` : `${f(band.lo)}–${f(band.hi)}`;
     case 'mean':
       return `Ø ${f(band.lo)}`;
     case 'max':

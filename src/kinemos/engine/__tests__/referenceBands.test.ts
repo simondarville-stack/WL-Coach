@@ -37,5 +37,6 @@ describe('withinBand and formatBand', () => {
     expect(formatBand(referenceBand('f1', 'snatch', 'middle', 'men')!, 0)).toBe('Ø 137');
     expect(formatBand(referenceBand('fbr', 'snatch', 'middle', 'men')!, 0)).toBe('≤ 145');
     expect(formatBand(referenceBand('vmin', 'snatch', 'middle', 'men')!, 2)).toBe('≥ −0,85');
+    expect(formatBand(referenceBand('vDip', 'jerk', 'middle', 'men')!, 2)).toBe('−1,10 to −1,00');
   });
 });
