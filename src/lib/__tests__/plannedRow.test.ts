@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { resolveUnitAlias, chooseUnit, pickExercise, type PickableExercise } from '../plannedRowService';
+import {
+  resolveUnitAlias, chooseUnit, pickExercise, comboAutoNotation, checkComboPrescription,
+  type PickableExercise,
+} from '../plannedRowService';
+
+describe('comboAutoNotation', () => {
+  it('joins the member names with " + ", as the planner does', () => {
+    expect(comboAutoNotation(['Clean', 'Front Squat'])).toBe('Clean + Front Squat');
+  });
+});
+
+describe('checkComboPrescription', () => {
+  it('reads a combo tuple and reports how many lifts it names per set', () => {
+    expect(checkComboPrescription('80×1+2×3')).toEqual({ ok: true, arity: 2 });
+    expect(checkComboPrescription('Moderat×2(1+1+1)×3, Moderat×1(1+1+1)×4')).toEqual({ ok: true, arity: 3 });
+    expect(checkComboPrescription('–×2+2×6')).toEqual({ ok: true, arity: 2 });
+  });
+  it('refuses what the combo parser cannot read', () => {
+    expect(checkComboPrescription('Heavy').ok).toBe(false);
+    expect(checkComboPrescription('×2+2×6').ok).toBe(false);
+  });
+});
 
 describe('resolveUnitAlias', () => {
   it('maps the coach shorthand to stored units', () => {

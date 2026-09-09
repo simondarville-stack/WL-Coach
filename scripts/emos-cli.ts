@@ -11,6 +11,9 @@
 //   npm run emos -- add-exercise --athlete <name|id> [--week next] --day <n> --exercise <name|id>
 //                               [--prescription "87.5×5, 100×5, 115×5-10"] [--unit kg|%|rpe|free|free-reps]
 //                               [--note "..."] [--display-name "..."] [--position <n>]
+//   npm run emos -- add-combo   --athlete <name|id> [--week next] --day <n> --exercise <name|id> --exercise <name|id>…
+//                               [--prescription "80×1+2×3"] [--unit kg|%|rpe|free|free-reps] [--name "Clean + Front Squat"]
+//                               [--color "#3B82F6"] [--note "..."] [--position <n>]
 //   npm run emos -- remove-exercise --id <planned_exercise_id>
 //   npm run emos -- prs         --athlete <name|id> [--exercise <name>]
 //   global: [--env .env] [--json]
@@ -43,10 +46,12 @@ import type { EmosClient } from '../src/lib/prescriptionWriteService';
 import {
   ensureIndividualWeek,
   addPlannedExercise,
+  addPlannedCombo,
   removePlannedExercise,
   pickExercise,
   resolveUnitAlias,
   chooseUnit,
+  checkComboPrescription,
   type PickableExercise,
 } from '../src/lib/plannedRowService';
 
@@ -366,6 +371,49 @@ async function cmdAddExercise(ctx: Ctx, v: Args): Promise<void> {
   console.log(`planned_exercises.id ${r.plannedExerciseId}`);
 }
 
+async function cmdAddCombo(ctx: Ctx, v: Args): Promise<void> {
+  const athlete = await resolveAthlete(ctx.client, v.athlete);
+  const weekStart = resolveWeek(v.week, 'next');
+  const dayArg = v.day?.[0];
+  const dayNo = Number(dayArg);
+  if (!dayArg || !Number.isInteger(dayNo) || dayNo < 1) throw new UsageError("--day <n> is required (the planner's slot number: D1 = 1)");
+  const terms = v.exercise ?? [];
+  if (terms.length < 2) throw new UsageError('a combo needs --exercise <name|id> at least twice, in lifting order (e.g. --exercise Clean --exercise "Front Squat")');
+  const members: CatalogueRow[] = [];
+  for (const term of terms) members.push(await resolveExercise(ctx.client, term, athlete.owner_id));
+  const explicitUnit = v.unit ? resolveUnitAlias(v.unit) : null;
+  if (v.unit && !explicitUnit) throw new UsageError(`unknown --unit "${v.unit}" — use kg | % | rpe | free | free-reps | other`);
+  const prescription = v.prescription?.trim() || null;
+  if (prescription) {
+    const check = checkComboPrescription(prescription);
+    if (!check.ok) throw new UsageError(check.reason);
+    if (check.arity !== members.length) {
+      log(`note: the reps tuple names ${check.arity} lift${check.arity === 1 ? '' : 's'} per set but the combo has ${members.length} members — the planner allows it; check it is what you meant.`);
+    }
+  }
+  const unit = chooseUnit(explicitUnit, prescription, members[0].default_unit as import('../src/lib/database.types').DefaultUnit);
+  const position = v.position != null ? Number(v.position) : null;
+  if (position != null && (!Number.isInteger(position) || position < 1)) throw new UsageError('--position must be a positive integer');
+  if (v.color && !/^#[0-9a-f]{6}$/i.test(v.color)) throw new UsageError(`--color must be a hex colour like #3B82F6 (got "${v.color}")`);
+
+  const plan = await findIndividualPlan(ctx.client, athlete.id, weekStart);
+  if (!plan) throw new UsageError(`${athlete.name} has no individual plan in the week of ${ddmm(weekStart)} — run new-week or copy-week first`);
+
+  const r = await addPlannedCombo(ctx.client, {
+    weekPlanId: plan.id, dayIndex: dayNo,
+    members: members.map(m => ({ exerciseId: m.id, name: m.name })),
+    unit, prescription, notation: v.name ?? null, color: v.color ?? null, notes: v.note ?? null, position,
+  });
+  if (ctx.json) {
+    console.log(JSON.stringify({ athlete, weekStart, weekPlanId: plan.id, members: members.map(m => ({ id: m.id, name: m.name })), unit, prescription, ...r }, null, 2));
+    return;
+  }
+  console.log(`added ${athlete.name} ${ddmm(weekStart)} ${dayName(plan, dayNo)} #${r.position}: ${r.notation} [combo]  [${unit}]  ${prescription ?? '(empty)'}${v.note ? `  — ${v.note}` : ''}`);
+  console.log(`members: ${members.map((m, i) => `${i + 1}. ${m.name}`).join('  ')}`);
+  if (r.dayActivated) console.log(`note: ${dayName(plan, dayNo)} was not an active slot on this week — switched it on.`);
+  console.log(`planned_exercises.id ${r.plannedExerciseId}`);
+}
+
 async function cmdRemoveExercise(ctx: Ctx, v: Args): Promise<void> {
   const id = v.id?.[0];
   if (!id || !UUID_RE.test(id)) throw new UsageError('--id <planned_exercise_id> is required (from week --json or add-exercise)');
@@ -422,6 +470,7 @@ type Args = {
   factor?: string; by?: string; exercise?: string[]; category?: string[]; id?: string[]; day?: string[];
   'include-combos'?: boolean; 'round-kg'?: string; 'round-pct'?: string; apply?: boolean;
   like?: string; unit?: string; prescription?: string; note?: string; 'display-name'?: string; position?: string;
+  name?: string; color?: string;
   all?: boolean; json?: boolean; env?: string; help?: boolean;
 };
 
@@ -437,6 +486,9 @@ const USAGE = `usage:
   npm run emos -- add-exercise --athlete <name|id> [--week next] --day <n> --exercise <name|id>
                               [--prescription "87.5×5, 100×5, 115×5-10"] [--unit kg|%|rpe|free|free-reps]
                               [--note "..."] [--display-name "..."] [--position <n>]
+  npm run emos -- add-combo   --athlete <name|id> [--week next] --day <n> --exercise <name|id> --exercise <name|id>...
+                              [--prescription "80×1+2×3"] [--unit kg|%|rpe|free|free-reps] [--name "Clean + Front Squat"]
+                              [--color "#3B82F6"] [--note "..."] [--position <n>]
   npm run emos -- remove-exercise --id <planned_exercise_id>
   npm run emos -- prs         --athlete <name|id> [--exercise <name>]
   global: [--env .env] [--json]`;
@@ -454,6 +506,7 @@ async function main(): Promise<void> {
       apply: { type: 'boolean' }, all: { type: 'boolean' }, json: { type: 'boolean' },
       like: { type: 'string' }, unit: { type: 'string' }, prescription: { type: 'string' }, note: { type: 'string' },
       'display-name': { type: 'string' }, position: { type: 'string' },
+      name: { type: 'string' }, color: { type: 'string' },
       env: { type: 'string' }, help: { type: 'boolean' },
     },
   });
@@ -473,6 +526,7 @@ async function main(): Promise<void> {
     case 'scale-loads': return cmdScaleLoads(ctx, v);
     case 'new-week': return cmdNewWeek(ctx, v);
     case 'add-exercise': return cmdAddExercise(ctx, v);
+    case 'add-combo': return cmdAddCombo(ctx, v);
     case 'remove-exercise': return cmdRemoveExercise(ctx, v);
     case 'prs': return cmdPrs(ctx, v);
     default: throw new UsageError(`unknown command "${command}"\n${USAGE}`);

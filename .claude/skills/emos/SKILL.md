@@ -30,6 +30,9 @@ npm run emos -- new-week    --athlete "<name|id>" [--week next] [--like this|YYY
 npm run emos -- add-exercise --athlete "<name|id>" [--week next] --day <slot> --exercise "<name|id>"
                             [--prescription "87.5×5, 100×5, 115×5-10"] [--unit kg|%|rpe|free|free-reps]
                             [--note "..."] [--display-name "..."] [--position <n>]
+npm run emos -- add-combo   --athlete "<name|id>" [--week next] --day <slot> --exercise "<name|id>" --exercise "<name|id>"...
+                            [--prescription "80×1+2×3"] [--unit kg|%|rpe|free|free-reps] [--name "Clean + Front Squat"]
+                            [--color "#3B82F6"] [--note "..."] [--position <n>]
 npm run emos -- remove-exercise --id <planned_exercise_id>
 npm run emos -- prs         --athlete "<name|id>" [--exercise "<name>"]
 # global: --json (machine output on stdout), --env .env (which Supabase project)
@@ -57,6 +60,18 @@ npm run emos -- prs         --athlete "<name|id>" [--exercise "<name>"]
   problem worth mentioning to the coach once.
 - `--unit` is optional: a `%` in the prescription means percentage, letters
   mean free text, otherwise the exercise's default unit applies.
+- **A complex is `add-combo`**, never two `add-exercise` rows: "goodmorning
+  + push press 2+2×6", "clean + front squat 80×1+2×3". Give `--exercise`
+  once per member **in lifting order**; the first member is the row's
+  exercise and its default unit applies unless the text says otherwise. The
+  prescription must be combo grammar — reps as a `+`-tuple, rounds as
+  `2(1+1)` — and the verb refuses anything `parseComboPrescription` cannot
+  read. A tuple with a different arity than the member count is allowed
+  (the planner allows it) but printed as a note; read it back to the coach.
+  A load the coach did not give is written as a dash (`–×2+2×6`), the
+  planner's free-text form for "not specified". `--name` sets the combo's
+  label (default: member names joined with ` + `), `--color` the chip's
+  hex colour (default the planner's first swatch).
 
 **Reads** may use the CLI (`week --json` is the reliable picture of a plan)
 or the Supabase MCP `execute_sql` — **SELECT only**. Useful reads: an
@@ -67,9 +82,9 @@ athlete's PRs (`athlete_prs`, `athlete_pr_history`), the exercise catalogue
 Source of the verbs, if the coach asks for a change to the tool:
 `scripts/emos-cli.ts` → `src/lib/weekDraftService.ts` (copy),
 `src/lib/loadScaleService.ts` (scale + selection),
-`src/lib/plannedRowService.ts` (new week, add / remove a row, exercise
-picking), `src/lib/prescriptionWriteService.ts` (the one prescription
-write). Tests in `src/lib/__tests__/loadScale.test.ts` and
+`src/lib/plannedRowService.ts` (new week, add / remove a row, add a combo,
+exercise picking), `src/lib/prescriptionWriteService.ts` (the one
+prescription write). Tests in `src/lib/__tests__/loadScale.test.ts` and
 `plannedRow.test.ts`.
 
 ## The standard job: "next week like this week, but X"

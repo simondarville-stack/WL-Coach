@@ -291,6 +291,10 @@ All modules are **active** — nothing is currently disabled or hidden:
   `--apply`), and from 0.102.0 `new-week`, `add-exercise` and
   `remove-exercise` (`src/lib/plannedRowService.ts`), so a lift can be
   written from a named method and the athlete's PRs; group plans refused.
+  From 0.106.0 `add-combo` writes a complex (Clean + Front Squat,
+  `80×1+2×3`) the way the planner's combo creator does — one row, its
+  members in `planned_exercise_combo_members`, the set-line cache carrying
+  the reps tuple.
   `day_index` is the planner's 1-based slot number. The verbs are pure modules that take the
   Supabase client: `src/lib/weekDraftService.ts` (copy a week, never
   overwrites) and `src/lib/loadScaleService.ts` (scale selected loads by a

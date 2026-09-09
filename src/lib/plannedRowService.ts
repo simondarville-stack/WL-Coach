@@ -1,17 +1,20 @@
 // Create a week and add / remove single planned rows — the verbs behind
-// "start on Asger's next week" and "back squat: 87.5×5, 100×5, 115×5-10".
+// "start on Asger's next week", "back squat: 87.5×5, 100×5, 115×5-10" and
+// "goodmorning + push press, 2+2 × 6".
 //
 // Mirrors the planner's own paths: `ensureIndividualWeek` is
 // `fetchOrCreateWeekPlan` + `fetchPreviousWeekRhythm` (a new week inherits
 // the day structure of the athlete's most recent week), `addPlannedExercise`
-// is `addExerciseToDay` + the shared prescription write, so summary and
-// set-line caches are built exactly as a planner edit would build them.
+// is `addExerciseToDay` + the shared prescription write, and
+// `addPlannedCombo` is `createComboExercise` + the same write with
+// `isCombo`, so summary and set-line caches are built exactly as a planner
+// edit would build them.
 //
 // Takes the Supabase client as an argument; no React, no stores. Used by
 // scripts/emos-cli.ts.
 
 import type { DefaultUnit, WeekPlan } from './database.types';
-import { detectIntendedUnit } from './prescriptionParser';
+import { detectIntendedUnit, parseComboPrescription } from './prescriptionParser';
 import { writePrescriptionRecord, type EmosClient } from './prescriptionWriteService';
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
@@ -47,6 +50,35 @@ export function chooseUnit(
   if (detected === 'percentage') return 'percentage';
   if (detected === 'free_text_reps' && exerciseDefault !== 'free_text' && exerciseDefault !== 'other') return 'free_text_reps';
   return exerciseDefault;
+}
+
+/** The planner's default combo colour (ComboCreatorModal's first swatch). */
+export const DEFAULT_COMBO_COLOR = '#3B82F6';
+
+/** The label a combo gets when the coach names none: member names joined with ' + ', as the planner does. */
+export function comboAutoNotation(memberNames: string[]): string {
+  return memberNames.join(' + ');
+}
+
+export type ComboPrescriptionCheck =
+  | { ok: true; /** Members per set in the first segment's reps tuple (`1+2` → 2). */ arity: number }
+  | { ok: false; reason: string };
+
+/**
+ * Pure: whether a raw string reads as a combo prescription, and how many
+ * members its reps tuple names. A combo row's cache is built by
+ * `parseComboPrescription`, so a string it cannot read would store a row
+ * with no set lines; a tuple whose arity differs from the member count is
+ * legal (the planner allows it) but almost always a typo, so the caller can
+ * warn on it.
+ */
+export function checkComboPrescription(raw: string): ComboPrescriptionCheck {
+  const lines = parseComboPrescription(raw);
+  if (lines.length === 0) {
+    return { ok: false, reason: `"${raw}" is not a combo prescription — write load×reps-tuple×sets, e.g. 80×1+2×3 or Moderat×2+2×6` };
+  }
+  const arity = lines[0].repsText.split('+').length;
+  return { ok: true, arity };
 }
 
 export interface PickableExercise {
@@ -225,32 +257,58 @@ export interface AddRowResult {
   dayActivated: boolean;
 }
 
-export async function addPlannedExercise(client: EmosClient, p: AddRowParams): Promise<AddRowResult> {
+type PlanForWrite = Pick<WeekPlan, 'id' | 'active_days' | 'is_group_plan' | 'group_id'>;
+
+/** The week a row is written to — refused when it is a group plan or the slot is not a number. */
+async function loadPlanForWrite(client: EmosClient, weekPlanId: string, dayIndex: number): Promise<PlanForWrite> {
   const { data: planRaw, error: planErr } = await client
     .from('week_plans')
     .select('id, active_days, is_group_plan, group_id')
-    .eq('id', p.weekPlanId)
+    .eq('id', weekPlanId)
     .single();
   if (planErr) throw planErr;
-  const plan = planRaw as unknown as Pick<WeekPlan, 'id' | 'active_days' | 'is_group_plan' | 'group_id'>;
+  const plan = planRaw as unknown as PlanForWrite;
   if (plan.is_group_plan || plan.group_id) {
     throw new Error('this is a GROUP plan — add the row in the planner and sync, so the athletes receive it');
   }
-  if (!Number.isInteger(p.dayIndex) || p.dayIndex < 1) {
-    throw new Error(`day slot must be a positive integer (D1 = 1), got ${p.dayIndex}`);
+  if (!Number.isInteger(dayIndex) || dayIndex < 1) {
+    throw new Error(`day slot must be a positive integer (D1 = 1), got ${dayIndex}`);
   }
+  return plan;
+}
 
-  let position = p.position ?? null;
-  if (position == null) {
-    const { data } = await client
-      .from('planned_exercises')
-      .select('position')
-      .eq('weekplan_id', p.weekPlanId)
-      .eq('day_index', p.dayIndex)
-      .order('position', { ascending: false })
-      .limit(1);
-    position = (((data as { position: number }[] | null)?.[0]?.position) ?? 0) + 1;
-  }
+/** The explicit position, else one past the day's last row. */
+async function resolvePosition(client: EmosClient, weekPlanId: string, dayIndex: number, explicit: number | null | undefined): Promise<number> {
+  if (explicit != null) return explicit;
+  const { data } = await client
+    .from('planned_exercises')
+    .select('position')
+    .eq('weekplan_id', weekPlanId)
+    .eq('day_index', dayIndex)
+    .order('position', { ascending: false })
+    .limit(1);
+  return (((data as { position: number }[] | null)?.[0]?.position) ?? 0) + 1;
+}
+
+/**
+ * A row on an inactive slot would be an orphan the grid never shows. Called
+ * after the insert so a refused row leaves the week untouched. Returns true
+ * when the slot was switched on.
+ */
+async function activateDay(client: EmosClient, plan: PlanForWrite, dayIndex: number): Promise<boolean> {
+  const active = plan.active_days ?? [];
+  if (active.includes(dayIndex)) return false;
+  const { error } = await client
+    .from('week_plans')
+    .update({ active_days: [...active, dayIndex].sort((a, b) => a - b) })
+    .eq('id', plan.id);
+  if (error) throw error;
+  return true;
+}
+
+export async function addPlannedExercise(client: EmosClient, p: AddRowParams): Promise<AddRowResult> {
+  const plan = await loadPlanForWrite(client, p.weekPlanId, p.dayIndex);
+  const position = await resolvePosition(client, p.weekPlanId, p.dayIndex, p.position);
 
   const { data: inserted, error: insErr } = await client
     .from('planned_exercises')
@@ -279,19 +337,93 @@ export async function addPlannedExercise(client: EmosClient, p: AddRowParams): P
     await writePrescriptionRecord(client, id, { prescription: p.prescription.trim(), unit: p.unit });
   }
 
-  // A row on an inactive slot would be an orphan the grid never shows. Done
-  // after the insert so a refused row leaves the week untouched.
-  let dayActivated = false;
-  const active = plan.active_days ?? [];
-  if (!active.includes(p.dayIndex)) {
-    const { error } = await client
-      .from('week_plans')
-      .update({ active_days: [...active, p.dayIndex].sort((a, b) => a - b) })
-      .eq('id', plan.id);
-    if (error) throw error;
-    dayActivated = true;
-  }
+  const dayActivated = await activateDay(client, plan, p.dayIndex);
   return { plannedExerciseId: id, position, dayActivated };
+}
+
+export interface ComboMember {
+  exerciseId: string;
+  /** Used for the automatic notation only; never stored. */
+  name: string;
+}
+
+export interface AddComboParams {
+  weekPlanId: string;
+  /** Slot number, 1-based and unbounded (DISPLAY_CONVENTIONS §4): D1 = 1. */
+  dayIndex: number;
+  /** In lifting order; at least two. The first is the row's `exercise_id`, as the planner stores it. */
+  members: ComboMember[];
+  unit: DefaultUnit;
+  /** Raw combo prescription (`80×1+2×3`); null leaves the row empty. */
+  prescription: string | null;
+  /** The combo's label (`combo_notation`); default = member names joined with ' + '. */
+  notation?: string | null;
+  /** Hex colour for the combo chip; default the planner's first swatch. */
+  color?: string | null;
+  notes?: string | null;
+  /** Explicit position; default appends after the day's last row. */
+  position?: number | null;
+}
+
+export interface AddComboResult extends AddRowResult {
+  notation: string;
+  color: string;
+}
+
+/**
+ * Add a combo row — one `planned_exercises` line whose members live in
+ * `planned_exercise_combo_members` — the way the planner's combo creator
+ * does: the first member is the row's exercise, the notation and colour sit
+ * on the row, and the prescription goes through the shared write with
+ * `isCombo` so the set-line cache carries the reps tuple.
+ */
+export async function addPlannedCombo(client: EmosClient, p: AddComboParams): Promise<AddComboResult> {
+  if (p.members.length < 2) throw new Error('a combo needs at least two member exercises');
+  const prescription = p.prescription?.trim() || null;
+  if (prescription) {
+    const check = checkComboPrescription(prescription);
+    if (!check.ok) throw new Error(check.reason);
+  }
+  const plan = await loadPlanForWrite(client, p.weekPlanId, p.dayIndex);
+  const position = await resolvePosition(client, p.weekPlanId, p.dayIndex, p.position);
+  const notation = p.notation?.trim() || comboAutoNotation(p.members.map(m => m.name));
+  const color = p.color?.trim() || DEFAULT_COMBO_COLOR;
+
+  const { data: inserted, error: insErr } = await client
+    .from('planned_exercises')
+    .insert([{
+      weekplan_id: p.weekPlanId,
+      day_index: p.dayIndex,
+      exercise_id: p.members[0].exerciseId,
+      position,
+      unit: p.unit,
+      prescription_raw: null,
+      summary_total_sets: 0,
+      summary_total_reps: 0,
+      summary_highest_load: null,
+      summary_avg_load: null,
+      notes: p.notes ?? null,
+      is_combo: true,
+      combo_notation: notation,
+      combo_color: color,
+      source: 'individual' as const,
+    }])
+    .select('id')
+    .single();
+  if (insErr) throw insErr;
+  const id = (inserted as { id: string }).id;
+
+  const { error: membersErr } = await client
+    .from('planned_exercise_combo_members')
+    .insert(p.members.map((m, i) => ({ planned_exercise_id: id, exercise_id: m.exerciseId, position: i + 1 })));
+  if (membersErr) throw membersErr;
+
+  if (prescription) {
+    await writePrescriptionRecord(client, id, { prescription, unit: p.unit, isCombo: true });
+  }
+
+  const dayActivated = await activateDay(client, plan, p.dayIndex);
+  return { plannedExerciseId: id, position, dayActivated, notation, color };
 }
 
 /** Delete one planned row with its set lines and combo members. Returns what it removed. */

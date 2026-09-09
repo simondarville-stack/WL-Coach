@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { X, Plus, ArrowUp, ArrowDown, Trash2, GripVertical } from 'lucide-react';
 import type { Exercise, DefaultUnit } from '../../lib/database.types';
 import { rankExercises } from '../../lib/exerciseRanker';
+import { DEFAULT_COMBO_COLOR } from '../../lib/plannedRowService';
 
 interface ComboCreatorModalProps {
   allExercises: Exercise[];
@@ -22,7 +23,7 @@ interface ComboCreatorModalProps {
 }
 
 const PRESET_COLORS = [
-  '#3B82F6', '#10B981', '#F59E0B', '#EF4444',
+  DEFAULT_COMBO_COLOR, '#10B981', '#F59E0B', '#EF4444',
   '#8B5CF6', '#EC4899', '#06B6D4', '#6366F1',
 ];
 
@@ -40,7 +41,7 @@ export function ComboCreatorModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [unit, setUnit] = useState<DefaultUnit>(initialUnit ?? 'absolute_kg');
   const [comboName, setComboName] = useState(initialComboName ?? '');
-  const [color, setColor] = useState(initialColor ?? '#3B82F6');
+  const [color, setColor] = useState(initialColor ?? DEFAULT_COMBO_COLOR);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
