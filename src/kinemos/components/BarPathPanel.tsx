@@ -55,7 +55,10 @@ import {
 } from '../lib/displayPrefs';
 import { DisplayOptions, type OptionRow } from './DisplayOptions';
 
-export type PathMode = 'path' | 'velocity' | 'both';
+/** `force` and `power` are the Analyzer's third and fourth curves against
+ *  height (P9 plan §5.6): vertical force as a share of the load, and
+ *  barbell power. */
+export type PathMode = 'path' | 'velocity' | 'both' | 'force' | 'power';
 
 interface BarPathPanelProps {
   series: KinematicSeries | null;
@@ -80,6 +83,8 @@ interface BarPathPanelProps {
 // ── Series colours — DATA, not chrome ──────────────────────────────────────
 const BAR_PATH_COLOR = '#185FA5';
 const VELOCITY_COLOR = '#5B51C9';
+const FORCE_COLOR = '#B5432F';
+const POWER_COLOR = '#1D9E75';
 const EVENT_COLORS = {
   v1: '#1D9E75',
   v2: '#EF9F27',
@@ -89,8 +94,10 @@ const EVENT_COLORS = {
 
 const MODES: Array<{ id: PathMode; label: string; title: string }> = [
   { id: 'path', label: 'Bar path', title: 'x vs height' },
-  { id: 'velocity', label: 'Velocity path', title: 'v vs height' },
-  { id: 'both', label: 'Combined', title: 'Both on one height axis' },
+  { id: 'velocity', label: 'Velocity', title: 'v vs height' },
+  { id: 'both', label: 'Combined', title: 'Path and velocity on one height axis' },
+  { id: 'force', label: 'Force', title: 'Vertical force on the bar, % of load, vs height · 100 % holds the bar still' },
+  { id: 'power', label: 'Power', title: 'Barbell power, W, vs height · needs a mass' },
 ];
 
 function BarPathPanelImpl({
@@ -111,11 +118,15 @@ function BarPathPanelImpl({
   const [mode, setMode] = useState<PathMode>('path');
   const [exaggeration, setExaggeration] = useState<Exaggeration>(1);
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const showPath = mode !== 'velocity';
-  const showVelocity = mode !== 'path';
+  const showPath = mode === 'path' || mode === 'both';
+  const showVelocity = mode === 'velocity' || mode === 'both';
+  const showForce = mode === 'force';
+  const showPower = mode === 'power';
   const labels = display.labels;
 
   const geometry = useMemo(() => (series ? barPathGeometry(series, exaggeration) : null), [series, exaggeration]);
+  /** Force as a share of the load, sample by sample: F/(m·g) = 1 + a/g. */
+  const forcePct = useMemo(() => (series ? series.ayMs2.map(a => (1 + a / 9.80665) * 100) : null), [series]);
   const events = useMemo(() => (series ? locateAnalyzerEvents(series, spans) : null), [series, spans]);
   /** Red on the heat line is this lift's own Vmax. */
   const heat = useMemo(() => (series && display.line === 'heatmap' ? heatScaleMs(series.vyMs) : null), [series, display.line]);
@@ -197,10 +208,28 @@ function BarPathPanelImpl({
             best = i;
           }
         }
+        if (showForce && forcePct) {
+          const dx = point.x - geometry.xOfForce(forcePct[i]);
+          const dy = point.y - y;
+          const d = dx * dx + dy * dy;
+          if (d < bestD) {
+            bestD = d;
+            best = i;
+          }
+        }
+        if (showPower && series.powerW && geometry.xOfPower) {
+          const dx = point.x - geometry.xOfPower(series.powerW[i]);
+          const dy = point.y - y;
+          const d = dx * dx + dy * dy;
+          if (d < bestD) {
+            bestD = d;
+            best = i;
+          }
+        }
       }
       if (best >= 0) onSeekT(series.t[best]);
     },
-    [series, geometry, showPath, showVelocity, onSeekT],
+    [series, geometry, showPath, showVelocity, showForce, showPower, forcePct, onSeekT],
   );
 
   return (
@@ -233,8 +262,8 @@ function BarPathPanelImpl({
               aria-checked={mode === option.id}
               title={option.title}
               onClick={() => setMode(option.id)}
-              disabled={!series}
-              style={pill(mode === option.id, !series)}
+              disabled={!series || (option.id === 'power' && !series.powerW)}
+              style={pill(mode === option.id, !series || (option.id === 'power' && !series.powerW))}
             >
               {option.label}
             </button>
@@ -304,6 +333,44 @@ function BarPathPanelImpl({
                 heat={heat}
               />
             )}
+            {showForce && forcePct && (
+              <ScalarLayer
+                series={series}
+                geometry={geometry}
+                values={forcePct}
+                xOf={geometry.xOfForce}
+                ticks={geometry.forceTicks}
+                referenceX={geometry.forceUnitX}
+                referenceLabel="100 %"
+                unit="%"
+                decimals={0}
+                color={FORCE_COLOR}
+                events={events}
+                here={display.cursor ? here : null}
+                display={display}
+                heat={heat}
+                tickRow={TICK_ROW_1}
+              />
+            )}
+            {showPower && series.powerW && geometry.xOfPower && (
+              <ScalarLayer
+                series={series}
+                geometry={geometry}
+                values={series.powerW}
+                xOf={geometry.xOfPower}
+                ticks={geometry.powerTicks}
+                referenceX={geometry.powerZeroX ?? X_MIN}
+                referenceLabel="0 W"
+                unit="W"
+                decimals={0}
+                color={POWER_COLOR}
+                events={events}
+                here={display.cursor ? here : null}
+                display={display}
+                heat={heat}
+                tickRow={TICK_ROW_1}
+              />
+            )}
           </svg>
         ) : (
           <div style={{ ...plotStyle, display: 'grid', placeItems: 'center', padding: 16, boxSizing: 'border-box' }}>
@@ -324,6 +391,18 @@ function BarPathPanelImpl({
               <LegendChip color={BAR_PATH_COLOR}>{`S_max ${cm(analyzer?.sMaxCm)}`}</LegendChip>
               <LegendChip color={BAR_PATH_COLOR}>{`S_sit ${cm(analyzer?.sSitCm)}`}</LegendChip>
               <LegendChip color={BAR_PATH_COLOR}>{`loop ${cm(summary?.loopWidthCm)}`}</LegendChip>
+            </>
+          )}
+          {showForce && (
+            <>
+              <LegendChip color={FORCE_COLOR}>force · % of load</LegendChip>
+              <LegendChip color={FORCE_COLOR}>{`peak ${analyzer?.f3Pct !== null && analyzer?.f3Pct !== undefined ? `${num(analyzer.f3Pct, 0)} %` : forcePct ? `${num(Math.max(...forcePct), 0)} %` : '—'}`}</LegendChip>
+            </>
+          )}
+          {showPower && (
+            <>
+              <LegendChip color={POWER_COLOR}>barbell power · W</LegendChip>
+              <LegendChip color={POWER_COLOR}>{`peak ${summary?.peakPowerW != null ? `${num(summary.peakPowerW, 0)} W` : '—'}`}</LegendChip>
             </>
           )}
           {heat !== null && (
@@ -552,6 +631,94 @@ function VelocityLayer({
           stroke="var(--color-text-primary)"
           strokeWidth={1.6}
         />
+      )}
+    </g>
+  );
+}
+
+/**
+ * A scalar series against height — force as a share of the load, or barbell
+ * power — with a reference line (100 %, 0 W), the analyzer's events at the
+ * height each happened, and the same ticks and cursor as the velocity layer.
+ */
+function ScalarLayer({
+  series,
+  geometry,
+  values,
+  xOf,
+  ticks,
+  referenceX,
+  referenceLabel,
+  unit,
+  decimals,
+  color,
+  events,
+  here,
+  display,
+  heat,
+  tickRow,
+}: {
+  series: KinematicSeries;
+  geometry: BarPathGeometry;
+  values: readonly number[];
+  xOf: (v: number) => number;
+  ticks: readonly number[];
+  referenceX: number;
+  referenceLabel: string;
+  unit: string;
+  decimals: number;
+  color: string;
+  events: ReturnType<typeof locateAnalyzerEvents> | null;
+  here: number | null;
+  display: PlotPrefs;
+  heat: number | null;
+  tickRow: number;
+}) {
+  const xs = useMemo(() => values.map(v => xOf(v)), [values, xOf]);
+  const ys = useMemo(() => series.yCm.map(y => geometry.yOf(y)), [series, geometry]);
+  const d = useMemo(() => {
+    let path = '';
+    for (let i = 0; i < xs.length; i++) path += `${i === 0 ? 'M' : 'L'}${xs[i].toFixed(2)} ${ys[i].toFixed(2)} `;
+    return path.trim();
+  }, [xs, ys]);
+  const marks = analyzerMarks(events, display.labels);
+
+  return (
+    <g data-layer={unit === '%' ? 'force' : 'power'}>
+      <line x1={referenceX} y1={TOP - 16} x2={referenceX} y2={BASE + 6} stroke={color} strokeOpacity={0.45} strokeDasharray="2 4" />
+      <text x={referenceX + 4} y={TOP - 8} style={tickText(color)}>
+        {referenceLabel}
+      </text>
+      <Curve d={d} xs={xs} ys={ys} vy={series.vyMs} color={color} width={display.lineWidth} heat={heat} points={display.points} />
+      {marks.map(m => {
+        const v = valueAt(series.t, values, m.event.t);
+        if (v === null) return null;
+        return (
+          <circle key={m.key} data-event={m.key} cx={xOf(v)} cy={geometry.yOf(m.event.heightCm)} r={3.5} fill={EVENT_COLORS[m.key]}>
+            <title>{`${m.label} · ${num(v, decimals)} ${unit} at ${num(m.event.heightCm, 1)} cm, ${num(m.event.t, 2)} s`}</title>
+          </circle>
+        );
+      })}
+      {display.labels.ticks &&
+        ticks.map(tick => {
+          const x = xOf(tick);
+          if (x < X_MIN - 6 || x > X_MAX + 6) return null;
+          return (
+            <g key={tick}>
+              <line x1={x} y1={BASE + 8} x2={x} y2={BASE + 14} stroke={color} />
+              <text x={x} y={tickRow} textAnchor="middle" style={tickText(color)}>
+                {num(tick, 0)}
+              </text>
+            </g>
+          );
+        })}
+      {display.labels.ticks && (
+        <text x={LABEL_X} y={tickRow} style={tickText(color)}>
+          {unit}
+        </text>
+      )}
+      {here !== null && (
+        <circle cx={xs[here]} cy={ys[here]} r={4.5} fill="none" stroke="var(--color-text-primary)" strokeWidth={1.6} />
       )}
     </g>
   );

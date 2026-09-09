@@ -15,6 +15,7 @@ import { GraduationCap, Plus, Star } from 'lucide-react';
 import { memo, type CSSProperties } from 'react';
 import { Button } from '../../components/ui';
 import type { RepSummary } from '../engine/kinematics';
+import { liftModelById, liftModelsByFamily, type LiftModel } from '../engine/liftModels';
 import type { LiftMetrics } from '../engine/phases';
 import type { Verdict } from '../lib/verdict';
 import { num } from '../lib/viewerFormat';
@@ -25,6 +26,16 @@ interface LiftPanelProps {
   /** Stored peak velocity per rep, for the pills — null where the rep has
    *  not been analysed. */
   repPeaks: Record<number, number | null>;
+  /** Each rep's stored lift model id (P9). When the reps of a clip are not
+   *  all the same lift — a clean & jerk cut into its parts — the pills say
+   *  which is which. */
+  repModels?: Record<number, string | null>;
+  /**
+   * The lift model this rep is segmented under, the clip's model (a compound
+   * when the set is a clean & jerk), how it was arrived at, and the coach's
+   * override. Absent: no chip.
+   */
+  model?: { current: LiftModel; clipModel: LiftModel; how: string; onChange: (id: string) => void };
   onRep: (rep: number) => void;
   onAddRep: () => void;
   /** On a rep just added: track on from where the previous one ended, to the
@@ -60,6 +71,8 @@ function LiftPanelImpl({
   repIndices,
   repIndex,
   repPeaks,
+  repModels = {},
+  model,
   onRep,
   onAddRep,
   trackRest = null,
@@ -77,6 +90,18 @@ function LiftPanelImpl({
   const barHeight = analyzer?.sMaxCm ?? (summary && summary.peakHeightCm ? summary.peakHeightCm : null);
   const turnover = analyzer?.tTurnS ?? null;
 
+  // The pills name the part when the clip's reps are not all one lift — a
+  // clean & jerk's "Rep 1 · Cl" and "Rep 2 · Jk" — or when a rep is stored
+  // under something other than the clip's own model.
+  const storedModels = new Set(repIndices.map(r => repModels[r]).filter((m): m is string => !!m));
+  const mixed = storedModels.size > 1 || (model !== undefined && [...storedModels].some(m => m !== model.clipModel.id));
+  const partOf = (rep: number): LiftModel | null => {
+    const id = rep === repIndex && model ? model.current.id : repModels[rep];
+    return mixed && id ? liftModelById(id) : null;
+  };
+  const howText =
+    model?.how === 'stored' ? 'stored with the rep' : model?.how === 'coach' ? 'your pick' : model?.how === 'assumed' ? 'assumed — set it on the exercise' : model?.how ?? '';
+
   return (
     <div>
       {/* Reps */}
@@ -84,13 +109,15 @@ function LiftPanelImpl({
         {repIndices.map(rep => {
           const active = rep === repIndex;
           const peak = repPeaks[rep] ?? null;
+          const part = partOf(rep);
+          const name = part ? `Rep ${rep} · ${part.shortLabel}` : `Rep ${rep}`;
           return (
             <button
               key={rep}
               type="button"
               onClick={() => onRep(rep)}
               aria-pressed={active}
-              title={peak === null ? `Rep ${rep} · not analysed` : `Rep ${rep} · Vmax ${num(peak, 2)} m/s`}
+              title={`${part ? `${part.label} · ` : ''}${peak === null ? `Rep ${rep} · not analysed` : `Rep ${rep} · Vmax ${num(peak, 2)} m/s`}`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -106,7 +133,7 @@ function LiftPanelImpl({
                 whiteSpace: 'nowrap',
               }}
             >
-              {`Rep ${rep}`}
+              {name}
               <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', opacity: peak === null ? 0.6 : 1 }}>
                 {peak === null ? (active && topSpeed !== null ? num(topSpeed, 2) : '—') : num(peak, 2)}
               </span>
@@ -118,6 +145,39 @@ function LiftPanelImpl({
           rep
         </button>
       </div>
+
+      {/* The lift model: what the bar does, and so which phases are read. */}
+      {model && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '8px 12px 0' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title={model.current.note}>
+            <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', letterSpacing: 'var(--tracking-section)' }}>
+              LIFT
+            </span>
+            <select
+              value={model.current.id}
+              onChange={e => model.onChange(e.target.value)}
+              aria-label="Lift model"
+              style={modelSelect}
+            >
+              {liftModelsByFamily().map(group => (
+                <optgroup key={group.family} label={group.label}>
+                  {group.models
+                    .filter(m => m.shape !== 'compound')
+                    .map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+            {model.clipModel.shape === 'compound' ? `${model.clipModel.label} · cut into its parts · ` : ''}
+            {howText}
+          </span>
+        </div>
+      )}
 
       {/* The three big numbers */}
       {topSpeed === null ? (
@@ -310,6 +370,17 @@ const addButton: CSSProperties = {
   fontFamily: 'inherit',
   fontSize: 'var(--text-caption)',
   cursor: 'pointer',
+};
+
+const modelSelect: CSSProperties = {
+  padding: '2px 6px',
+  borderRadius: 'var(--radius-md)',
+  border: '0.5px solid var(--color-border-secondary)',
+  background: 'var(--color-bg-primary)',
+  color: 'var(--color-text-primary)',
+  fontFamily: 'inherit',
+  fontSize: 'var(--text-label)',
+  maxWidth: 220,
 };
 
 export const LiftPanel = memo(LiftPanelImpl);

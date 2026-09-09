@@ -28,6 +28,9 @@ vi.mock('../lib/videoLibrary', async importOriginal => ({
       athleteId: 'a-1',
       athleteName: 'Jon Herskind',
       exerciseName: 'Hang clean',
+      exerciseId: null,
+      liftModelId: null,
+      liftModelHow: null,
       date: '2026-08-26',
       sortedAt: '2026-08-26T17:42:00Z',
       loadKg: 130,
@@ -57,7 +60,7 @@ vi.mock('../lib/analysisService', () => ({
             analysis: {
               id: 'an-1', owner_id: null, source_kind: 'direct', source_id: 'vid-1', rep_index: 1, label: null,
               frame_width: 480, frame_height: 270, rotation: 0, mass_kg: null, mass_source: null, status: 'draft',
-              notes: null, phase_boundaries: null, phase_set_id: 'default', metrics: null, camera: null,
+              notes: null, phase_boundaries: null, phase_set_id: 'default', lift_model_id: null, metrics: null, camera: null,
               is_reference: false, is_model: false, model_label: null, created_at: '', updated_at: '',
             },
             calibration: {

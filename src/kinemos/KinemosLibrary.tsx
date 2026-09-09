@@ -206,6 +206,7 @@ export function KinemosLibrary() {
         ownerId: getOwnerId(),
         massKg: row.loadKg,
         massSource: row.loadKg == null ? null : 'logged',
+        liftModelId: row.liftModelId,
         onProgress: (stage, done, total) =>
           setAutoNote(total > 1 ? `${stage} — ${done} of ${total}` : `${stage}…`),
       });

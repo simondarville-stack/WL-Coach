@@ -76,7 +76,7 @@ const plate = (cx: number, cy: number) => ({
 });
 const rep = (n: number, liftOffT: number) => ({
   rep: n,
-  segment: { from: 0, to: 10, liftOffT, apexT: liftOffT + 1, catchT: liftOffT + 1.3, riseCm: 120 },
+  segment: { from: 0, to: 10, liftOffT, apexT: liftOffT + 1, catchT: liftOffT + 1.3, riseCm: 120 , kind: 'pull' as const, dipCm: 0},
   points: [{ t: liftOffT, x: 0, y: 0, s: 't' as const }],
   ellipse: plate(0, 0).ellipse,
   calibration: calibrateFromEllipse(plate(0, 0).ellipse, 45),

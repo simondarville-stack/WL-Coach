@@ -35,13 +35,24 @@ export interface BarPathGeometry {
   yOf: (cm: number) => number;
   xOfPath: (cm: number) => number;
   xOfVelocity: (ms: number) => number;
+  /** Force on the bar as a share of its weight (%), and barbell power (W),
+   *  against the same height axis — the Analyzer's third and fourth curves
+   *  (P9 plan §5.6). Power is null without a mass. */
+  xOfForce: (pct: number) => number;
+  xOfPower: ((w: number) => number) | null;
   /** ViewBox units per centimetre on the height axis. */
   unitsPerCm: number;
   /** Tick values, in the series' own units. */
   pathTicks: number[];
   velocityTicks: number[];
+  forceTicks: number[];
+  powerTicks: number[];
   pathZeroX: number;
   velocityZeroX: number;
+  /** Where 100 % sits — the bar's own weight, the line a force curve
+   *  crosses when the lifter stops pushing. */
+  forceUnitX: number;
+  powerZeroX: number | null;
 }
 
 export function barPathGeometry(series: KinematicSeries, exaggeration: Exaggeration = 1): BarPathGeometry {
@@ -79,15 +90,45 @@ export function barPathGeometry(series: KinematicSeries, exaggeration: Exaggerat
     velocityTicks.push(Number(tick.toFixed(2)));
   }
 
+  // Force: the range the lift covered, 100 % always inside it, in steps of
+  // 50 or 100 %.
+  const force = rangeOf((series.ayMs2 ?? []).map(a => (1 + a / 9.80665) * 100));
+  const fLo = Math.min(100, force.min) - force.span * 0.04;
+  const fHi = Math.max(100, force.max) + force.span * 0.04;
+  const kf = (X_MAX - X_MIN) / (fHi - fLo || 1);
+  const xOfForce = (pct: number) => X_MIN + (pct - fLo) * kf;
+  const forceStep = [50, 100, 200].find(step => step * kf >= 26) ?? 200;
+  const forceTicks: number[] = [];
+  for (let tick = Math.ceil(fLo / forceStep) * forceStep; tick <= fHi + 1e-9; tick += forceStep) forceTicks.push(tick);
+
+  // Power: zero inside the range, in steps of 500 / 1000 / 2000 W.
+  let xOfPower: ((w: number) => number) | null = null;
+  const powerTicks: number[] = [];
+  if (series.powerW) {
+    const p = rangeOf(series.powerW);
+    const pLo = Math.min(0, p.min) - p.span * 0.04;
+    const pHi = Math.max(0, p.max) + p.span * 0.04;
+    const kp = (X_MAX - X_MIN) / (pHi - pLo || 1);
+    xOfPower = (w: number) => X_MIN + (w - pLo) * kp;
+    const powerStep = [500, 1000, 2000, 5000].find(step => step * kp >= 26) ?? 5000;
+    for (let tick = Math.ceil(pLo / powerStep) * powerStep; tick <= pHi + 1e-9; tick += powerStep) powerTicks.push(tick);
+  }
+
   return {
     yOf,
     xOfPath,
     xOfVelocity,
+    xOfForce,
+    xOfPower,
     unitsPerCm,
     pathTicks,
     velocityTicks,
+    forceTicks,
+    powerTicks,
     pathZeroX: xOfPath(0),
     velocityZeroX: xOfVelocity(0),
+    forceUnitX: xOfForce(100),
+    powerZeroX: xOfPower ? xOfPower(0) : null,
   };
 }
 

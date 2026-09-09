@@ -190,6 +190,11 @@ export interface Exercise {
    *  NULL sorts after ordered siblings, then by name. Display-only. */
   display_order: number | null;
   lift_slot: 'snatch' | 'clean_and_jerk' | 'front_squat' | 'back_squat' | 'snatch_pull' | 'clean_pull' | null;
+  /** KinEMOS lift model id (src/kinemos/engine/liftModels.ts) the coach
+   *  declared for this exercise — what the bar does, and so which phases a
+   *  clip of it is segmented into. Null: not declared; the library resolves
+   *  one from the parent, the lift slot or the name (P9). */
+  kinemos_lift_model: string | null;
   /** Which catalogue this exercise lives in (exercise_libraries.id).
    *  Personal library = private to its coach; club library = shared with the
    *  library's members. Moving between libraries preserves the id, so all
@@ -1295,6 +1300,10 @@ export interface KinemosAnalysis {
   /** Phase edges as the coach has them: engine proposals until one is dragged,
    *  and each carries where it came from — see engine/phases.ts. */
   phase_boundaries: KinemosPhaseBoundaryRow[] | null;
+  /** Which lift model segmented this rep (src/kinemos/engine/liftModels.ts).
+   *  Null on rows from before P9: those were analysed under the five-phase
+   *  snatch/clean model and read as a snatch from the floor. */
+  lift_model_id: string | null;
   /** Which phase model segmented this rep. Coaches disagree about how a lift
    *  divides, so "second pull" only means something alongside the set that
    *  defined it. */

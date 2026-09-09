@@ -34,18 +34,18 @@ import { noDistortion, undistortEllipse, undistortPoints, type DistortionSource 
 import { deviceKeyFor, profileForClip, saveDeviceProfile } from './lib/deviceProfileService';
 import { describeFit, describeRefusal, fitClipDistortion } from './lib/distortionFit';
 import {
-  DEFAULT_PHASE_SET,
   computeLiftMetrics,
   enforceMonotonic,
   kneeCrossing,
-  proposePhases,
   spansFrom,
   type PhaseBoundary,
 } from './engine/phases';
+import { liftModelById, liftModelOfStored, partForKind, shapesComparable, type LiftModel } from './engine/liftModels';
+import { describeHow, type LiftModelHow } from './lib/liftModelResolve';
 import { gradeAnalysis, type CameraStability, type TrackerTier } from './engine/grade';
 import { trackFromAnchor } from './engine/tracker';
 import type { AlignmentAnchor } from './engine/compare';
-import { METRIC_CATALOGUE, fromStoredMetrics, toStoredMetrics } from './engine/metricCatalogue';
+import { catalogueFor, fromStoredMetrics, toStoredMetrics } from './engine/metricCatalogue';
 import { ComparisonView } from './components/ComparisonView';
 import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
@@ -55,7 +55,7 @@ import { scanActivity, windowLabel } from './lib/activityScan';
 import type { ActivitySample } from './engine/activity';
 import { windowRanges, type LiftWindow } from './engine/activity';
 import { splitReps } from './engine/reps';
-import { persistRep } from './lib/autoAnalyse';
+import { persistRep, proposePhasesFor } from './lib/autoAnalyse';
 import { EMBED_ANALYSED_NOTE, EMBED_UNANALYSED_NOTE } from './lib/uploadAnalysis';
 import { createClubShare, createShare, deleteShare, fetchAthleteOwnerId, listSharesForAnalysis } from './lib/shareService';
 import { exportOverlayVideo } from './lib/overlayExport';
@@ -177,6 +177,16 @@ export function KinemosViewer() {
   /** Each rep's stored peak velocity, for the rep pills — what the cache
    *  column says, so the pills need no second pipeline run. */
   const [repPeaks, setRepPeaks] = useState<Record<number, number | null>>({});
+  /** Each rep's stored lift model id, for the pills: a clean & jerk's reps
+   *  read "Clean" and "Jerk" rather than "Rep 1" and "Rep 2". */
+  const [repModels, setRepModels] = useState<Record<number, string | null>>({});
+  /**
+   * The lift model this rep is segmented under (P9), and where that came
+   * from: the stored row, the coach's pick in the chip, or — when neither —
+   * the clip's exercise (`clip.liftModelId`) and, failing that, a snatch
+   * from the floor, assumed and said so.
+   */
+  const [liftModel, setLiftModel] = useState<{ id: string; how: LiftModelHow | 'stored' | 'coach' } | null>(null);
 
   const [points, setPoints] = useState<KinemosTrackPoint[]>([]);
   const [ellipse, setEllipse] = useState<PlateEllipse | null>(null);
@@ -441,11 +451,14 @@ export function KinemosViewer() {
         const indices = reps.map(r => r.rep_index);
         setRepIndices(indices.length > 0 ? indices : [1]);
         const peaks: Record<number, number | null> = {};
+        const models: Record<number, string | null> = {};
         for (const r of reps) {
           const stored = fromStoredMetrics(r.metrics);
           peaks[r.rep_index] = stored?.analyzer.vmaxMs ?? stored?.peakVelocityMs ?? null;
+          models[r.rep_index] = r.lift_model_id ?? null;
         }
         setRepPeaks(peaks);
+        setRepModels(models);
       })
       .catch(() => undefined);
     return () => {
@@ -471,6 +484,7 @@ export function KinemosViewer() {
     setModelLabel(null);
     setAssist({ busy: null, note: null });
     setStabiliseNote(null);
+    setLiftModel(null);
     // The logged load is the best first guess at bar mass, and it is already on
     // the library row. A coach who filmed a different set overwrites it.
     setMassKg(clip?.loadKg ?? null);
@@ -501,6 +515,13 @@ export function KinemosViewer() {
           setMassSource(bundle.analysis.mass_source ?? 'manual');
         }
         if (bundle.analysis.camera) setCamera(bundle.analysis.camera);
+        // The model the rep was stored under. A row analysed before P9 has
+        // none and reads as a snatch from the floor; a row that was only
+        // ever created — no metrics yet — has nothing to say, and the clip's
+        // exercise decides.
+        if (bundle.analysis.lift_model_id || bundle.analysis.metrics) {
+          setLiftModel({ id: liftModelOfStored(bundle.analysis.lift_model_id, bundle.analysis.phase_set_id).id, how: 'stored' });
+        }
         setIsReference(bundle.analysis.is_reference === true);
         setIsModel(bundle.analysis.is_model === true);
         setModelLabel(bundle.analysis.model_label ?? null);
@@ -578,7 +599,36 @@ export function KinemosViewer() {
     [measuredPoints, calibration, massKg],
   );
 
-  const proposal = useMemo(() => (kinematics ? proposePhases(kinematics) : null), [kinematics]);
+  // ── The lift model ────────────────────────────────────────────────────────
+  /** The clip's model: stored on the rep, picked by the coach, resolved from
+   *  the exercise, or assumed. A compound (clean & jerk) is what the SET is
+   *  cut as; a single rep of it is segmented as one of its parts. */
+  const clipModel = useMemo<LiftModel>(
+    () => liftModelById(liftModel?.id ?? clip?.liftModelId ?? 'snatch'),
+    [liftModel?.id, clip?.liftModelId],
+  );
+  const model = useMemo<LiftModel>(
+    () => (clipModel.shape === 'compound' ? partForKind(clipModel, 'pull') : clipModel),
+    [clipModel],
+  );
+  const modelHow: string = liftModel?.how ?? (clip?.liftModelId ? describeHow(clip.liftModelHow) : 'assumed');
+  /** The coach picks a model in the chip: the phases are re-proposed under
+   *  it, and any edges dragged under the old set are let go — they named
+   *  phases the new set may not have. */
+  const chooseModel = useCallback((id: string) => {
+    setLiftModel({ id, how: 'coach' });
+    setCoachBoundaries(null);
+    dirtyRef.current = true;
+  }, []);
+
+  /** One object for the lift panel's chip, stable across frame steps so the
+   *  panel does not re-render with the playhead. */
+  const liftPanelModel = useMemo(
+    () => ({ current: model, clipModel, how: modelHow, onChange: chooseModel }),
+    [model, clipModel, modelHow, chooseModel],
+  );
+
+  const proposal = useMemo(() => (kinematics ? proposePhasesFor(kinematics, model) : null), [kinematics, model]);
 
   const boundaries = useMemo(() => {
     if (!kinematics) return [];
@@ -595,11 +645,13 @@ export function KinemosViewer() {
     return enforceMonotonic(onClipClock, first, last);
   }, [kinematics, coachBoundaries, proposal]);
 
-  const spans = useMemo(() => spansFrom(boundaries, DEFAULT_PHASE_SET), [boundaries]);
+  const spans = useMemo(() => spansFrom(boundaries, model.phaseSet ?? []), [boundaries, model]);
 
+  // A lift with no phases (the unspecified lift) still has its universal
+  // numbers: the metrics are computed over an empty span list.
   const liftMetrics = useMemo(
-    () => (kinematics && spans.length > 0 ? computeLiftMetrics(kinematics, spans) : null),
-    [kinematics, spans],
+    () => (kinematics && (spans.length > 0 || model.phaseSet === null) ? computeLiftMetrics(kinematics, spans) : null),
+    [kinematics, spans, model.phaseSet],
   );
 
   const repSummary = useMemo(() => (kinematics ? summariseRep(kinematics) : null), [kinematics]);
@@ -735,10 +787,12 @@ export function KinemosViewer() {
     // which is after the first save at the latest.
     [candidates, clip?.date, clip?.loadKg, peakForVerdict, liftMetrics, grade.grade, isReference],
   );
-  /** How many of the catalogue's measures this lift has a value for. */
+  /** The catalogue as this lift's model sees it, and how many of its
+   *  measures the lift has a value for. */
+  const modelCatalogue = useMemo(() => catalogueFor(model), [model]);
   const metricCount = useMemo(
-    () => (liftMetrics ? METRIC_CATALOGUE.filter(m => m.read({ metrics: liftMetrics, summary: repSummary }) !== null).length : 0),
-    [liftMetrics, repSummary],
+    () => (liftMetrics ? modelCatalogue.filter(m => m.read({ metrics: liftMetrics, summary: repSummary }) !== null).length : 0),
+    [liftMetrics, repSummary, modelCatalogue],
   );
 
   // ── Persistence ───────────────────────────────────────────────────────────
@@ -788,7 +842,8 @@ export function KinemosViewer() {
             massSource,
             camera,
             phaseBoundaries: boundaries.length > 0 ? boundaries : null,
-            phaseSetId: 'default',
+            phaseSetId: model.phaseSetId,
+            liftModelId: model.id,
             // The cache the trend views read. Schema-stamped so a season of
             // rows can be told apart if what is stored ever changes meaning.
             metrics: liftMetrics ? toStoredMetrics(liftMetrics, repSummary) : null,
@@ -927,7 +982,13 @@ export function KinemosViewer() {
       clip.exerciseName ?? null,
     )
       .then(found => {
-        if (!cancelled) setCandidates(found);
+        // Same motion shape or not offered at all: a jerk laid over a
+        // snatch compares nothing (P9 plan §5.7).
+        if (!cancelled) {
+          setCandidates(
+            found.filter(c => shapesComparable(liftModelOfStored(c.analysis.lift_model_id, c.analysis.phase_set_id), model)),
+          );
+        }
       })
       .catch(() => {
         if (!cancelled) setCandidates([]);
@@ -935,7 +996,7 @@ export function KinemosViewer() {
     return () => {
       cancelled = true;
     };
-  }, [source, id, repIndex, clip?.athleteId, clip?.exerciseName]);
+  }, [source, id, repIndex, clip?.athleteId, clip?.exerciseName, model]);
 
   useEffect(() => {
     if (!comparing) return;
@@ -1097,9 +1158,13 @@ export function KinemosViewer() {
       if (!server || !source || !id) return [];
       const owner = getOwnerId();
       const indices: number[] = [];
+      const models: Record<number, string | null> = {};
       let firstApplied = false;
       for (const rep of result.reps) {
         const index = repIndex + rep.rep - 1;
+        // A clean & jerk's reps land on the clean and the jerk by what the
+        // bar did first; a plain model is its own part.
+        const part = partForKind(clipModel, rep.segment.kind);
         // One definition of what a stored rep is, shared with the automatic
         // run on the library (`lib/autoAnalyse.ts`).
         const analysisId = await persistRep({
@@ -1115,12 +1180,15 @@ export function KinemosViewer() {
           massKg,
           massSource,
           camera,
+          model: part,
         });
         indices.push(index);
+        models[index] = part.id;
         if (!firstApplied) {
           firstApplied = true;
           analysisIdRef.current = analysisId;
           dirtyRef.current = false;
+          setLiftModel({ id: part.id, how: 'stored' });
           setPoints(rep.points);
           setEllipse(rep.ellipse);
           setUncertainIndices(rep.lowConfidenceIndices);
@@ -1129,9 +1197,10 @@ export function KinemosViewer() {
         }
       }
       setRepIndices(current => [...new Set([...current, ...indices])].sort((a, b) => a - b));
+      setRepModels(current => ({ ...current, ...models }));
       return indices;
     },
-    [server, source, id, repIndex, massKg, massSource, camera],
+    [server, source, id, repIndex, massKg, massSource, camera, clipModel],
   );
 
   /**
@@ -1167,6 +1236,7 @@ export function KinemosViewer() {
       const result = await trackSet(server, at, {
         ellipse: outline,
         plateDiameterCm,
+        shape: clipModel.shape,
         range: { from, to: server.frameCount - 1 },
         onProgress: (done, total) => setTrackProgress({ done, total }),
       });
@@ -1206,7 +1276,7 @@ export function KinemosViewer() {
       const anchorIndex = server.nearestIndex(anchorPoint.t);
       const onProgress = (done: number, total: number) => setTrackProgress({ done, total });
       const whole = () =>
-        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, onProgress });
+        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, shape: clipModel.shape, onProgress });
 
       // Inside the lifts the scan found (P7 plan), when it found any. The
       // coach's mark anchors the lift it sits in; every other lift is
@@ -1235,6 +1305,7 @@ export function KinemosViewer() {
           const piece = await trackSet(server, at, {
             ellipse: outline,
             plateDiameterCm,
+            shape: clipModel.shape,
             range: { from: range.from, to: range.to },
             onProgress,
           });
@@ -2546,7 +2617,7 @@ export function KinemosViewer() {
             summary: repSummary,
             grade: grade.grade,
             massKg,
-            phaseSetId: 'default',
+            phaseSetId: model.phaseSetId,
           }}
           candidates={candidates}
           selectedId={comparisonId}
@@ -2884,6 +2955,8 @@ export function KinemosViewer() {
               repIndices={repIndices}
               repIndex={repIndex}
               repPeaks={repPeaks}
+              repModels={repModels}
+              model={liftPanelModel}
               onRep={setRepIndex}
               onAddRep={addRep}
               trackRest={trackRest}
@@ -2923,7 +2996,7 @@ export function KinemosViewer() {
             headline={
               <HeadlineChip>
                 {liftMetrics
-                  ? `${metricCount} of ${METRIC_CATALOGUE.length}${earlierLift?.date ? ` · vs ${formatDateShort(earlierLift.date)}` : ''}`
+                  ? `${metricCount} of ${modelCatalogue.length}${earlierLift?.date ? ` · vs ${formatDateShort(earlierLift.date)}` : ''}`
                   : 'no numbers yet'}
               </HeadlineChip>
             }
@@ -2933,6 +3006,7 @@ export function KinemosViewer() {
             <MetricsPanel
               metrics={liftMetrics}
               summary={repSummary}
+              model={model}
               massKg={massKg}
               massSource={massSource}
               onMass={on.mass}
