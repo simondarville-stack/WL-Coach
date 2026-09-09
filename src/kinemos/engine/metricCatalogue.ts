@@ -403,6 +403,17 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     requires: { phases: ['dip', 'drive'] },
   },
   {
+    id: 'sDipPctHeight',
+    label: 'Dip depth, % of height',
+    unit: '%',
+    decimals: 1,
+    betterWhen: null,
+    why: 'The dip as a share of the lifter’s standing height — comparable across sizes where centimetres are not. Needs the height on the athlete.',
+    read: l => l.metrics.jerk?.sDipPctHeight ?? null,
+    significant: 0.5,
+    requires: { phases: ['dip', 'drive'] },
+  },
+  {
     id: 'sDrive',
     label: 'Drive path (δ_Stoß)',
     unit: 'cm',
@@ -557,6 +568,7 @@ export function fromStoredMetrics(raw: unknown): StoredMetrics | null {
     ? {
         vDipMs: numberOrNull(j.vDipMs),
         sDipCm: numberOrNull(j.sDipCm),
+        sDipPctHeight: numberOrNull(j.sDipPctHeight),
         sToVDipCm: numberOrNull(j.sToVDipCm),
         sDriveCm: numberOrNull(j.sDriveCm),
         driveMinusDipCm: numberOrNull(j.driveMinusDipCm),

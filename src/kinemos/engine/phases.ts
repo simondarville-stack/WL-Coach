@@ -352,6 +352,10 @@ export interface JerkAnalyzerMetrics {
   vDipMs: number | null;
   /** δ_Auf: dip depth, the start height minus the lower turning point, cm. */
   sDipCm: number | null;
+  /** The dip as a share of the lifter's standing height, % — the material's
+   *  16–22 cm is a men's-squad figure, a share travels across sizes. Null
+   *  without a height. */
+  sDipPctHeight: number | null;
   /** δv_Auf: how far the bar had descended when v_Auft occurred, cm. */
   sToVDipCm: number | null;
   /** δ_Stoß: the drive path, lower turning point to the height at Vmax, cm.
@@ -844,9 +848,17 @@ export function spansFrom(
 }
 
 /** Per-phase and whole-lift metrics over a computed series. */
+/** What the metrics need from outside the series. */
+export interface LiftMetricsOptions {
+  /** The lifter's standing height, cm, so a jerk's dip reads as a share of
+   *  it. Null or absent: the share is null. */
+  heightCm?: number | null;
+}
+
 export function computeLiftMetrics(
   series: KinematicSeries,
   spans: readonly PhaseSpan[],
+  options: LiftMetricsOptions = {},
 ): LiftMetrics {
   const phases: PhaseMetrics[] = spans.map(span => {
     const peak = peakOver(series.t, series.vyMs, span.fromT, span.toT);
@@ -893,7 +905,7 @@ export function computeLiftMetrics(
     turnoverVelocityMs: turnover?.meanVelocityMs ?? null,
     peakPowerW: overallPower?.value ?? null,
     analyzer: computeAnalyzerMetrics(series, spans),
-    jerk: computeJerkMetrics(series, spans),
+    jerk: computeJerkMetrics(series, spans, options.heightCm ?? null),
   };
 }
 
@@ -1097,7 +1109,7 @@ function catchEndOf(spans: readonly PhaseSpan[], tEnd: number): number {
 
 /** The jerk block with nothing in it. */
 export const EMPTY_JERK_METRICS: JerkAnalyzerMetrics = {
-  vDipMs: null, sDipCm: null, sToVDipCm: null, sDriveCm: null, driveMinusDipCm: null,
+  vDipMs: null, sDipCm: null, sDipPctHeight: null, sToVDipCm: null, sDriveCm: null, driveMinusDipCm: null,
   fDipPct: null, fDrivePct: null, driveForcePeaks: null, dipS: null, brakingS: null, driveS: null,
 };
 
@@ -1110,6 +1122,7 @@ export const EMPTY_JERK_METRICS: JerkAnalyzerMetrics = {
 export function computeJerkMetrics(
   series: KinematicSeries,
   spans: readonly PhaseSpan[],
+  heightCm: number | null = null,
 ): JerkAnalyzerMetrics | null {
   const any = (id: string) => spans.find(s => s.definition.id === id) ?? null;
   if (!any('dip') || !any('drive')) return null;
@@ -1139,6 +1152,7 @@ export function computeJerkMetrics(
   return {
     vDipMs: vDip?.value ?? null,
     sDipCm: sDip,
+    sDipPctHeight: sDip !== null && heightCm !== null && heightCm > 0 ? (sDip / heightCm) * 100 : null,
     sToVDipCm: sToVDip,
     sDriveCm: sDrive,
     driveMinusDipCm: sDrive !== null && sDip !== null ? sDrive - sDip : null,

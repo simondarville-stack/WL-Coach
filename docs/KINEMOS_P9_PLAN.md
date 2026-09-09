@@ -620,3 +620,17 @@ Three decisions from Simon after the first ship:
   so every velocity, phase, force and power measure stands; the bar path
   is not drawn on the stage or in the column, and loop width and path
   length are null. The archive's *for* clips are the test material.
+
+## 14. Follow-up — 0.105.0 (09/09/2026)
+
+§11.1 closed: the athlete profile carries **sex** and **height**; with the
+weight class (or bodyweight) already on it, `engine/weightClass.ts` picks
+the tier the tables are grouped by, and the bands toggle in the viewer then
+reads the athlete instead of asking the coach. A jerk's dip is also read as
+a **share of the lifter's height** (`sDipPctHeight`), since the material's
+16–22 cm is a men's-squad figure and a share travels across sizes.
+
+The bench calibrates on the plate finder's ellipse when the scan found one
+(`B.ellipse`), so an oblique or front clip now runs through the front-view
+rule. The remaining transcoded clips were run after this change — see the
+table below.

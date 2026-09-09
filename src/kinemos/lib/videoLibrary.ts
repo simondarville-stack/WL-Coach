@@ -53,6 +53,13 @@ export interface LibraryVideo {
    */
   liftModelId: string | null;
   liftModelHow: LiftModelHow | null;
+  /** What the athlete's profile says that KinEMOS reads (P9 §11.1): sex
+   *  and weight class for the reference bands, height for the jerk's dip
+   *  as a share of it. Absent or null when not filled in. */
+  athleteSex?: string | null;
+  athleteWeightClass?: string | null;
+  athleteBodyweightKg?: number | null;
+  athleteHeightCm?: number | null;
 
   /** Training/competition date (YYYY-MM-DD) where one exists, else the day
    *  the clip was recorded or imported. Drives the library's sort. */
@@ -159,6 +166,15 @@ interface KinemosVideoRow {
   recorded_at: string | null;
   note: string | null;
   created_at: string;
+}
+
+interface AthleteBits {
+  id: string;
+  name: string;
+  sex: string | null;
+  weight_class: string | null;
+  bodyweight: number | string | null;
+  height_cm: number | string | null;
 }
 
 const dayOf = (iso: string): string => iso.slice(0, 10);
@@ -327,15 +343,25 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       ].filter((id): id is string => !!id),
     ),
   ];
-  const athletes = await fetchByIds<{ id: string; name: string }>(athleteIds, (chunk, from, to) =>
+  const athletes = await fetchByIds<AthleteBits>(athleteIds, (chunk, from, to) =>
     supabase
       .from('athletes')
-      .select('id, name')
+      .select('id, name, sex, weight_class, bodyweight, height_cm')
       .in('id', chunk)
       .order('id', { ascending: true })
       .range(from, to),
   );
   const athleteNameById = new Map(athletes.map(a => [a.id, a.name]));
+  const athleteById = new Map(athletes.map(a => [a.id, a]));
+  const profileOf = (id: string | null | undefined) => {
+    const a = id ? athleteById.get(id) : undefined;
+    return {
+      athleteSex: a?.sex ?? null,
+      athleteWeightClass: a?.weight_class ?? null,
+      athleteBodyweightKg: a?.bodyweight == null ? null : Number(a.bodyweight),
+      athleteHeightCm: a?.height_cm == null ? null : Number(a.height_cm),
+    };
+  };
 
   const items: LibraryVideo[] = [];
 
@@ -361,6 +387,7 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       sourceId: v.id,
       athleteId: v.athlete_id,
       athleteName: athleteNameById.get(v.athlete_id) ?? null,
+      ...profileOf(v.athlete_id),
       // Catalogue name, matching how the Review feed labels the same clips.
       // Log mode's fuller resolution (coach overrides, combo notation, GPP
       // titles) lives in `buildSessionReviewExercise` and needs the planned
@@ -397,6 +424,7 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       sourceId: v.id,
       athleteId: v.athlete_id,
       athleteName: athleteNameById.get(v.athlete_id) ?? null,
+      ...profileOf(v.athlete_id),
       exerciseName: `${LIFT_LABEL[v.lift_type]} ${v.attempt_number}`,
       exerciseId: null,
       // A competition attempt IS its lift type: the snatch, or the clean
@@ -429,6 +457,7 @@ export async function loadLibrary(filters: LibraryFilters = {}): Promise<Library
       sourceId: v.id,
       athleteId: v.athlete_id,
       athleteName: v.athlete_id ? athleteNameById.get(v.athlete_id) ?? null : null,
+      ...profileOf(v.athlete_id),
       exerciseName: v.exercise_id ? exerciseNameById.get(v.exercise_id) ?? null : null,
       exerciseId: v.exercise_id,
       liftModelId: modelFor(v.exercise_id).id,
