@@ -268,6 +268,19 @@ All modules are **active** — nothing is currently disabled or hidden:
   the right size and the whole frame squeezed into it, from a pipeline that
   measures exact on desktop.
 
+- **Assistant skill + CLI verbs** (0.101.0): `.claude/skills/emos/SKILL.md`
+  teaches a Claude session to operate EMOS as the coach's assistant, and
+  `npm run emos -- <command>` (`scripts/emos-cli.ts`) is its hands —
+  `athletes`, `week`, `copy-week` and `scale-loads` (dry run unless
+  `--apply`; group plans refused). The verbs are pure modules that take the
+  Supabase client: `src/lib/weekDraftService.ts` (copy a week, never
+  overwrites) and `src/lib/loadScaleService.ts` (scale selected loads by a
+  factor, selection by name / alias / code / ancestor / category), both
+  writing through `src/lib/prescriptionWriteService.ts` — the ONE definition
+  of a prescription write (raw + summary + set-line cache + overrides), which
+  the planner hook now delegates to. Anything that writes a prescription
+  must go through it; a raw-only SQL write leaves ten surfaces stale.
+
 **Deletion policy:** shipped code and database tables are never deleted
 without explicit instruction. **Carve-out for failed experiments:** once the
 user has declared an experiment dead (or asks for a prototype to be torn

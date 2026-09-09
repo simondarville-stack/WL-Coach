@@ -1,17 +1,40 @@
-// Copy a logged/reviewed week's plan into the following week as a starting
-// draft — the "plan next week from this one" action of the review panel.
-// Individual plans only (the review panel is athlete-scoped).
+// Copy a week's plan into another week as a starting draft — the "plan next
+// week from this one" verb. Individual plans only: a group plan is planned
+// and synced through the planner, and copying it here would skip the sync.
 //
 // Copies planned_exercises with their set lines and combo members, mirroring
 // the clipboard snapshot round-trip fields (metadata carries sentinels/GPP).
 // It never overwrites: a target week that already has planned work is left
 // untouched ('occupied').
+//
+// Takes the Supabase client as an argument so it runs unchanged from the app
+// and from the `npm run emos` CLI (scripts/emos-cli.ts); it imports nothing
+// React- or store-bound.
 
-import { supabase } from './supabase';
-import { getOwnerId } from './ownerContext';
 import type { WeekPlan } from './database.types';
+import type { LoadCmp } from './prescriptionParser';
+import type { EmosClient } from './prescriptionWriteService';
 
-export type CopyWeekResult = 'copied' | 'occupied' | 'empty';
+export type CopyWeekStatus = 'copied' | 'occupied' | 'empty';
+
+export interface CopyWeekParams {
+  athleteId: string;
+  /** Monday ISO (YYYY-MM-DD) of the week to copy from. */
+  sourceWeekStart: string;
+  /** Monday ISO of the week to create. */
+  targetWeekStart: string;
+  /** Coach recorded as `last_edited_by_coach_id` on a newly created week.
+   *  Defaults to the source week's owner. */
+  editorCoachId?: string;
+}
+
+export interface CopyWeekResult {
+  status: CopyWeekStatus;
+  /** The target week's id when it exists after the call (copied / occupied). */
+  targetWeekPlanId: string | null;
+  /** Rows copied (0 unless status is 'copied'). */
+  copiedExercises: number;
+}
 
 interface PlannedRow {
   id: string;
@@ -33,8 +56,12 @@ interface PlannedRow {
   metadata: Record<string, unknown> | null;
 }
 
-async function fetchIndividualPlan(athleteId: string, weekStart: string): Promise<WeekPlan | null> {
-  const { data } = await supabase
+async function fetchIndividualPlan(
+  client: EmosClient,
+  athleteId: string,
+  weekStart: string,
+): Promise<WeekPlan | null> {
+  const { data } = await client
     .from('week_plans')
     .select('*')
     .eq('week_start', weekStart)
@@ -45,14 +72,14 @@ async function fetchIndividualPlan(athleteId: string, weekStart: string): Promis
 }
 
 export async function copyWeekAsDraft(
-  athleteId: string,
-  sourceWeekStart: string,
-  targetWeekStart: string
+  client: EmosClient,
+  params: CopyWeekParams,
 ): Promise<CopyWeekResult> {
-  const sourcePlan = await fetchIndividualPlan(athleteId, sourceWeekStart);
-  if (!sourcePlan) return 'empty';
+  const { athleteId, sourceWeekStart, targetWeekStart } = params;
+  const sourcePlan = await fetchIndividualPlan(client, athleteId, sourceWeekStart);
+  if (!sourcePlan) return { status: 'empty', targetWeekPlanId: null, copiedExercises: 0 };
 
-  const { data: sourceExRaw, error: exErr } = await supabase
+  const { data: sourceExRaw, error: exErr } = await client
     .from('planned_exercises')
     .select('id, day_index, exercise_id, position, notes, unit, prescription_raw, summary_total_sets, summary_total_reps, summary_highest_load, summary_avg_load, variation_note, display_name, is_combo, combo_notation, combo_color, metadata')
     .eq('weekplan_id', sourcePlan.id)
@@ -60,18 +87,19 @@ export async function copyWeekAsDraft(
     .order('position');
   if (exErr) throw exErr;
   const sourceExercises = (sourceExRaw as unknown as PlannedRow[]) ?? [];
-  if (sourceExercises.length === 0) return 'empty';
+  if (sourceExercises.length === 0) return { status: 'empty', targetWeekPlanId: null, copiedExercises: 0 };
 
   // ── Target plan: create if missing; refuse when it already has content ──
-  let targetPlan = await fetchIndividualPlan(athleteId, targetWeekStart);
+  let targetPlan = await fetchIndividualPlan(client, athleteId, targetWeekStart);
   if (targetPlan) {
-    const { count } = await supabase
+    const { count } = await client
       .from('planned_exercises')
       .select('id', { count: 'exact', head: true })
       .eq('weekplan_id', targetPlan.id);
-    if ((count ?? 0) > 0) return 'occupied';
+    if ((count ?? 0) > 0) return { status: 'occupied', targetWeekPlanId: targetPlan.id, copiedExercises: 0 };
   } else {
-    const { data: created, error: createErr } = await supabase
+    const editor = params.editorCoachId ?? sourcePlan.owner_id;
+    const { data: created, error: createErr } = await client
       .from('week_plans')
       .insert([{
         week_start: targetWeekStart,
@@ -79,8 +107,8 @@ export async function copyWeekAsDraft(
         group_id: null,
         is_group_plan: false,
         // Same host-coach ownership rule as fetchOrCreateWeekPlan.
-        owner_id: sourcePlan.owner_id ?? getOwnerId(),
-        last_edited_by_coach_id: getOwnerId(),
+        owner_id: sourcePlan.owner_id,
+        last_edited_by_coach_id: editor,
         // Carry the week's day structure; the brief stays week-specific.
         active_days: sourcePlan.active_days,
         day_labels: sourcePlan.day_labels,
@@ -105,14 +133,14 @@ export async function copyWeekAsDraft(
       const srcLabel = sourcePlan.day_labels?.[d];
       if (srcLabel && !nextLabels[d]) nextLabels[d] = srcLabel;
     }
-    await supabase
+    await client
       .from('week_plans')
       .update({ active_days: nextActive, day_labels: nextLabels })
       .eq('id', targetPlan.id);
   }
 
   // ── Copy exercises (bulk), then remap children by day|position ──
-  const { data: insertedRaw, error: insertErr } = await supabase
+  const { data: insertedRaw, error: insertErr } = await client
     .from('planned_exercises')
     .insert(sourceExercises.map(ex => ({
       weekplan_id: targetPlan!.id,
@@ -146,14 +174,16 @@ export async function copyWeekAsDraft(
 
   const sourceIds = sourceExercises.map(e => e.id);
 
-  // Set lines.
-  const { data: setLinesRaw } = await supabase
+  // Set lines — the full cached shape, including the range upper bounds and
+  // the soft-load comparator, so the copy reads exactly like the source.
+  const { data: setLinesRaw } = await client
     .from('planned_set_lines')
-    .select('planned_exercise_id, sets, reps, reps_text, load_value, load_max, position')
+    .select('planned_exercise_id, sets, sets_max, reps, reps_max, reps_text, load_value, load_max, load_cmp, position')
     .in('planned_exercise_id', sourceIds);
   type SetLineRow = {
-    planned_exercise_id: string; sets: number; reps: number;
-    reps_text: string | null; load_value: number; load_max: number | null; position: number;
+    planned_exercise_id: string; sets: number; sets_max: number | null; reps: number;
+    reps_max: number | null; reps_text: string | null; load_value: number;
+    load_max: number | null; load_cmp: LoadCmp | null; position: number;
   };
   const bySourceId = new Map(sourceExercises.map(e => [e.id, e]));
   const setLineInserts = ((setLinesRaw as SetLineRow[]) ?? [])
@@ -164,23 +194,26 @@ export async function copyWeekAsDraft(
       return {
         planned_exercise_id: newId,
         sets: l.sets,
+        sets_max: l.sets_max,
         reps: l.reps,
+        reps_max: l.reps_max,
         reps_text: l.reps_text,
         load_value: l.load_value,
         load_max: l.load_max,
+        load_cmp: l.load_cmp,
         position: l.position,
       };
     })
     .filter((l): l is NonNullable<typeof l> => l !== null);
   if (setLineInserts.length > 0) {
-    const { error } = await supabase.from('planned_set_lines').insert(setLineInserts);
+    const { error } = await client.from('planned_set_lines').insert(setLineInserts);
     if (error) throw error;
   }
 
   // Combo members.
   const comboSourceIds = sourceExercises.filter(e => e.is_combo).map(e => e.id);
   if (comboSourceIds.length > 0) {
-    const { data: membersRaw } = await supabase
+    const { data: membersRaw } = await client
       .from('planned_exercise_combo_members')
       .select('planned_exercise_id, exercise_id, position')
       .in('planned_exercise_id', comboSourceIds);
@@ -194,10 +227,10 @@ export async function copyWeekAsDraft(
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);
     if (memberInserts.length > 0) {
-      const { error } = await supabase.from('planned_exercise_combo_members').insert(memberInserts);
+      const { error } = await client.from('planned_exercise_combo_members').insert(memberInserts);
       if (error) throw error;
     }
   }
 
-  return 'copied';
+  return { status: 'copied', targetWeekPlanId: targetPlan.id, copiedExercises: sourceExercises.length };
 }

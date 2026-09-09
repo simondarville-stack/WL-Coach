@@ -16,7 +16,8 @@ import type {
   WeekPlan,
 } from '../lib/database.types';
 import { DAYS_OF_WEEK } from '../lib/constants';
-import { parsePrescription, parseComboPrescription, computePrescriptionSummary } from '../lib/prescriptionParser';
+import { computePrescriptionSummary } from '../lib/prescriptionParser';
+import { writePrescriptionRecord } from '../lib/prescriptionWriteService';
 import { applyFeatureOverrides, type ExerciseFeatures } from '../lib/exerciseFeatures';
 import { recordPrescriptionDraft, clearPrescriptionDraft } from '../lib/prescriptionDraftStore';
 import { syncGroupPlanToAllAthletes } from '../lib/groupSyncService';
@@ -516,123 +517,15 @@ export function useWeekPlans() {
     return { name: 'Exercise', dayIndex: null, weekPlanId: weekPlan?.id ?? null };
   };
 
-  // Internal: replace an exercise's set lines with `lines` (positions 1..n).
-  //
-  // Uses upsert-on-conflict + tail-delete instead of delete-all + insert. The
-  // old pattern was not atomic: a burst of overlapping writes for the same
-  // exercise could interleave as delete/delete/insert/insert, and the second
-  // insert collided on the (planned_exercise_id, position) unique constraint
-  // (Postgres 23505). Upserting on that exact constraint converges the rows
-  // last-write-wins instead of throwing, so the crash can't happen even if the
-  // per-exercise serialization in savePrescription is bypassed (e.g. a second
-  // tab editing the same exercise). The tail-delete trims any rows left over
-  // when the new prescription has fewer lines than the old one.
-  //
-  // Every line carries the full column set (reps_text/load_max defaulted to
-  // null) so an upsert UPDATE always overwrites a row's previous shape — e.g.
-  // a line that used to be a combo member won't keep a stale reps_text.
-  const replaceSetLines = async (
-    plannedExId: string,
-    lines: Array<Record<string, unknown>>,
-  ): Promise<void> => {
-    if (lines.length > 0) {
-      const { error: upsertError } = await supabase
-        .from('planned_set_lines')
-        .upsert(lines, { onConflict: 'planned_exercise_id,position' });
-      if (upsertError) throw upsertError;
-    }
-    const { error: trimError } = await supabase
-      .from('planned_set_lines')
-      .delete()
-      .eq('planned_exercise_id', plannedExId)
-      .gt('position', lines.length);
-    if (trimError) throw trimError;
-  };
-
-  // Internal: performs the actual Supabase writes for a prescription. Wrapped
-  // by savePrescription, which adds local-draft safety around it.
-  const writePrescription = async (
+  // Internal: performs the actual Supabase writes for a prescription. The
+  // write itself lives in src/lib/prescriptionWriteService.ts so this hook and
+  // the assistant verbs (loadScaleService, the `npm run emos` CLI) can never
+  // disagree about what a prescription write touches. Wrapped by
+  // savePrescription, which adds local-draft safety around it.
+  const writePrescription = (
     plannedExId: string,
     data: { prescription: string; unit: DefaultUnit; isCombo?: boolean },
-  ): Promise<void> => {
-    const { prescription, unit, isCombo } = data;
-    const isFreeText = unit === 'free_text';
-    const isOtherUnit = unit === 'other';
-    const isFreeTextReps = unit === 'free_text_reps';
-    const isNonNumeric = isFreeText || isOtherUnit;
-
-    // Summary (sets/reps/loads) is computed by the single shared helper so the
-    // stored cache always matches what the counting layer would derive. Feature
-    // overrides (Σ total reps / Ø avg load) are re-applied on every write so a
-    // prescription edit can't clobber a standing override.
-    const { data: metaRow } = await supabase
-      .from('planned_exercises')
-      .select('metadata')
-      .eq('id', plannedExId)
-      .single();
-    const features = ((metaRow as { metadata?: PlannedExerciseMetadata } | null)?.metadata ?? {}).features;
-    const summary = applyFeatureOverrides(
-      computePrescriptionSummary(prescription, unit, !!isCombo),
-      features,
-    );
-    const summaryUpdate = {
-      prescription_raw: prescription,
-      unit,
-      summary_total_sets: summary.total_sets,
-      summary_total_reps: summary.total_reps,
-      summary_highest_load: summary.highest_load,
-      summary_avg_load: summary.avg_load,
-    };
-
-    if (isCombo) {
-      const parsed = parseComboPrescription(prescription);
-      const lines = parsed.map((line, idx) => {
-        // Round multiplier scales the per-set reps (m rounds of the tuple) but
-        // not the set count (Option A). reps_text carries the grouped display
-        // ("2(1+2)") so the athlete sees the rounds; it is display-only —
-        // per-member attribution reads prescription_raw, not this cache.
-        // Set ranges store the lower bound in `sets` (the guaranteed minimum
-        // the athlete expands) and the upper bound in `sets_max`.
-        const m = line.multiplier ?? 1;
-        return {
-          planned_exercise_id: plannedExId,
-          sets: line.sets,
-          sets_max: line.setsMax ?? null,
-          reps: line.totalReps * m,
-          reps_max: null,
-          reps_text: line.multiplier != null ? `${m}(${line.repsText})` : line.repsText,
-          load_value: line.load,
-          load_max: line.loadMax ?? null,
-          load_cmp: line.loadCmp ?? null,
-          position: idx + 1,
-        };
-      });
-      await replaceSetLines(plannedExId, lines);
-      await supabase.from('planned_exercises').update(summaryUpdate).eq('id', plannedExId);
-      return;
-    }
-
-    const parsed = isNonNumeric ? [] : parsePrescription(prescription);
-    const hasNumericLines = parsed.length > 0 && !isNonNumeric && !isFreeTextReps;
-    const lines = hasNumericLines
-      ? parsed.map((line, idx) => ({
-          planned_exercise_id: plannedExId,
-          sets: line.sets,
-          sets_max: line.setsMax ?? null,
-          reps: line.reps,
-          reps_max: line.repsMax ?? null,
-          reps_text: null,
-          load_value: line.load,
-          load_max: line.loadMax ?? null,
-          load_cmp: line.loadCmp ?? null,
-          position: idx + 1,
-        }))
-      : [];
-    await replaceSetLines(plannedExId, lines);
-    await supabase.from('planned_exercises').update(summaryUpdate).eq('id', plannedExId);
-    // Promote group-sourced exercise to individual when coach edits it
-    await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
-  };
+  ): Promise<void> => writePrescriptionRecord(supabase, plannedExId, data);
 
   /**
    * Optimistically patch ONE planned exercise in state, touching only the

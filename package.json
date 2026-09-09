@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "bench:serve": "vite --port 5399 --strictPort --config verify/vite.bench.config.ts",
     "prepare": "husky",
-    "bench": "node verify/bench.mjs"
+    "bench": "node verify/bench.mjs",
+    "emos": "node scripts/emos.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
