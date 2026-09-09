@@ -294,7 +294,12 @@ All modules are **active** — nothing is currently disabled or hidden:
   From 0.106.0 `add-combo` writes a complex (Clean + Front Squat,
   `80×1+2×3`) the way the planner's combo creator does — one row, its
   members in `planned_exercise_combo_members`, the set-line cache carrying
-  the reps tuple.
+  the reps tuple — and the verbs the planner's own rows say a coach
+  reaches for most (the skill's "coach's loop" table): `edit-exercise`
+  (prescription, unit, note, display name, ⏱ / ⏸ / tempo / Σ features in
+  place), `swap-exercise`, `move-exercise`, `add-gpp` / `edit-gpp` (a
+  quarter of all rows are GPP blocks), and the `log` read (planned beside
+  performed); `week` prints row ids as the handles.
   `day_index` is the planner's 1-based slot number. The verbs are pure modules that take the
   Supabase client: `src/lib/weekDraftService.ts` (copy a week, never
   overwrites) and `src/lib/loadScaleService.ts` (scale selected loads by a

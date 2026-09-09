@@ -48,6 +48,15 @@ export function abbreviateExercise(exercise: Pick<Exercise, 'name' | 'exercise_c
 
 export type SentinelType = 'text' | 'video' | 'image' | 'gpp' | null;
 
+/** How each sentinel exercise is created — one definition, shared by the
+ *  planner's sentinelService and the assistant CLI's GPP verb. */
+export const SENTINEL_DEFS: Record<string, { name: string; color: string }> = {
+  TEXT:  { name: 'Free Text / Notes', color: '#9CA3AF' },
+  VIDEO: { name: 'Video',             color: '#6366F1' },
+  IMAGE: { name: 'Image',             color: '#EC4899' },
+  GPP:   { name: 'General Physical Preparation', color: '#10B981' },
+};
+
 export function getSentinelType(code: string | null): SentinelType {
   if (code === 'TEXT') return 'text';
   if (code === 'VIDEO') return 'video';

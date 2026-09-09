@@ -14,7 +14,16 @@
 //   npm run emos -- add-combo   --athlete <name|id> [--week next] --day <n> --exercise <name|id> --exercise <name|id>…
 //                               [--prescription "80×1+2×3"] [--unit kg|%|rpe|free|free-reps] [--name "Clean + Front Squat"]
 //                               [--color "#3B82F6"] [--note "..."] [--position <n>]
+//   npm run emos -- edit-exercise --id <planned_exercise_id> [--prescription "..."] [--unit kg|%|rpe|free|free-reps]
+//                               [--note "..."|--clear-note] [--display-name "..."] [--time 12|90s|2:15|off]
+//                               [--rest 90s|off] [--tempo 3120|off] [--total-reps <n>|off] [--total-sets <n>|off]
+//   npm run emos -- swap-exercise --id <planned_exercise_id> --exercise <name|id>
+//   npm run emos -- move-exercise --id <planned_exercise_id> [--day <n>] [--position <n>]
+//   npm run emos -- add-gpp     --athlete <name|id> [--week next] --day <n> --title "Core" [--description "..."]
+//                               --row "Wall sits | 60s | 3" [--row "Plank | 45s | 3 | BW"]… [--position <n>]
+//   npm run emos -- edit-gpp    --id <planned_exercise_id> [--title "..."] [--description "..."] [--row "..."]…
 //   npm run emos -- remove-exercise --id <planned_exercise_id>
+//   npm run emos -- log         --athlete <name|id> [--week this]
 //   npm run emos -- prs         --athlete <name|id> [--exercise <name>]
 //   global: [--env .env] [--json]
 //
@@ -32,7 +41,8 @@ import { parseArgs } from 'node:util';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import type { Database, WeekPlan } from '../src/lib/database.types';
+import type { Database, DefaultUnit, WeekPlan, PlannedExerciseMetadata, GppRow } from '../src/lib/database.types';
+import { formatSeconds } from '../src/lib/exerciseFeatures';
 import { getMondayOfWeekISO } from '../src/lib/weekUtils';
 import { addDaysToISO } from '../src/lib/dateUtils';
 import { copyWeekAsDraft } from '../src/lib/weekDraftService';
@@ -48,6 +58,13 @@ import {
   addPlannedExercise,
   addPlannedCombo,
   removePlannedExercise,
+  editPlannedExercise,
+  swapPlannedExercise,
+  movePlannedExercise,
+  addGppBlock,
+  editGppBlock,
+  parseGppRowSpec,
+  parseFeatureFlags,
   pickExercise,
   resolveUnitAlias,
   chooseUnit,
@@ -186,7 +203,7 @@ async function cmdWeek(ctx: Ctx, v: Args): Promise<void> {
   }
   const { data, error } = await ctx.client
     .from('planned_exercises')
-    .select('id, day_index, position, exercise_id, unit, prescription_raw, display_name, is_combo, combo_notation, notes, source')
+    .select('id, day_index, position, exercise_id, unit, prescription_raw, display_name, is_combo, combo_notation, notes, source, metadata')
     .eq('weekplan_id', plan.id)
     .order('day_index')
     .order('position');
@@ -194,7 +211,7 @@ async function cmdWeek(ctx: Ctx, v: Args): Promise<void> {
   type Row = {
     id: string; day_index: number; position: number; exercise_id: string; unit: string | null;
     prescription_raw: string | null; display_name: string | null; is_combo: boolean;
-    combo_notation: string | null; notes: string | null; source: string | null;
+    combo_notation: string | null; notes: string | null; source: string | null; metadata: PlannedExerciseMetadata | null;
   };
   const rows = (data as unknown as Row[]) ?? [];
   const exIds = [...new Set(rows.map(r => r.exercise_id))];
@@ -203,17 +220,35 @@ async function cmdWeek(ctx: Ctx, v: Args): Promise<void> {
     const { data: ex } = await ctx.client.from('exercises').select('id, name').in('id', exIds);
     for (const e of (ex as unknown as { id: string; name: string }[]) ?? []) names.set(e.id, e.name);
   }
-  const labelled = rows.map(r => ({
-    ...r,
-    label: r.display_name ?? (r.is_combo ? r.combo_notation : null) ?? names.get(r.exercise_id) ?? r.exercise_id,
-    day: dayName(plan, r.day_index),
-  }));
+  const labelled = rows.map(r => {
+    const gpp = r.metadata?.gpp;
+    const time = r.metadata?.features?.totalTime;
+    const label = gpp
+      ? `GPP: ${gpp.title || 'GPP'}`
+      : r.display_name ?? (r.is_combo ? r.combo_notation : null) ?? names.get(r.exercise_id) ?? r.exercise_id;
+    const content = gpp
+      ? gpp.rows.map(g => gppRowText(g)).join(' · ')
+      : (r.prescription_raw ?? '') + (time ? `  ⏱${formatSeconds(time)}` : '');
+    return { ...r, label, content, day: dayName(plan, r.day_index) };
+  });
   if (ctx.json) { console.log(JSON.stringify({ athlete, weekStart, plan, rows: labelled }, null, 2)); return; }
   console.log(`${athlete.name} — week of ${ddmm(weekStart)}  (week_plans.id ${plan.id})`);
   console.log(table(
-    labelled.map(r => [r.day, String(r.position), r.label + (r.is_combo ? ' [combo]' : ''), r.unit ?? '', r.prescription_raw ?? '', r.notes ?? '']),
-    ['Day', '#', 'Exercise', 'Unit', 'Prescription', 'Notes'],
+    labelled.map(r => [r.day, String(r.position), r.label + (r.is_combo ? ' [combo]' : ''), r.metadata?.gpp ? '' : (r.unit ?? ''), r.content, oneLine(r.notes), r.id]),
+    ['Day', '#', 'Exercise', 'Unit', 'Prescription', 'Notes', 'Id'],
   ));
+}
+
+/** "Wall sits 60s×3 (24 kg)" — a GPP row on one line. */
+function gppRowText(g: GppRow): string {
+  const reps = g.reps ? ` ${g.reps}` : '';
+  const sets = g.sets && g.sets !== 1 ? `×${g.sets}` : '';
+  const load = g.load ? ` (${g.load})` : '';
+  return `${g.exercise}${reps}${sets}${load}`;
+}
+
+function oneLine(s: string | null | undefined): string {
+  return (s ?? '').replace(/\s*\n+\s*/g, ' / ').trim();
 }
 
 async function cmdCopyWeek(ctx: Ctx, v: Args): Promise<void> {
@@ -354,7 +389,7 @@ async function cmdAddExercise(ctx: Ctx, v: Args): Promise<void> {
   const explicitUnit = v.unit ? resolveUnitAlias(v.unit) : null;
   if (v.unit && !explicitUnit) throw new UsageError(`unknown --unit "${v.unit}" — use kg | % | rpe | free | free-reps | other`);
   const prescription = v.prescription?.trim() || null;
-  const unit = chooseUnit(explicitUnit, prescription, exercise.default_unit as import('../src/lib/database.types').DefaultUnit);
+  const unit = chooseUnit(explicitUnit, prescription, exercise.default_unit as DefaultUnit);
   const position = v.position != null ? Number(v.position) : null;
   if (position != null && (!Number.isInteger(position) || position < 1)) throw new UsageError('--position must be a positive integer');
 
@@ -391,7 +426,7 @@ async function cmdAddCombo(ctx: Ctx, v: Args): Promise<void> {
       log(`note: the reps tuple names ${check.arity} lift${check.arity === 1 ? '' : 's'} per set but the combo has ${members.length} members — the planner allows it; check it is what you meant.`);
     }
   }
-  const unit = chooseUnit(explicitUnit, prescription, members[0].default_unit as import('../src/lib/database.types').DefaultUnit);
+  const unit = chooseUnit(explicitUnit, prescription, members[0].default_unit as DefaultUnit);
   const position = v.position != null ? Number(v.position) : null;
   if (position != null && (!Number.isInteger(position) || position < 1)) throw new UsageError('--position must be a positive integer');
   if (v.color && !/^#[0-9a-f]{6}$/i.test(v.color)) throw new UsageError(`--color must be a hex colour like #3B82F6 (got "${v.color}")`);
@@ -412,6 +447,192 @@ async function cmdAddCombo(ctx: Ctx, v: Args): Promise<void> {
   console.log(`members: ${members.map((m, i) => `${i + 1}. ${m.name}`).join('  ')}`);
   if (r.dayActivated) console.log(`note: ${dayName(plan, dayNo)} was not an active slot on this week — switched it on.`);
   console.log(`planned_exercises.id ${r.plannedExerciseId}`);
+}
+
+function requireRowId(v: Args): string {
+  const id = v.id?.[0];
+  if (!id || !UUID_RE.test(id)) throw new UsageError('--id <planned_exercise_id> is required (the Id column of `week`, or what add-exercise printed)');
+  return id;
+}
+
+async function cmdEditExercise(ctx: Ctx, v: Args): Promise<void> {
+  const id = requireRowId(v);
+  const explicitUnit = v.unit ? resolveUnitAlias(v.unit) : null;
+  if (v.unit && !explicitUnit) throw new UsageError(`unknown --unit "${v.unit}" — use kg | % | rpe | free | free-reps | other`);
+  if (v.note != null && v['clear-note']) throw new UsageError('give --note or --clear-note, not both');
+  const flags = parseFeatureFlags({ time: v.time, rest: v.rest, tempo: v.tempo, totalReps: v['total-reps'], totalSets: v['total-sets'] });
+  if (!flags.ok) throw new UsageError(flags.reason);
+  const hasFeatures = Object.keys(flags.patch).length > 0;
+  const anything = v.prescription != null || explicitUnit || v.note != null || v['clear-note'] || v['display-name'] != null || hasFeatures;
+  if (!anything) throw new UsageError('nothing to change — give --prescription, --unit, --note / --clear-note, --display-name, --time, --rest, --tempo, --total-reps or --total-sets');
+
+  const r = await editPlannedExercise(ctx.client, {
+    plannedExerciseId: id,
+    prescription: v.prescription,
+    unit: explicitUnit,
+    notes: v['clear-note'] ? null : v.note,
+    displayName: v['display-name'],
+    features: hasFeatures ? flags.patch : undefined,
+  });
+  if (ctx.json) { console.log(JSON.stringify(r, null, 2)); return; }
+  if (r.changed.length === 0) { console.log(`row ${id}: nothing changed.`); return; }
+  const bits = [`[${r.unit ?? '-'}]`, r.prescription ?? '(empty)'];
+  if (r.features?.totalTime) bits.push(`⏱${formatSeconds(r.features.totalTime)}`);
+  if (r.features?.restTime) bits.push(`⏸${formatSeconds(r.features.restTime)}`);
+  if (r.features?.tempo) bits.push(`tempo ${r.features.tempo}`);
+  if (r.features?.totalReps != null) bits.push(`Σ${r.features.totalReps} reps`);
+  if (r.features?.totalSets != null) bits.push(`${r.features.totalSets} sets`);
+  console.log(`edited ${r.changed.join(', ')} on row ${id}: ${bits.join('  ')}`);
+}
+
+async function cmdSwapExercise(ctx: Ctx, v: Args): Promise<void> {
+  const id = requireRowId(v);
+  const { data: row } = await ctx.client
+    .from('planned_exercises')
+    .select('weekplan_id, week_plans!inner(owner_id)')
+    .eq('id', id)
+    .maybeSingle();
+  if (!row) throw new UsageError(`no planned row with id ${id}`);
+  const ownerId = (row as unknown as { week_plans: { owner_id: string } }).week_plans.owner_id;
+  const exercise = await resolveExercise(ctx.client, v.exercise?.[0], ownerId);
+  const r = await swapPlannedExercise(ctx.client, id, exercise.id);
+  const { data: from } = await ctx.client.from('exercises').select('name').eq('id', r.from).maybeSingle();
+  const fromName = (from as { name: string } | null)?.name ?? r.from;
+  if (ctx.json) { console.log(JSON.stringify({ ...r, fromName, toName: exercise.name }, null, 2)); return; }
+  console.log(`swapped row ${id}: ${fromName} → ${exercise.name}  (prescription, note and position kept)`);
+}
+
+async function cmdMoveExercise(ctx: Ctx, v: Args): Promise<void> {
+  const id = requireRowId(v);
+  const day = v.day?.[0] != null ? Number(v.day[0]) : null;
+  if (day != null && (!Number.isInteger(day) || day < 1)) throw new UsageError("--day takes the planner's slot number, D1 = 1");
+  const position = v.position != null ? Number(v.position) : null;
+  if (position != null && (!Number.isInteger(position) || position < 1)) throw new UsageError('--position must be a positive integer');
+  if (day == null && position == null) throw new UsageError('give --day <n> and/or --position <n>');
+  const r = await movePlannedExercise(ctx.client, { plannedExerciseId: id, dayIndex: day, position });
+  if (ctx.json) { console.log(JSON.stringify(r, null, 2)); return; }
+  console.log(`moved row ${id}: D${r.from.dayIndex} #${r.from.position} → D${r.to.dayIndex} #${r.to.position}`);
+  if (r.dayActivated) console.log(`note: D${r.to.dayIndex} was not an active slot on this week — switched it on.`);
+}
+
+function parseGppRows(specs: string[] | undefined): GppRow[] | undefined {
+  if (!specs || specs.length === 0) return undefined;
+  return specs.map(spec => {
+    const r = parseGppRowSpec(spec);
+    if (!r.ok) throw new UsageError(r.reason);
+    return r.row;
+  });
+}
+
+async function cmdAddGpp(ctx: Ctx, v: Args): Promise<void> {
+  const athlete = await resolveAthlete(ctx.client, v.athlete);
+  const weekStart = resolveWeek(v.week, 'next');
+  const dayArg = v.day?.[0];
+  const dayNo = Number(dayArg);
+  if (!dayArg || !Number.isInteger(dayNo) || dayNo < 1) throw new UsageError("--day <n> is required (the planner's slot number: D1 = 1)");
+  const title = v.title?.trim();
+  if (!title) throw new UsageError('--title "..." is required (the block\'s heading, e.g. "Core" or "Knæ-stabilitet")');
+  const rows = parseGppRows(v.row) ?? [];
+  const position = v.position != null ? Number(v.position) : null;
+  if (position != null && (!Number.isInteger(position) || position < 1)) throw new UsageError('--position must be a positive integer');
+  const plan = await findIndividualPlan(ctx.client, athlete.id, weekStart);
+  if (!plan) throw new UsageError(`${athlete.name} has no individual plan in the week of ${ddmm(weekStart)} — run new-week or copy-week first`);
+
+  const r = await addGppBlock(ctx.client, {
+    weekPlanId: plan.id, dayIndex: dayNo, ownerId: athlete.owner_id, position,
+    gpp: { title, description: v.description?.trim() ?? '', rows },
+  });
+  if (ctx.json) { console.log(JSON.stringify({ athlete, weekStart, weekPlanId: plan.id, title, rows, ...r }, null, 2)); return; }
+  console.log(`added ${athlete.name} ${ddmm(weekStart)} ${dayName(plan, dayNo)} #${r.position}: GPP "${title}" — ${rows.length ? rows.map(gppRowText).join(' · ') : '(no rows yet)'}`);
+  if (r.sentinelCreated) console.log('note: created the coach\'s GPP sentinel exercise (first GPP block for this coach).');
+  if (r.dayActivated) console.log(`note: ${dayName(plan, dayNo)} was not an active slot on this week — switched it on.`);
+  console.log(`planned_exercises.id ${r.plannedExerciseId}`);
+}
+
+async function cmdEditGpp(ctx: Ctx, v: Args): Promise<void> {
+  const id = requireRowId(v);
+  const rows = parseGppRows(v.row);
+  if (v.title == null && v.description == null && !rows) throw new UsageError('give --title, --description and/or --row (rows replace the block\'s rows)');
+  const r = await editGppBlock(ctx.client, { plannedExerciseId: id, title: v.title?.trim(), description: v.description, rows });
+  if (ctx.json) { console.log(JSON.stringify(r, null, 2)); return; }
+  if (r.changed.length === 0) { console.log(`row ${id}: nothing changed.`); return; }
+  console.log(`edited ${r.changed.join(', ')} on GPP "${r.gpp.title}" (${id}): ${r.gpp.rows.map(gppRowText).join(' · ') || '(no rows)'}`);
+}
+
+async function cmdLog(ctx: Ctx, v: Args): Promise<void> {
+  const athlete = await resolveAthlete(ctx.client, v.athlete);
+  const weekStart = resolveWeek(v.week, 'this');
+  type Session = {
+    id: string; date: string; day_index: number; status: string | null; session_rpe: number | null;
+    duration_minutes: number | null; session_notes: string | null; bodyweight_kg: number | null; coach_reviewed_at: string | null;
+  };
+  const { data: sRows, error: sErr } = await ctx.client
+    .from('training_log_sessions')
+    .select('id, date, day_index, status, session_rpe, duration_minutes, session_notes, bodyweight_kg, coach_reviewed_at')
+    .eq('athlete_id', athlete.id)
+    .eq('week_start', weekStart)
+    .order('day_index');
+  if (sErr) throw sErr;
+  const sessions = (sRows as unknown as Session[]) ?? [];
+  if (sessions.length === 0) {
+    if (ctx.json) { console.log(JSON.stringify({ athlete, weekStart, sessions: [] })); return; }
+    console.log(`${athlete.name} — week of ${ddmm(weekStart)}: nothing logged`);
+    return;
+  }
+  type LogEx = {
+    id: string; session_id: string; exercise_id: string | null; planned_exercise_id: string | null; performed_raw: string | null;
+    performed_notes: string | null; position: number; status: string | null; technique_rating: number | null;
+    metadata: { gpp?: { title: string; rows: (GppRow & { done?: boolean })[] } } | null;
+  };
+  type LogSet = { log_exercise_id: string; set_number: number; performed_load: number | null; performed_reps: number | null; performed_text: string | null; rpe: number | null; status: string | null };
+  const { data: exRows, error: eErr } = await ctx.client
+    .from('training_log_exercises')
+    .select('id, session_id, exercise_id, planned_exercise_id, performed_raw, performed_notes, position, status, technique_rating, metadata')
+    .in('session_id', sessions.map(s => s.id))
+    .order('position');
+  if (eErr) throw eErr;
+  const exs = (exRows as unknown as LogEx[]) ?? [];
+  const exIds = exs.map(e => e.id);
+  const sets: LogSet[] = exIds.length
+    ? (((await ctx.client.from('training_log_sets').select('log_exercise_id, set_number, performed_load, performed_reps, performed_text, rpe, status').in('log_exercise_id', exIds).order('set_number')).data as unknown as LogSet[]) ?? [])
+    : [];
+  const plannedIds = exs.map(e => e.planned_exercise_id).filter((x): x is string => !!x);
+  const planned = new Map<string, { prescription_raw: string | null; display_name: string | null; combo_notation: string | null; is_combo: boolean }>();
+  if (plannedIds.length) {
+    const { data } = await ctx.client.from('planned_exercises').select('id, prescription_raw, display_name, combo_notation, is_combo').in('id', plannedIds);
+    for (const r of (data as unknown as { id: string; prescription_raw: string | null; display_name: string | null; combo_notation: string | null; is_combo: boolean }[]) ?? []) planned.set(r.id, r);
+  }
+  const { rows: catalogue } = await loadCatalogue(ctx.client);
+  const nameOf = new Map(catalogue.map(c => [c.id, c.name]));
+  const num = (n: number | null) => n == null ? '' : String(n).replace('.', ',');
+  const setText = (s: LogSet) => s.performed_text ?? (s.performed_load != null || s.performed_reps != null ? `${num(s.performed_load)}×${num(s.performed_reps)}` : '') + (s.rpe != null ? `@${num(s.rpe)}` : '');
+
+  const out = sessions.map(s => ({
+    ...s,
+    exercises: exs.filter(e => e.session_id === s.id).map(e => {
+      const p = e.planned_exercise_id ? planned.get(e.planned_exercise_id) : undefined;
+      const gpp = e.metadata?.gpp;
+      const label = gpp ? `GPP: ${gpp.title}` : p?.display_name ?? (p?.is_combo ? p.combo_notation : null) ?? (e.exercise_id ? nameOf.get(e.exercise_id) : null) ?? '(off plan)';
+      const done = gpp ? `${gpp.rows.filter(r => r.done).length}/${gpp.rows.length} ticked` : null;
+      const exSets = sets.filter(x => x.log_exercise_id === e.id);
+      return {
+        id: e.id, label, status: e.status, planned: p?.prescription_raw ?? null,
+        performed: done ?? e.performed_raw ?? exSets.map(setText).filter(Boolean).join(', '),
+        rating: e.technique_rating, notes: e.performed_notes, sets: exSets,
+      };
+    }),
+  }));
+  if (ctx.json) { console.log(JSON.stringify({ athlete, weekStart, sessions: out }, null, 2)); return; }
+  console.log(`${athlete.name} — logged week of ${ddmm(weekStart)}`);
+  for (const s of out) {
+    const head = [`D${s.day_index} ${ddmm(s.date)}`, s.status ?? '', s.session_rpe != null ? `RPE ${num(s.session_rpe)}` : '', s.duration_minutes != null ? `${s.duration_minutes} min` : '', s.bodyweight_kg != null ? `BW ${num(s.bodyweight_kg)}` : '', s.coach_reviewed_at ? 'reviewed' : 'NOT reviewed'].filter(Boolean).join('  ');
+    console.log(`\n${head}${s.session_notes ? `\n  athlete: ${oneLine(s.session_notes)}` : ''}`);
+    if (s.exercises.length === 0) { console.log('  (no exercises logged)'); continue; }
+    console.log(table(
+      s.exercises.map(e => [e.label, e.status ?? '', e.planned ?? '', e.performed, e.rating != null ? String(e.rating) : '', oneLine(e.notes)]),
+      ['Exercise', 'Status', 'Planned', 'Performed', 'Tech', 'Athlete note'],
+    ).split('\n').map(l => '  ' + l).join('\n'));
+  }
 }
 
 async function cmdRemoveExercise(ctx: Ctx, v: Args): Promise<void> {
@@ -471,6 +692,8 @@ type Args = {
   'include-combos'?: boolean; 'round-kg'?: string; 'round-pct'?: string; apply?: boolean;
   like?: string; unit?: string; prescription?: string; note?: string; 'display-name'?: string; position?: string;
   name?: string; color?: string;
+  'clear-note'?: boolean; time?: string; rest?: string; tempo?: string; 'total-reps'?: string; 'total-sets'?: string;
+  title?: string; description?: string; row?: string[];
   all?: boolean; json?: boolean; env?: string; help?: boolean;
 };
 
@@ -489,7 +712,16 @@ const USAGE = `usage:
   npm run emos -- add-combo   --athlete <name|id> [--week next] --day <n> --exercise <name|id> --exercise <name|id>...
                               [--prescription "80×1+2×3"] [--unit kg|%|rpe|free|free-reps] [--name "Clean + Front Squat"]
                               [--color "#3B82F6"] [--note "..."] [--position <n>]
+  npm run emos -- edit-exercise --id <planned_exercise_id> [--prescription "..."] [--unit kg|%|rpe|free|free-reps]
+                              [--note "..."|--clear-note] [--display-name "..."] [--time 12|90s|2:15|off]
+                              [--rest 90s|off] [--tempo 3120|off] [--total-reps <n>|off] [--total-sets <n>|off]
+  npm run emos -- swap-exercise --id <planned_exercise_id> --exercise <name|id>
+  npm run emos -- move-exercise --id <planned_exercise_id> [--day <n>] [--position <n>]
+  npm run emos -- add-gpp     --athlete <name|id> [--week next] --day <n> --title "Core" [--description "..."]
+                              --row "Wall sits | 60s | 3" [--row "Plank | 45s | 3 | BW"]... [--position <n>]
+  npm run emos -- edit-gpp    --id <planned_exercise_id> [--title "..."] [--description "..."] [--row "..."]...
   npm run emos -- remove-exercise --id <planned_exercise_id>
+  npm run emos -- log         --athlete <name|id> [--week this]
   npm run emos -- prs         --athlete <name|id> [--exercise <name>]
   global: [--env .env] [--json]`;
 
@@ -507,6 +739,9 @@ async function main(): Promise<void> {
       like: { type: 'string' }, unit: { type: 'string' }, prescription: { type: 'string' }, note: { type: 'string' },
       'display-name': { type: 'string' }, position: { type: 'string' },
       name: { type: 'string' }, color: { type: 'string' },
+      'clear-note': { type: 'boolean' }, time: { type: 'string' }, rest: { type: 'string' }, tempo: { type: 'string' },
+      'total-reps': { type: 'string' }, 'total-sets': { type: 'string' },
+      title: { type: 'string' }, description: { type: 'string' }, row: { type: 'string', multiple: true },
       env: { type: 'string' }, help: { type: 'boolean' },
     },
   });
@@ -527,7 +762,13 @@ async function main(): Promise<void> {
     case 'new-week': return cmdNewWeek(ctx, v);
     case 'add-exercise': return cmdAddExercise(ctx, v);
     case 'add-combo': return cmdAddCombo(ctx, v);
+    case 'edit-exercise': return cmdEditExercise(ctx, v);
+    case 'swap-exercise': return cmdSwapExercise(ctx, v);
+    case 'move-exercise': return cmdMoveExercise(ctx, v);
+    case 'add-gpp': return cmdAddGpp(ctx, v);
+    case 'edit-gpp': return cmdEditGpp(ctx, v);
     case 'remove-exercise': return cmdRemoveExercise(ctx, v);
+    case 'log': return cmdLog(ctx, v);
     case 'prs': return cmdPrs(ctx, v);
     default: throw new UsageError(`unknown command "${command}"\n${USAGE}`);
   }

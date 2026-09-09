@@ -13,9 +13,13 @@
 // Takes the Supabase client as an argument; no React, no stores. Used by
 // scripts/emos-cli.ts.
 
-import type { DefaultUnit, WeekPlan } from './database.types';
-import { detectIntendedUnit, parseComboPrescription } from './prescriptionParser';
-import { writePrescriptionRecord, type EmosClient } from './prescriptionWriteService';
+import type {
+  DefaultUnit, WeekPlan, GppSection, GppRow, ExerciseFeatures, PlannedExerciseMetadata,
+} from './database.types';
+import { detectIntendedUnit, parseComboPrescription, computePrescriptionSummary } from './prescriptionParser';
+import { applyFeatureOverrides, parseTimeInput, parseTempoInput } from './exerciseFeatures';
+import { writePrescriptionRecord, replaceSetLines, type EmosClient } from './prescriptionWriteService';
+import { SENTINEL_DEFS } from '../components/planner/sentinelUtils';
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
 
@@ -445,4 +449,459 @@ export async function removePlannedExercise(
   const { error } = await client.from('planned_exercises').delete().eq('id', plannedExerciseId);
   if (error) throw error;
   return { removed: true, weekPlanId: r.weekplan_id, dayIndex: r.day_index };
+}
+
+// ─── Editing a row in place ──────────────────────────────────────────────────
+//
+// What the coach does most, by the planner's own data: copy last week, then
+// change prescriptions where they stand (534 of 1336 same-slot rows in a
+// season), swap the exercise in a slot (720 rows), set a time budget on a
+// block (236 rows) and write a note (625 rows). Each mirrors the planner's
+// own path — savePrescription, saveNotes, saveExerciseFeatures,
+// swapPlannedExercise, moveExercise / reorderInDay — so the caches stay right.
+
+/** A feature patch: a value sets the key, `null` removes it, absent leaves it. */
+export interface FeaturePatch {
+  totalTime?: number | null;
+  restTime?: number | null;
+  tempo?: string | null;
+  totalReps?: number | null;
+  totalSets?: number | null;
+}
+
+/** Pure: the features bag after a patch; an empty bag becomes undefined so the JSON stays tidy. */
+export function applyFeaturePatch(
+  current: ExerciseFeatures | undefined | null,
+  patch: FeaturePatch,
+): ExerciseFeatures | undefined {
+  const next: ExerciseFeatures = { ...(current ?? {}) };
+  for (const key of Object.keys(patch) as (keyof FeaturePatch)[]) {
+    const v = patch[key];
+    if (v === undefined) continue;
+    if (v === null) delete next[key];
+    else (next as Record<string, unknown>)[key] = v;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/**
+ * Pure: the coach's flag values → a feature patch. Durations take the
+ * planner's own grammar (`12` minutes, `90s`, `2:15`); `off` removes the
+ * feature. Returns the first unreadable value as an error.
+ */
+export function parseFeatureFlags(flags: {
+  time?: string; rest?: string; tempo?: string; totalReps?: string; totalSets?: string;
+}): { ok: true; patch: FeaturePatch } | { ok: false; reason: string } {
+  const patch: FeaturePatch = {};
+  const isOff = (v: string) => /^(off|none|clear|-)$/i.test(v.trim());
+  const duration = (key: 'totalTime' | 'restTime', flag: string, v: string | undefined) => {
+    if (v == null) return null;
+    if (isOff(v)) { patch[key] = null; return null; }
+    const sec = parseTimeInput(v);
+    if (sec == null) return `--${flag} "${v}" is not a duration — use minutes (12), seconds (90s) or m:ss (2:15), or off`;
+    patch[key] = sec;
+    return null;
+  };
+  const count = (key: 'totalReps' | 'totalSets', flag: string, v: string | undefined) => {
+    if (v == null) return null;
+    if (isOff(v)) { patch[key] = null; return null; }
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0) return `--${flag} must be a whole number or off (got "${v}")`;
+    patch[key] = n;
+    return null;
+  };
+  const err = duration('totalTime', 'time', flags.time)
+    ?? duration('restTime', 'rest', flags.rest)
+    ?? count('totalReps', 'total-reps', flags.totalReps)
+    ?? count('totalSets', 'total-sets', flags.totalSets);
+  if (err) return { ok: false, reason: err };
+  if (flags.tempo != null) {
+    if (isOff(flags.tempo)) patch.tempo = null;
+    else {
+      const t = parseTempoInput(flags.tempo);
+      if (!t) return { ok: false, reason: `--tempo "${flags.tempo}" is not four digits (eccentric-pause-concentric-pause, e.g. 3120 or 3-1-2-0), or off` };
+      patch.tempo = t;
+    }
+  }
+  return { ok: true, patch };
+}
+
+export interface EditRowParams {
+  plannedExerciseId: string;
+  /** New raw prescription; '' clears the prescription and its set lines. Absent = unchanged. */
+  prescription?: string;
+  /** Explicit unit; with a new prescription and no unit, the text decides (a `%`, letters) else the row keeps its unit. */
+  unit?: DefaultUnit | null;
+  /** New note; '' or null clears it. Absent = unchanged. */
+  notes?: string | null;
+  /** New label override; '' or null clears it. Absent = unchanged. */
+  displayName?: string | null;
+  features?: FeaturePatch;
+}
+
+export interface EditRowResult {
+  plannedExerciseId: string;
+  changed: string[];
+  unit: DefaultUnit | null;
+  prescription: string | null;
+  features: ExerciseFeatures | undefined;
+}
+
+type EditableRow = {
+  id: string; weekplan_id: string; unit: DefaultUnit | null; prescription_raw: string | null;
+  is_combo: boolean; metadata: PlannedExerciseMetadata | null; notes: string | null; display_name: string | null;
+  exercise_id: string; source: string | null;
+};
+
+async function loadEditableRow(client: EmosClient, id: string): Promise<EditableRow> {
+  const { data, error } = await client
+    .from('planned_exercises')
+    .select('id, weekplan_id, unit, prescription_raw, is_combo, metadata, notes, display_name, exercise_id, source')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error(`no planned row with id ${id}`);
+  const row = data as unknown as EditableRow;
+  const { data: plan, error: pErr } = await client
+    .from('week_plans')
+    .select('is_group_plan, group_id')
+    .eq('id', row.weekplan_id)
+    .single();
+  if (pErr) throw pErr;
+  const p = plan as unknown as Pick<WeekPlan, 'is_group_plan' | 'group_id'>;
+  if (p.is_group_plan || p.group_id) {
+    throw new Error('this row is on a GROUP plan — edit it in the planner and sync, so the athletes receive it');
+  }
+  return row;
+}
+
+/** The planner's rule: a coach edit turns a group-sourced row individual. */
+async function promoteToIndividual(client: EmosClient, id: string): Promise<void> {
+  const { error } = await client
+    .from('planned_exercises')
+    .update({ source: 'individual' })
+    .eq('id', id)
+    .eq('source', 'group');
+  if (error) throw error;
+}
+
+/**
+ * Edit one planned row where it stands. Each part is the planner's own
+ * write: the prescription through the shared write (summary + set lines +
+ * overrides), the note folding `variation_note` away, the features bag
+ * read-modify-written so gpp / athleteHidden survive, with the summary
+ * re-derived so Σ overrides take effect where summary_* is read.
+ */
+export async function editPlannedExercise(client: EmosClient, p: EditRowParams): Promise<EditRowResult> {
+  const row = await loadEditableRow(client, p.plannedExerciseId);
+  const changed: string[] = [];
+  let features = row.metadata?.features;
+  let unit = row.unit;
+  let prescription = row.prescription_raw;
+
+  if (p.notes !== undefined) {
+    const notes = p.notes?.trim() || null;
+    const { error } = await client
+      .from('planned_exercises')
+      .update({ notes, variation_note: null })
+      .eq('id', row.id);
+    if (error) throw error;
+    changed.push(notes ? 'note' : 'note cleared');
+  }
+
+  if (p.displayName !== undefined) {
+    const display_name = p.displayName?.trim() || null;
+    const { error } = await client.from('planned_exercises').update({ display_name }).eq('id', row.id);
+    if (error) throw error;
+    changed.push(display_name ? 'display name' : 'display name cleared');
+  }
+
+  if (p.features && Object.values(p.features).some(v => v !== undefined)) {
+    features = applyFeaturePatch(row.metadata?.features, p.features);
+    const meta: Record<string, unknown> = { ...(row.metadata ?? {}) };
+    if (features) meta.features = features; else delete meta.features;
+    const summary = applyFeatureOverrides(
+      computePrescriptionSummary(row.prescription_raw ?? '', row.unit, row.is_combo),
+      features,
+    );
+    const { error } = await client
+      .from('planned_exercises')
+      .update({
+        metadata: meta as PlannedExerciseMetadata,
+        summary_total_sets: summary.total_sets,
+        summary_total_reps: summary.total_reps,
+        summary_highest_load: summary.highest_load,
+        summary_avg_load: summary.avg_load,
+      })
+      .eq('id', row.id);
+    if (error) throw error;
+    changed.push('features');
+  }
+
+  if (p.prescription !== undefined) {
+    const raw = p.prescription.trim();
+    if (raw === '') {
+      await replaceSetLines(client, row.id, []);
+      const { error } = await client
+        .from('planned_exercises')
+        .update({
+          prescription_raw: null,
+          summary_total_sets: 0, summary_total_reps: 0, summary_highest_load: null, summary_avg_load: null,
+        })
+        .eq('id', row.id);
+      if (error) throw error;
+      prescription = null;
+      changed.push('prescription cleared');
+    } else {
+      if (row.is_combo) {
+        const check = checkComboPrescription(raw);
+        if (!check.ok) throw new Error(check.reason);
+      }
+      unit = p.unit ?? chooseUnit(null, raw, row.unit ?? 'absolute_kg');
+      await writePrescriptionRecord(client, row.id, { prescription: raw, unit, isCombo: row.is_combo });
+      prescription = raw;
+      changed.push('prescription');
+    }
+  } else if (p.unit != null && p.unit !== row.unit) {
+    unit = p.unit;
+    if (row.prescription_raw) {
+      await writePrescriptionRecord(client, row.id, { prescription: row.prescription_raw, unit, isCombo: row.is_combo });
+    } else {
+      const { error } = await client.from('planned_exercises').update({ unit }).eq('id', row.id);
+      if (error) throw error;
+    }
+    changed.push('unit');
+  }
+
+  if (changed.length > 0) await promoteToIndividual(client, row.id);
+  return { plannedExerciseId: row.id, changed, unit, prescription, features };
+}
+
+/**
+ * Put another exercise in a row's place, keeping prescription, note, unit
+ * and position — the planner's swapPlannedExercise. Refused on a combo row:
+ * its exercise is the first member, and the members are edited as a set.
+ */
+export async function swapPlannedExercise(
+  client: EmosClient,
+  plannedExerciseId: string,
+  newExerciseId: string,
+): Promise<{ plannedExerciseId: string; from: string; to: string }> {
+  const row = await loadEditableRow(client, plannedExerciseId);
+  if (row.is_combo) throw new Error('this row is a combo — its members are edited together in the planner (or remove it and add-combo)');
+  if (row.metadata?.gpp) throw new Error('this row is a GPP block, not an exercise — use edit-gpp');
+  const { error } = await client.from('planned_exercises').update({ exercise_id: newExerciseId }).eq('id', row.id);
+  if (error) throw error;
+  await promoteToIndividual(client, row.id);
+  return { plannedExerciseId: row.id, from: row.exercise_id, to: newExerciseId };
+}
+
+export interface MoveRowParams {
+  plannedExerciseId: string;
+  /** Target slot; absent = stay on the row's day. */
+  dayIndex?: number | null;
+  /** Target position among the day's rows (1 = first); absent = append when the day changes, else unchanged. */
+  position?: number | null;
+}
+
+export interface MoveRowResult {
+  plannedExerciseId: string;
+  from: { dayIndex: number; position: number };
+  to: { dayIndex: number; position: number };
+  dayActivated: boolean;
+}
+
+/**
+ * Move a row to another slot and/or another place in its day — the
+ * planner's moveExercise (append to the target day, renumber both days
+ * through the `normalize_planned_exercise_positions` RPC) followed by its
+ * reorderInDay (the row lands at the asked position, siblings shift).
+ */
+export async function movePlannedExercise(client: EmosClient, p: MoveRowParams): Promise<MoveRowResult> {
+  const { data, error } = await client
+    .from('planned_exercises')
+    .select('id, weekplan_id, day_index, position')
+    .eq('id', p.plannedExerciseId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error(`no planned row with id ${p.plannedExerciseId}`);
+  const row = data as unknown as { id: string; weekplan_id: string; day_index: number; position: number };
+  const targetDay = p.dayIndex ?? row.day_index;
+  const plan = await loadPlanForWrite(client, row.weekplan_id, targetDay);
+  if (p.position != null && (!Number.isInteger(p.position) || p.position < 1)) {
+    throw new Error(`position must be a positive integer (got ${p.position})`);
+  }
+  if (targetDay === row.day_index && p.position == null) {
+    return { plannedExerciseId: row.id, from: { dayIndex: row.day_index, position: row.position }, to: { dayIndex: row.day_index, position: row.position }, dayActivated: false };
+  }
+
+  if (targetDay !== row.day_index) {
+    const { data: toRows } = await client
+      .from('planned_exercises')
+      .select('id')
+      .eq('weekplan_id', row.weekplan_id)
+      .eq('day_index', targetDay);
+    const appendAt = ((toRows as unknown[] | null)?.length ?? 0) + 1;
+    const { error: mvErr } = await client
+      .from('planned_exercises')
+      .update({ day_index: targetDay, position: appendAt })
+      .eq('id', row.id);
+    if (mvErr) throw mvErr;
+    for (const day of [row.day_index, targetDay]) {
+      const { error: nErr } = await client.rpc('normalize_planned_exercise_positions', {
+        p_weekplan_id: row.weekplan_id, p_day_index: day,
+      });
+      if (nErr) throw nErr;
+    }
+  }
+
+  let finalPosition: number;
+  const { data: siblings, error: sErr } = await client
+    .from('planned_exercises')
+    .select('id, position')
+    .eq('weekplan_id', row.weekplan_id)
+    .eq('day_index', targetDay)
+    .order('position');
+  if (sErr) throw sErr;
+  const ids = ((siblings as unknown as { id: string }[]) ?? []).map(r => r.id);
+  if (p.position != null) {
+    const without = ids.filter(id => id !== row.id);
+    const at = Math.max(0, Math.min(without.length, p.position - 1));
+    without.splice(at, 0, row.id);
+    for (let i = 0; i < without.length; i++) {
+      if (ids[i] === without[i]) continue;
+      const { error: uErr } = await client.from('planned_exercises').update({ position: i + 1 }).eq('id', without[i]);
+      if (uErr) throw uErr;
+    }
+    finalPosition = at + 1;
+  } else {
+    finalPosition = ids.indexOf(row.id) + 1;
+  }
+
+  const dayActivated = await activateDay(client, plan, targetDay);
+  return {
+    plannedExerciseId: row.id,
+    from: { dayIndex: row.day_index, position: row.position },
+    to: { dayIndex: targetDay, position: finalPosition },
+    dayActivated,
+  };
+}
+
+// ─── GPP blocks ──────────────────────────────────────────────────────────────
+//
+// A quarter of every planned row is a GPP block: the GPP sentinel exercise
+// with the block in metadata.gpp — a title, a description and rows of
+// (exercise, reps text, sets, load text) the athlete ticks off.
+
+/**
+ * Pure: one `--row` value → a GPP row. Fields separated by `|`, in the
+ * order the block shows them: `exercise | reps | sets | load`. Only the
+ * exercise is required; sets defaults to 1. Reps stay text ("60s",
+ * "8+8", "AMRAP"), load stays text ("24 kg", "BW").
+ */
+export function parseGppRowSpec(spec: string): { ok: true; row: GppRow } | { ok: false; reason: string } {
+  const parts = spec.split('|').map(s => s.trim());
+  const [exercise, reps = '', setsText = '', load = ''] = parts;
+  if (!exercise) return { ok: false, reason: `a GPP row needs an exercise name first: "Wall sits | 60s | 3" (got "${spec}")` };
+  if (parts.length > 4) return { ok: false, reason: `too many fields in "${spec}" — exercise | reps | sets | load` };
+  let sets = 1;
+  if (setsText !== '') {
+    const n = Number(setsText.replace(/\s*(sets?|sæt|x|×)\s*$/i, ''));
+    if (!Number.isInteger(n) || n < 0) return { ok: false, reason: `sets must be a whole number in "${spec}" (got "${setsText}")` };
+    sets = n;
+  }
+  return { ok: true, row: { exercise, reps, sets, load } };
+}
+
+/** The coach's GPP sentinel exercise, created the way the planner creates it when missing. */
+export async function ensureGppSentinel(client: EmosClient, ownerId: string): Promise<{ id: string; created: boolean }> {
+  const { data: existing, error } = await client
+    .from('exercises')
+    .select('id')
+    .eq('exercise_code', 'GPP')
+    .eq('owner_id', ownerId)
+    .maybeSingle();
+  if (error) throw error;
+  if (existing) return { id: (existing as { id: string }).id, created: false };
+  const def = SENTINEL_DEFS.GPP;
+  const { data: created, error: cErr } = await client
+    .from('exercises')
+    .insert({
+      name: def.name,
+      category: '— System',
+      default_unit: 'other',
+      color: def.color,
+      exercise_code: 'GPP',
+      counts_towards_totals: false,
+      is_competition_lift: false,
+      owner_id: ownerId,
+    })
+    .select('id')
+    .single();
+  if (cErr) throw cErr;
+  return { id: (created as { id: string }).id, created: true };
+}
+
+export interface AddGppParams {
+  weekPlanId: string;
+  dayIndex: number;
+  /** The coach who owns the sentinel — the athlete's owner. */
+  ownerId: string;
+  gpp: GppSection;
+  position?: number | null;
+}
+
+/** Add a GPP block: the planner's `/gpp` — a sentinel row, unit free_text, the block in metadata. */
+export async function addGppBlock(client: EmosClient, p: AddGppParams): Promise<AddRowResult & { sentinelCreated: boolean }> {
+  const plan = await loadPlanForWrite(client, p.weekPlanId, p.dayIndex);
+  const position = await resolvePosition(client, p.weekPlanId, p.dayIndex, p.position);
+  const sentinel = await ensureGppSentinel(client, p.ownerId);
+  const { data: inserted, error } = await client
+    .from('planned_exercises')
+    .insert([{
+      weekplan_id: p.weekPlanId,
+      day_index: p.dayIndex,
+      exercise_id: sentinel.id,
+      position,
+      unit: 'free_text' as const,
+      prescription_raw: null,
+      summary_total_sets: 0,
+      summary_total_reps: 0,
+      summary_highest_load: null,
+      summary_avg_load: null,
+      is_combo: false,
+      source: 'individual' as const,
+      metadata: { gpp: p.gpp } as PlannedExerciseMetadata,
+    }])
+    .select('id')
+    .single();
+  if (error) throw error;
+  const dayActivated = await activateDay(client, plan, p.dayIndex);
+  return { plannedExerciseId: (inserted as { id: string }).id, position, dayActivated, sentinelCreated: sentinel.created };
+}
+
+export interface EditGppParams {
+  plannedExerciseId: string;
+  title?: string;
+  description?: string;
+  /** Replaces the block's rows when given. */
+  rows?: GppRow[];
+}
+
+/** Edit a GPP block in place — the planner's writeGppSection: metadata.gpp replaced, other keys kept. */
+export async function editGppBlock(client: EmosClient, p: EditGppParams): Promise<{ plannedExerciseId: string; gpp: GppSection; changed: string[] }> {
+  const row = await loadEditableRow(client, p.plannedExerciseId);
+  const current = row.metadata?.gpp;
+  if (!current) throw new Error('this row is not a GPP block — edit-exercise edits an exercise row');
+  const changed: string[] = [];
+  const gpp: GppSection = { ...current, rows: [...current.rows] };
+  if (p.title !== undefined && p.title !== current.title) { gpp.title = p.title; changed.push('title'); }
+  if (p.description !== undefined && p.description !== current.description) { gpp.description = p.description; changed.push('description'); }
+  if (p.rows !== undefined) { gpp.rows = p.rows; changed.push(`rows (${p.rows.length})`); }
+  if (changed.length === 0) return { plannedExerciseId: row.id, gpp: current, changed };
+  const meta = { ...(row.metadata ?? {}), gpp } as PlannedExerciseMetadata;
+  const { error } = await client.from('planned_exercises').update({ metadata: meta }).eq('id', row.id);
+  if (error) throw error;
+  await promoteToIndividual(client, row.id);
+  return { plannedExerciseId: row.id, gpp, changed };
 }

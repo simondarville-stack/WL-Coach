@@ -1,8 +1,46 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveUnitAlias, chooseUnit, pickExercise, comboAutoNotation, checkComboPrescription,
+  parseGppRowSpec, parseFeatureFlags, applyFeaturePatch,
   type PickableExercise,
 } from '../plannedRowService';
+
+describe('parseGppRowSpec', () => {
+  it('reads exercise | reps | sets | load, sets defaulting to 1', () => {
+    expect(parseGppRowSpec('Wall sits | 60s | 3')).toEqual({ ok: true, row: { exercise: 'Wall sits', reps: '60s', sets: 3, load: '' } });
+    expect(parseGppRowSpec('KB swings|20|3|24 kg')).toEqual({ ok: true, row: { exercise: 'KB swings', reps: '20', sets: 3, load: '24 kg' } });
+    expect(parseGppRowSpec('Grundig udstrækning')).toEqual({ ok: true, row: { exercise: 'Grundig udstrækning', reps: '', sets: 1, load: '' } });
+    expect(parseGppRowSpec('Dips | 10 | 3 sæt')).toMatchObject({ ok: true, row: { sets: 3 } });
+  });
+  it('refuses a missing exercise, a non-numeric set count and too many fields', () => {
+    expect(parseGppRowSpec('| 60s | 3').ok).toBe(false);
+    expect(parseGppRowSpec('Dips | 10 | three').ok).toBe(false);
+    expect(parseGppRowSpec('a | b | 1 | c | d').ok).toBe(false);
+  });
+});
+
+describe('parseFeatureFlags', () => {
+  it("reads the planner's duration grammar and off", () => {
+    expect(parseFeatureFlags({ time: '12' })).toEqual({ ok: true, patch: { totalTime: 720 } });
+    expect(parseFeatureFlags({ time: '90s', rest: '2:15' })).toEqual({ ok: true, patch: { totalTime: 90, restTime: 135 } });
+    expect(parseFeatureFlags({ time: 'off', tempo: '3120', totalReps: '20' })).toEqual({ ok: true, patch: { totalTime: null, tempo: '3-1-2-0', totalReps: 20 } });
+    expect(parseFeatureFlags({})).toEqual({ ok: true, patch: {} });
+  });
+  it('names the flag it could not read', () => {
+    expect(parseFeatureFlags({ time: 'abc' })).toMatchObject({ ok: false, reason: expect.stringContaining('--time') });
+    expect(parseFeatureFlags({ tempo: '31' })).toMatchObject({ ok: false, reason: expect.stringContaining('--tempo') });
+    expect(parseFeatureFlags({ totalReps: '2.5' })).toMatchObject({ ok: false, reason: expect.stringContaining('--total-reps') });
+  });
+});
+
+describe('applyFeaturePatch', () => {
+  it('sets, removes and leaves keys; an empty bag becomes undefined', () => {
+    expect(applyFeaturePatch({ totalTime: 600, tempo: '3-1-2-0' }, { totalTime: 720 })).toEqual({ totalTime: 720, tempo: '3-1-2-0' });
+    expect(applyFeaturePatch({ totalTime: 600, tempo: '3-1-2-0' }, { tempo: null })).toEqual({ totalTime: 600 });
+    expect(applyFeaturePatch({ totalTime: 600 }, { totalTime: null })).toBeUndefined();
+    expect(applyFeaturePatch(undefined, { restTime: 90 })).toEqual({ restTime: 90 });
+  });
+});
 
 describe('comboAutoNotation', () => {
   it('joins the member names with " + ", as the planner does', () => {

@@ -33,10 +33,58 @@ npm run emos -- add-exercise --athlete "<name|id>" [--week next] --day <slot> --
 npm run emos -- add-combo   --athlete "<name|id>" [--week next] --day <slot> --exercise "<name|id>" --exercise "<name|id>"...
                             [--prescription "80×1+2×3"] [--unit kg|%|rpe|free|free-reps] [--name "Clean + Front Squat"]
                             [--color "#3B82F6"] [--note "..."] [--position <n>]
+npm run emos -- edit-exercise --id <planned_exercise_id> [--prescription "..."] [--unit kg|%|rpe|free|free-reps]
+                            [--note "..."|--clear-note] [--display-name "..."] [--time 12|90s|2:15|off]
+                            [--rest 90s|off] [--tempo 3120|off] [--total-reps <n>|off] [--total-sets <n>|off]
+npm run emos -- swap-exercise --id <planned_exercise_id> --exercise "<name|id>"
+npm run emos -- move-exercise --id <planned_exercise_id> [--day <slot>] [--position <n>]
+npm run emos -- add-gpp     --athlete "<name|id>" [--week next] --day <slot> --title "Core" [--description "..."]
+                            --row "Wall sits | 60s | 3" [--row "Plank | 45s | 3 | BW"]... [--position <n>]
+npm run emos -- edit-gpp    --id <planned_exercise_id> [--title "..."] [--description "..."] [--row "..."]...
 npm run emos -- remove-exercise --id <planned_exercise_id>
+npm run emos -- log         --athlete "<name|id>" [--week this]
 npm run emos -- prs         --athlete "<name|id>" [--exercise "<name>"]
 # global: --json (machine output on stdout), --env .env (which Supabase project)
 ```
+
+## The coach's loop (what the data says is done most)
+
+Read from the planner's own rows, one season (March–September 2026, ~3 300
+rows): the week is **copied from the week before**, then edited where it
+stands. Of the rows that had a row in the same slot a week earlier, 60 %
+kept the exercise and of those **40 % got a new prescription**; the other
+**35 % got a different exercise in the slot**. A **quarter of all rows are
+GPP blocks**; 13 % are combos; 19 % carry a note; 7 % carry a time budget
+(⏱, `metadata.features.totalTime`). Loads are mostly words: *Moderat*,
+*Let*, *Let-moderat*, *Moderat-intenst*, *Eksplosivt*, *Teknisk* — the
+coach's own scale, written as free text (`Moderat × 3 × 6`); kg rows are
+the next most common, % rows rare. So the verbs, in the order they are
+reached for:
+
+| The coach says | Verb |
+|---|---|
+| "next week like this week" | `copy-week`, then edits below |
+| "make the squat 5×5 at 110" / "change that to …" | `edit-exercise --id --prescription` — in place, keeps note, position, features |
+| "swap the front squat for a back squat" | `swap-exercise --id --exercise` — keeps the prescription and note |
+| "move the pulls to Friday" / "put it first" | `move-exercise --id --day / --position` |
+| "note: pause in the catch" / "20 minutes on this" | `edit-exercise --id --note` / `--time 20` |
+| "add a core block: … " / "same GPP as Monday but …" | `add-gpp` / `edit-gpp --id --row …` (rows replace the block's rows) |
+| "goodmorning + push press 2+2×6" | `add-combo` |
+| "what did she do on Wednesday?" | `log` — planned beside performed, set by set |
+
+`week` prints every row's **id** in the last column: that is the handle
+for `edit-exercise`, `swap-exercise`, `move-exercise`, `edit-gpp` and
+`remove-exercise`. Read the week, quote the row back to the coach with
+what will change, then run the verb. Every edit turns a group-sourced row
+individual, as a planner edit does; the CLI still refuses rows on group
+plans themselves.
+
+`--time`, `--rest` take the planner's duration grammar (`12` = minutes,
+`90s`, `2:15`), `--tempo` four digits (eccentric-pause-concentric-pause),
+`off` removes the feature. `--total-reps` / `--total-sets` are Σ overrides
+of the summary, coach-side only. A GPP row is `exercise | reps | sets |
+load`: reps and load stay text ("60s", "8+8", "BW"), sets defaults to 1,
+only the exercise is required.
 
 - `scale-loads` is a **dry run unless `--apply`**. Always dry-run, show the
   coach the table, get a yes, then apply.
@@ -82,9 +130,9 @@ athlete's PRs (`athlete_prs`, `athlete_pr_history`), the exercise catalogue
 Source of the verbs, if the coach asks for a change to the tool:
 `scripts/emos-cli.ts` → `src/lib/weekDraftService.ts` (copy),
 `src/lib/loadScaleService.ts` (scale + selection),
-`src/lib/plannedRowService.ts` (new week, add / remove a row, add a combo,
-exercise picking), `src/lib/prescriptionWriteService.ts` (the one
-prescription write). Tests in `src/lib/__tests__/loadScale.test.ts` and
+`src/lib/plannedRowService.ts` (new week; add / edit / swap / move /
+remove a row; add a combo; add / edit a GPP block; exercise picking),
+`src/lib/prescriptionWriteService.ts` (the one prescription write). Tests in `src/lib/__tests__/loadScale.test.ts` and
 `plannedRow.test.ts`.
 
 ## The standard job: "next week like this week, but X"
@@ -166,10 +214,10 @@ weeks in one go once the coach has seen the first.
 - **Group plans are refused** by the CLI. They are planned and synced in the
   planner so the athletes receive them — tell the coach to do it there.
 - **Do not edit set lines, summaries or `prescription_raw` by SQL.** If a
-  job needs a verb the CLI lacks (swap an exercise, reorder rows, edit one
-  row's reps in place), say so and offer to add the verb rather than
-  improvising SQL. Editing an existing row's prescription = `remove-exercise`
-  + `add-exercise --position` for now; say so when you do it.
+  job needs a verb the CLI lacks (edit a combo's members, a day label, a
+  group plan), say so and offer to add the verb rather than improvising
+  SQL. An existing row is edited with `edit-exercise`, never removed and
+  re-added.
 - **No schema changes** from this skill. Migrations are a separate job.
 - The name is **EMOS**, always.
 
