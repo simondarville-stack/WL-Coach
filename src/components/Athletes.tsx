@@ -30,6 +30,8 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
   const [birthdate, setBirthdate] = useState(editingAthlete?.birthdate ?? '');
   const [bodyweight, setBodyweight] = useState(editingAthlete?.bodyweight?.toString() ?? '');
   const [weightClass, setWeightClass] = useState(editingAthlete?.weight_class ?? '');
+  const [sex, setSex] = useState(editingAthlete?.sex ?? '');
+  const [heightCm, setHeightCm] = useState(editingAthlete?.height_cm?.toString() ?? '');
   const [club, setClub] = useState(editingAthlete?.club ?? '');
   const [notes, setNotes] = useState(editingAthlete?.notes ?? '');
   const [photoUrl, setPhotoUrl] = useState(editingAthlete?.photo_url ?? '');
@@ -47,6 +49,8 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
       birthdate: birthdate || null,
       bodyweight: bodyweight ? parseFloat(bodyweight) : null,
       weight_class: weightClass.trim() || null,
+      sex: sex || null,
+      height_cm: heightCm ? parseFloat(heightCm.replace(',', '.')) : null,
       club: club.trim() || null,
       notes: notes.trim() || null,
       photo_url: photoUrl.trim() || null,
@@ -89,6 +93,8 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
     birthdateDisplay !== formatDateToDDMMYYYY(editingAthlete?.birthdate ?? '') ||
     bodyweight !== (editingAthlete?.bodyweight?.toString() ?? '') ||
     weightClass !== (editingAthlete?.weight_class ?? '') ||
+    sex !== (editingAthlete?.sex ?? '') ||
+    heightCm !== (editingAthlete?.height_cm?.toString() ?? '') ||
     club !== (editingAthlete?.club ?? '') ||
     notes !== (editingAthlete?.notes ?? '') ||
     photoUrl !== (editingAthlete?.photo_url ?? '') ||
@@ -186,6 +192,30 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
                   className={inputCls}
                   placeholder="e.g. 73kg"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Sex</label>
+                <select value={sex} onChange={e => setSex(e.target.value)} className={inputCls}>
+                  <option value="">—</option>
+                  <option value="men">Men</option>
+                  <option value="women">Women</option>
+                </select>
+                <p className="mt-1 text-[11px] text-gray-500">With the weight class, picks the KinEMOS reference bands.</p>
+              </div>
+              <div>
+                <label className={labelCls}>Height (cm)</label>
+                <input
+                  type="number"
+                  value={heightCm}
+                  onChange={e => setHeightCm(e.target.value)}
+                  className={inputCls}
+                  placeholder="e.g. 172"
+                  step="1"
+                />
+                <p className="mt-1 text-[11px] text-gray-500">A jerk's dip is read as a share of it.</p>
               </div>
             </div>
 
@@ -544,6 +574,8 @@ function AthleteDetailPanel({ athlete, onClose, onEdit, onPRs, onDelete }: Athle
           <StatRow label="Age" value={athlete.birthdate ? `${calculateAge(athlete.birthdate)} yrs` : '—'} />
           <StatRow label="Bodyweight" value={athlete.bodyweight ? `${athlete.bodyweight} kg` : '—'} />
           <StatRow label="Weight class" value={athlete.weight_class ?? '—'} />
+          <StatRow label="Sex" value={athlete.sex === 'men' ? 'Men' : athlete.sex === 'women' ? 'Women' : athlete.sex ?? '—'} />
+          <StatRow label="Height" value={athlete.height_cm ? `${athlete.height_cm} cm` : '—'} />
           <StatRow label="Comp total" value={athlete.competition_total ? `${athlete.competition_total} kg` : '—'} />
           {athlete.club && (
             <div className="col-span-2">

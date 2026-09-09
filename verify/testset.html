@@ -437,12 +437,14 @@
           return null;
         }
         const r = B.radiusPx > 0 ? B.radiusPx : DEFAULT_TRACK_OPTIONS.templateRadiusPx;
-        const cal = calibrateFromEllipse({ cx: B.anchor.x, cy: B.anchor.y, semiMajorPx: r, semiMinorPx: r, tiltDeg: 0 });
+        // The plate finder's outline when the scan found one (viewing angle
+        // and all); a circle from the anchor radius otherwise.
+        const cal = calibrateFromEllipse(B.ellipse ?? { cx: B.anchor.x, cy: B.anchor.y, semiMajorPx: r, semiMinorPx: r, tiltDeg: 0 });
         const mass = Number($('mass').value) || null;
         const all = B.track.points.map(p => ({ t: p.t, x: p.x, y: p.y })).sort((a, b) => a.t - b.t);
         // Only the lift: the rep containing the anchor (else the first), lift-off
         // to the deepest point of the catch — the drop and the walk-away are out.
-        const segments = splitReps(all, cal, { shape: MODEL.shape });
+        const segments = splitReps(all, cal, { shape: MODEL.shape, fromFloor: MODEL.fromFloor });
         const anchorT = server.timestamps[B.anchor.index];
         const seg =
           (REP !== null ? segments[REP - 1] : null) ??
@@ -491,7 +493,7 @@
           distortionSource: 'none',
         });
         B.analysis = { cal, series, rep, proposal, spans, metrics, grade };
-        log('calibration:', { mmPerPx: fmt(cal.cmPerPxV * 10, 2), confidence: cal.confidence });
+        log('calibration:', { mmPerPx: fmt(cal.cmPerPxV * 10, 2), angleDeg: fmt(cal.viewingAngleDeg, 0), confidence: cal.confidence, pathUsable: cal.pathUsable });
         log('rep:', {
           durationS: fmt(rep.durationS, 2),
           peakVyMs: fmt(rep.peakVerticalVelocityMs, 3),
@@ -609,6 +611,9 @@
               x = found.ellipse.cx;
               y = found.ellipse.cy;
               if (!radius) radius = found.ellipse.semiMajorPx * 1.08;
+              // The outline itself, so the analysis calibrates on the
+              // ellipse — an oblique or front view then reads as one.
+              B.ellipse = found.ellipse;
             } else if (a) {
               log(`  no plate found on frame ${w0.restIndex} — using the given anchor coordinates there`);
             }

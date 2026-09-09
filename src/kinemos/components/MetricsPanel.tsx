@@ -16,7 +16,7 @@ import { memo, type CSSProperties } from 'react';
 import { Input } from '../../components/ui';
 import type { LiftFamily, LiftModel } from '../engine/liftModels';
 import type { ComputedLift } from '../engine/metricCatalogue';
-import { SEXES, WEIGHT_CLASSES, formatBand, referenceBand } from '../engine/referenceBands';
+import { SEXES, WEIGHT_CLASSES, formatBand, referenceBand, type Sex, type WeightClass } from '../engine/referenceBands';
 import type { BandsPrefs } from '../lib/displayPrefs';
 import type { LiftMetrics } from '../engine/phases';
 import type { RepSummary } from '../engine/kinematics';
@@ -49,7 +49,13 @@ interface MetricsPanelProps {
    * sex, picked by the coach here until the athlete carries them. Absent:
    * no toggle.
    */
-  bands?: { prefs: BandsPrefs; onChange: (patch: Partial<BandsPrefs>) => void };
+  bands?: {
+    prefs: BandsPrefs;
+    onChange: (patch: Partial<BandsPrefs>) => void;
+    /** The athlete's own sex and weight-class tier, when the profile has
+     *  them: used in place of the coach's pick, and said so. */
+    athlete?: { sex: Sex; tier: WeightClass } | null;
+  };
 }
 
 function MetricsPanelImpl({
@@ -68,9 +74,11 @@ function MetricsPanelImpl({
   // A band beside a value, as the material prints it, when the coach has
   // switched them on and the tables cover this lift's family.
   const family: LiftFamily = model?.family ?? 'snatch';
+  const bandClass: WeightClass = bands?.athlete?.tier ?? bands?.prefs.weightClass ?? 'middle';
+  const bandSex: Sex = bands?.athlete?.sex ?? bands?.prefs.sex ?? 'men';
   const bandFor = (metricId: string, decimals: number): string | null => {
     if (!bands?.prefs.on) return null;
-    const band = referenceBand(metricId, family, bands.prefs.weightClass, bands.prefs.sex);
+    const band = referenceBand(metricId, family, bandClass, bandSex);
     return band ? formatBand(band, decimals) : null;
   };
   const firstPull = metrics?.phases.find(p => p.phaseId === 'first_pull') ?? null;
@@ -107,7 +115,12 @@ function MetricsPanelImpl({
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {bands && (
               <>
-                {bands.prefs.on && (
+                {bands.prefs.on && bands.athlete && (
+                  <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }} title="From the athlete's profile: sex, and the tier of their weight class or bodyweight">
+                    {`${SEXES.find(s => s.id === bands.athlete!.sex)?.label} · ${WEIGHT_CLASSES.find(c => c.id === bands.athlete!.tier)?.label}`}
+                  </span>
+                )}
+                {bands.prefs.on && !bands.athlete && (
                   <>
                     <select
                       value={bands.prefs.weightClass}
@@ -303,6 +316,7 @@ function MetricsPanelImpl({
           <dl style={list}>
             <Row term="v_Auft · dip velocity" band={bandFor('vDip', 2)} value={unit(jerk.vDipMs, 'm/s')} hint="Peak downward velocity in the dip · about −1,0 to −1,1 m/s in the tables" delta={d('vDip')} withDelta={withDelta} />
             <Row term="δ_Auf · dip depth" band={bandFor('sDip', 1)} value={cm(jerk.sDipCm)} hint="Start to the lower turning point · 16–22 cm by weight class" delta={d('sDip', ['deeper', 'shallower'])} withDelta={withDelta} />
+            <Row term="δ_Auf · % of height" value={jerk.sDipPctHeight === null ? '—' : `${num(jerk.sDipPctHeight, 1)} %`} hint="The dip as a share of the lifter’s standing height · needs the height on the athlete" delta={d('sDipPctHeight')} withDelta={withDelta} />
             <Row term="δv_Auf · to fastest descent" value={cm(jerk.sToVDipCm)} hint="How far the bar had descended at v_Auft · about 10 cm" />
             <Row term="δ_Stoß · drive path" value={cm(jerk.sDriveCm)} hint="Lower turning point to the height at Vmax" delta={d('sDrive', ['longer', 'shorter'])} withDelta={withDelta} />
             <Row term="Drive − dip" value={cm(jerk.driveMinusDipCm)} strong hint="3–4 cm is the target: the drive goes on past where the dip began" delta={d('driveMinusDip')} withDelta={withDelta} />

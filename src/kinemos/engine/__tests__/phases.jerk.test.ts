@@ -192,3 +192,13 @@ describe('the jerk’s measures', () => {
     expect(byId.firstPull).toBeUndefined();
   });
 });
+
+describe('the dip as a share of height', () => {
+  it('is read against the lifter’s height, and null without one', () => {
+    const spans = spansFrom(proposal.boundaries, DIP_DRIVE_PHASES);
+    const withHeight = computeLiftMetrics(series, spans, { heightCm: 175 });
+    const without = computeLiftMetrics(series, spans);
+    expect(withHeight.jerk!.sDipPctHeight).toBeCloseTo((withHeight.jerk!.sDipCm! / 175) * 100, 5);
+    expect(without.jerk!.sDipPctHeight).toBeNull();
+  });
+});

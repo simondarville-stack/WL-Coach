@@ -68,6 +68,12 @@ export interface SplitRepsOptions {
    * classify each rep by what came first. Default: `pull-catch`.
    */
   shape?: MotionShape;
+  /**
+   * Whether a rest must be near the floor. Default: yes for the pull shapes,
+   * no for the others. A lift from the hang or blocks is a pull whose rest
+   * is a knee's height above where the bar ends up, so its model says no.
+   */
+  fromFloor?: boolean;
   /** A rep must rise at least this far above its rest, cm. Below it the bar
    *  was shifted, not lifted. COACH-CONFIG candidate. */
   minRiseCm?: number;
@@ -117,6 +123,8 @@ export const DROP_SPEED_MS = 2;
 
 const DEFAULTS: Required<SplitRepsOptions> = {
   shape: 'pull-catch',
+  // Read from `options`, not `opt`: the default is decided by the shape.
+  fromFloor: true,
   minRiseCm: 40,
   minRiseDipCm: 25,
   minDipCm: 8,
@@ -128,6 +136,49 @@ const DEFAULTS: Required<SplitRepsOptions> = {
   localFloorS: 5,
   tailS: 0.5,
 };
+
+/**
+ * Local minima of height that a rise of `minRiseCm` follows, outside any
+ * still run: the turnarounds a hang or block lift is taken from. On a
+ * plateau the last minimum before the rise is kept.
+ */
+function bottomsBeforeARise(
+  h: readonly number[],
+  medianDt: number,
+  rests: ReadonlyArray<{ from: number; to: number }>,
+  opt: Required<SplitRepsOptions>,
+): Array<{ from: number; to: number }> {
+  const n = h.length;
+  const win = Math.max(1, Math.round(0.1 / medianDt));
+  const near = Math.max(1, Math.round(0.3 / medianDt));
+  const bottoms: number[] = [];
+  for (let i = win; i < n - win; i++) {
+    let isMin = true;
+    for (let k = i - win; k <= i + win; k++) {
+      if (h[k] < h[i]) {
+        isMin = false;
+        break;
+      }
+    }
+    if (!isMin) continue;
+    if (rests.some(r => i >= r.from - near && i <= r.to + near)) continue;
+    let rises = false;
+    for (let j = i + 1; j < n; j++) {
+      if (h[j] - h[i] >= opt.minRiseCm) {
+        rises = true;
+        break;
+      }
+      if (h[j] < h[i] - 2) break;
+    }
+    if (rises) bottoms.push(i);
+  }
+  const kept: Array<{ from: number; to: number }> = [];
+  for (let k = 0; k < bottoms.length; k++) {
+    if (k + 1 < bottoms.length && bottoms[k + 1] - bottoms[k] <= near) continue;
+    kept.push({ from: bottoms[k], to: bottoms[k] });
+  }
+  return kept;
+}
 
 /**
  * The reps in a track, in time order. Empty when the track has no rest
@@ -177,7 +228,7 @@ export function splitReps(
       start = -1;
     }
   }
-  const fromFloor = opt.shape === 'pull-catch' || opt.shape === 'pull';
+  const fromFloor = options.fromFloor ?? (opt.shape === 'pull-catch' || opt.shape === 'pull');
   const rests = fromFloor
     ? slowRuns.filter(run => {
         const t0 = sorted[run.from].t;
@@ -189,6 +240,15 @@ export function splitReps(
         return height - local <= opt.restBandCm;
       })
     : [...slowRuns];
+  // A lift that starts above the floor is often taken out of a turnaround
+  // rather than a rest: the bar lowered to the hang and pulled straight out
+  // of the bottom, still for a frame or two (2009 hang snatch: 0,08 s at
+  // the hang, under the 0,15 s a rest needs). The lowest point before such
+  // a rise is the rep's rest.
+  if (!fromFloor && (opt.shape === 'pull-catch' || opt.shape === 'pull')) {
+    for (const bottom of bottomsBeforeARise(h, medianDt, rests, opt)) rests.push(bottom);
+    rests.sort((a, b) => a.from - b.from);
+  }
 
   const reps: RepSegment[] = [];
   for (let r = 0; r < rests.length; r++) {

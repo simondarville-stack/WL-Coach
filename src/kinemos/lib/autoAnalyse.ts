@@ -69,6 +69,8 @@ export interface PersistRepArgs {
    *  compound's caller passes the PART — the clean or the jerk — not the
    *  compound. Default: a snatch from the floor, as before P9. */
   model?: LiftModel;
+  /** The lifter's standing height, cm, for the jerk's dip as a share of it. */
+  heightCm?: number | null;
 }
 
 /**
@@ -118,7 +120,7 @@ export async function persistRep(args: PersistRepArgs): Promise<string> {
   if (series) {
     const model = args.model ?? liftModelById('snatch');
     const proposal = proposePhasesFor(series, model);
-    const metrics = computeLiftMetrics(series, spansFrom(proposal.boundaries, model.phaseSet ?? []));
+    const metrics = computeLiftMetrics(series, spansFrom(proposal.boundaries, model.phaseSet ?? []), { heightCm: args.heightCm ?? null });
     await saveAnalysisState(analysis.id, {
       massKg: args.massKg,
       massSource: args.massSource,
@@ -144,6 +146,8 @@ export interface AutoAnalyseOptions {
    *  model each rep is stored under. A compound stores each rep under the
    *  part the bar's motion says it is. Default: a snatch from the floor. */
   liftModelId?: string | null;
+  /** The athlete's standing height, cm, when the profile has it. */
+  athleteHeightCm?: number | null;
   /** Which frame to look for the bar at rest on when the clip is tracked
    *  whole. Default: the start. */
   anchorIndex?: number;
@@ -201,6 +205,7 @@ export async function autoAnalyse(
   // An unspecified lift is cut on any rest for any motion; the shape the
   // set tracker reads is the model's.
   const shape = model.shape;
+  const fromFloor = model.fromFloor;
 
   let activity: ActivityScanResult | null = options.activity ?? null;
   if (!activity && options.src !== undefined) {
@@ -251,6 +256,7 @@ export async function autoAnalyse(
           ellipse: found.ellipse,
           plateDiameterCm,
           shape,
+          fromFloor,
           range: { from: range.from, to: range.to },
           shouldStop: options.shouldStop,
           onProgress: (done, total) => options.onProgress?.(`Following the bar, lift ${k + 1} of ${ranges.length}`, done, total),
@@ -287,6 +293,7 @@ export async function autoAnalyse(
       ellipse,
       plateDiameterCm,
       shape,
+      fromFloor,
       shouldStop: options.shouldStop,
       onProgress: (done, total) => options.onProgress?.('Following the bar', done, total),
     },
@@ -323,6 +330,7 @@ async function storeReps(server: FrameServer, options: AutoAnalyseOptions, reps:
         // A clean & jerk's reps land on the clean and the jerk by what the
         // bar did; a plain model is its own part.
         model: partForKind(model, rep.segment.kind),
+        heightCm: options.athleteHeightCm ?? null,
       }),
     );
   }

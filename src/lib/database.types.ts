@@ -115,6 +115,11 @@ export interface Athlete {
   birthdate: string | null;
   bodyweight: number | null;
   weight_class: string | null;
+  /** 'men' | 'women' as the BVDG reference tables are stated; free text.
+   *  Null: not declared (KinEMOS then uses the coach's pick). */
+  sex: string | null;
+  /** Standing height, cm — a jerk's dip depth is read as a share of it. */
+  height_cm: number | null;
   club: string | null;
   notes: string | null;
   photo_url: string | null;

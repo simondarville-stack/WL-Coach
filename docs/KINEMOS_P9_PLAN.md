@@ -620,3 +620,33 @@ Three decisions from Simon after the first ship:
   so every velocity, phase, force and power measure stands; the bar path
   is not drawn on the stage or in the column, and loop width and path
   length are null. The archive's *for* clips are the test material.
+
+## 14. Follow-up — 0.105.0 (09/09/2026)
+
+§11.1 closed: the athlete profile carries **sex** and **height**; with the
+weight class (or bodyweight) already on it, `engine/weightClass.ts` picks
+the tier the tables are grouped by, and the bands toggle in the viewer then
+reads the athlete instead of asking the coach. A jerk's dip is also read as
+a **share of the lifter's height** (`sDipPctHeight`), since the material's
+16–22 cm is a men's-squad figure and a share travels across sizes.
+
+The bench calibrates on the plate finder's ellipse when the scan found one
+(`B.ellipse`), so an oblique or front clip now runs through the front-view
+rule. The remaining transcoded clips were run after this change — see the
+table below.
+
+**The remaining transcoded clips** (run after the bench started calibrating
+on the plate finder's ellipse):
+
+| Clip | Model | Outcome |
+| --- | --- | --- |
+| Knickstød skråt (power jerk, 15° oblique) | jerk | dip 19,4 cm, v_Auft −1,03 m/s, drive − dip +5,6 cm, Auftakt 0,28 s, Anstoß 0,22 s; every phase found. |
+| Opadstød skråt 2 (18° oblique) | jerk | dip 16,9 cm, v_Auft −0,98, drive − dip +5,2; the lifter locks out with no drop, so the catch falls back, as on the side view. |
+| Stød skråt (clean & jerk, 10° oblique) | clean-and-jerk | The clean cut and fully segmented (rise 84 cm, S_sit 57, S_fall 28). The tracked bar then rises from the catch to 133 cm with no dip at all before settling at 117, so no jerk is cut — the tracker at 12 mm/px does not resolve the dip on this footage; the rule is right not to invent one. |
+| Stødvend for (clean, front view) | clean | The plate finder fitted an ellipse at 28°, not past 60°, on an 18 px plate seen edge-on, so the front-view rule did not fire and the numbers are scaled wrongly (rise 133 cm). A front view needs a plate the finder can fit truthfully, or the coach's outline. |
+| Træk fra hæng side (hang snatch) | snatch-hang-above-knee | Rep cut 0,54 → 1,68 s (rise 83 cm), phases fully detected (second pull from lift-off, turnover, catch, recovery; S_sit 59, S_fall 19). Not cut at first, for two reasons that are now rules: the hang rest was filtered as "not the floor" (a model says whether it starts from the floor, `fromFloor`), and this lifter pulls straight out of the lowering with 0,08 s of stillness at the hang, so for a lift above the floor the turnaround before the rise is the rest. |
+| Træk overgang skråt (hang snatch, 17° oblique) | snatch-hang-above-knee | As above; phases found. |
+| Stødhiv side (clean pull) | clean-pull | The activity scan found no lift (the clip opens close on the bar); anchored on the plate finder's outline instead, the rep is cut 0,46 → 2,26 s (rise 75 cm) with first pull, transition and second pull found and the rep ending at the apex, no catch measures offered. |
+
+Not run: the other 85 archive clips (mostly *for* views and repeats of the
+same exercises). The recipe is one URL per clip on the bench.

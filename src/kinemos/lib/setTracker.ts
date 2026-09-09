@@ -119,6 +119,9 @@ export interface TrackSetOptions {
    * caught, as every set was before P9.
    */
   shape?: MotionShape;
+  /** Whether a rep's rest must be near the floor (`splitReps`); the
+   *  model's `fromFloor`. Default: by shape. */
+  fromFloor?: boolean;
   /** Whether to use the plate's colour. On by default; off is for finding
    *  out what colour bought. */
   colour?: boolean;
@@ -426,7 +429,7 @@ export async function trackSet(
     const lowConfidenceIndices = [...new Set(low.filter(i => keptLow.has(i)))].sort((a, b) => a - b);
     const points: KinemosTrackPoint[] = all.map(toTrackPoint);
     const setCalibration = calibrateFromEllipse(options.ellipse, options.plateDiameterCm, { rollDeg: options.rollDeg ?? 0 });
-    const segments = splitReps(points, setCalibration, { shape: options.shape ?? 'pull-catch' });
+    const segments = splitReps(points, setCalibration, { shape: options.shape ?? 'pull-catch', fromFloor: options.fromFloor });
 
     const reps: TrackedRep[] = [];
     for (const [k, segment] of segments.entries()) {

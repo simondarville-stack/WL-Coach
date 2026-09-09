@@ -42,6 +42,7 @@ import {
 } from './engine/phases';
 import { liftModelById, liftModelOfStored, partForKind, shapesComparable, type LiftModel } from './engine/liftModels';
 import { describeHow, type LiftModelHow } from './lib/liftModelResolve';
+import { sexOf, tierForAthlete } from './engine/weightClass';
 import { gradeAnalysis, type CameraStability, type TrackerTier } from './engine/grade';
 import { trackFromAnchor } from './engine/tracker';
 import type { AlignmentAnchor } from './engine/compare';
@@ -650,8 +651,11 @@ export function KinemosViewer() {
   // A lift with no phases (the unspecified lift) still has its universal
   // numbers: the metrics are computed over an empty span list.
   const liftMetrics = useMemo(
-    () => (kinematics && (spans.length > 0 || model.phaseSet === null) ? computeLiftMetrics(kinematics, spans) : null),
-    [kinematics, spans, model.phaseSet],
+    () =>
+      kinematics && (spans.length > 0 || model.phaseSet === null)
+        ? computeLiftMetrics(kinematics, spans, { heightCm: clip?.athleteHeightCm ?? null })
+        : null,
+    [kinematics, spans, model.phaseSet, clip?.athleteHeightCm],
   );
 
   const repSummary = useMemo(() => (kinematics ? summariseRep(kinematics) : null), [kinematics]);
@@ -744,10 +748,11 @@ export function KinemosViewer() {
   );
   const frontViewNote = !pathUsable && points.length > 0 ? 'Front view: velocities, phases and forces are measured; the bar path is not drawn.' : null;
   /** The bands toggle for the metrics panel, stable across frame steps. */
-  const bandsApi = useMemo(
-    () => ({ prefs: display.prefs.bands, onChange: display.setBands }),
-    [display.prefs.bands, display.setBands],
-  );
+  const bandsApi = useMemo(() => {
+    const sex = sexOf(clip?.athleteSex);
+    const tier = tierForAthlete({ sex: clip?.athleteSex, weightClass: clip?.athleteWeightClass, bodyweightKg: clip?.athleteBodyweightKg });
+    return { prefs: display.prefs.bands, onChange: display.setBands, athlete: sex && tier ? { sex, tier } : null };
+  }, [display.prefs.bands, display.setBands, clip?.athleteSex, clip?.athleteWeightClass, clip?.athleteBodyweightKg]);
 
   // ── The rail's composition ────────────────────────────────────────────────
   const panels = useViewerPanels(clip?.athleteId ?? null);
@@ -1200,6 +1205,7 @@ export function KinemosViewer() {
           massSource,
           camera,
           model: part,
+          heightCm: clip?.athleteHeightCm ?? null,
         });
         indices.push(index);
         models[index] = part.id;
@@ -1256,6 +1262,7 @@ export function KinemosViewer() {
         ellipse: outline,
         plateDiameterCm,
         shape: clipModel.shape,
+        fromFloor: clipModel.fromFloor,
         range: { from, to: server.frameCount - 1 },
         onProgress: (done, total) => setTrackProgress({ done, total }),
       });
@@ -1295,7 +1302,7 @@ export function KinemosViewer() {
       const anchorIndex = server.nearestIndex(anchorPoint.t);
       const onProgress = (done: number, total: number) => setTrackProgress({ done, total });
       const whole = () =>
-        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, shape: clipModel.shape, onProgress });
+        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, shape: clipModel.shape, fromFloor: clipModel.fromFloor, onProgress });
 
       // Inside the lifts the scan found (P7 plan), when it found any. The
       // coach's mark anchors the lift it sits in; every other lift is
@@ -1325,6 +1332,7 @@ export function KinemosViewer() {
             ellipse: outline,
             plateDiameterCm,
             shape: clipModel.shape,
+            fromFloor: clipModel.fromFloor,
             range: { from: range.from, to: range.to },
             onProgress,
           });

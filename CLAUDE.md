@@ -261,6 +261,13 @@ All modules are **active** — nothing is currently disabled or hidden:
   loop width and path length; and power variants are **not separate
   models** — a power snatch is a snatch (`liftModels.ts` aliases the old
   ids).
+  From 0.105.0: the athlete profile carries **sex and height**
+  (`athletes.sex`, `athletes.height_cm`, migration 20260909140000, on the
+  athlete form); with the existing weight class or bodyweight they pick the
+  bands' tier (`engine/weightClass.ts`, IWF 2025 classes split three /
+  three / two) so the toggle needs no manual choice for a filled-in
+  athlete, and a jerk's dip is read **as a share of the lifter's height**
+  (`JerkAnalyzerMetrics.sDipPctHeight`, `computeLiftMetrics` options).
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on
