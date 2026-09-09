@@ -557,7 +557,7 @@ the bands. What they cannot settle:
 6. **A 60 fps jerk clip** from a phone, side-on, plate in view through
    the rack rest — the one thing the archive cannot supply.
 
-## 12. Built — 0.101.0 (09/09/2026)
+## 12. Built — 0.102.0 (09/09/2026)
 
 P9a, P9b and P9c shipped together, plus the force and power curves of
 §5.6; P9d (the shape check) and P9e (live jerks) are not built.

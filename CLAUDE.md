@@ -228,7 +228,7 @@ All modules are **active** — nothing is currently disabled or hidden:
   *Track the rest of the clip*, the set tracker held to the frames after
   that point (`trackSet`'s `range`), each lift found landing on the next
   rep index — how a set the tracker cut wrongly is finished.
-  From 0.101.0 (`docs/KINEMOS_P9_PLAN.md`, built against the BVDG sources
+  From 0.102.0 (`docs/KINEMOS_P9_PLAN.md`, built against the BVDG sources
   in `KinEMOS Resources/`, which stay out of git): **lift models**. A rep
   is segmented under a model (`engine/liftModels.ts`, data: snatch, clean
   and jerk families, pulls, deadlifts, from-position variants, push press,
