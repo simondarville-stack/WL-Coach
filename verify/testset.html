@@ -455,8 +455,12 @@
         // Lead the rep with the rest before it (up to 0,4 s): lift-off is a
         // rise out of stillness, and a series that starts at the first moving
         // sample has no stillness for the phase detector to find it in.
+        // A dip-and-drive cut from the top of a clean's recovery gets a
+        // short lead only: the clean's catch is right behind it, and on
+        // jittery footage its spikes would out-run the jerk's own Vmax.
         let from = seg ? seg.from : 0;
-        if (seg) while (from > 0 && all[seg.from].t - all[from - 1].t <= 0.4) from--;
+        const leadS = seg?.kind === 'dip-drive' ? 0.12 : 0.4;
+        if (seg) while (from > 0 && all[seg.from].t - all[from - 1].t <= leadS) from--;
         const pts = seg ? all.slice(from, seg.to + 1) : all;
         B.reps = segments;
         log(`model: ${MODEL.id} (${MODEL.shape})${repModel !== MODEL ? ` → rep as ${repModel.id}` : ''}`);
