@@ -81,47 +81,49 @@ export function resolveLiftModel(
  */
 export function modelFromName(name: string): string | null {
   const n = ` ${name.toLowerCase().replace(/[&+/,.()-]/g, ' ').replace(/\s+/g, ' ').trim()} `;
-  // Whole words and whole phrases only: "ausstoßen" is not "stoßen".
-  const has = (...words: string[]) => words.some(w => n.includes(` ${w} `));
+  const words = n.trim().split(' ').filter(Boolean);
+  // Whole phrases; whole words; and words that BEGIN with a stem, since
+  // Danish compounds them — "trækdødløft" is a snatch deadlift, "stødhiv"
+  // a clean pull — while "ausstoßen" must not read as "stoßen".
+  const phrase = (...p: string[]) => p.some(w => n.includes(` ${w} `));
+  const exact = (...p: string[]) => words.some(w => p.includes(w));
+  const stem = (...p: string[]) => words.some(w => p.some(s => w.startsWith(s)));
 
   // The archive's "power pull" family before anything else: "power pull"
   // is its power snatch, "power pull stød" its power clean, and "strict"
   // makes either the muscle variant.
-  if (has('power pull')) {
-    const family = has('stød') ? 'clean' : 'snatch';
-    return has('strict') ? `muscle-${family}` : `power-${family}`;
+  if (phrase('power pull')) {
+    const family = exact('stød') ? 'clean' : 'snatch';
+    return exact('strict') ? `muscle-${family}` : `power-${family}`;
   }
+
+  const snatch = exact('snatch') || stem('reiß', 'reiss', 'træk', 'traek', 'råtræk') || words.some(w => w.endsWith('træk'));
+  const clean = exact('clean') || stem('umsetz', 'vend', 'stødvend', 'frivend', 'stødhiv', 'styrkevend');
+  const jerk = exact('jerk') || stem('ausstoß', 'ausstoss', 'opadstød', 'knickstød') || phrase('push press', 'push pres') || exact('pushpress', 'pushpres');
+  const deadlift = exact('deadlift', 'dl') || stem('styrketræk', 'kreuzheb', 'dødløft', 'dodloft') || words.some(w => w.endsWith('dødløft'));
+  const pull = exact('pull', 'zug') || words.some(w => w.endsWith('hiv'));
+  const power = exact('power', 'fri') || stem('frivend');
+  const muscle = exact('muscle', 'strict', 'rå') || stem('råtræk');
+  const balance = words.some(w => w.includes('balance'));
+  const press = exact('press', 'pres', 'stem', 'drücken');
 
   // The compound: "clean & jerk", "clean and jerk", "Stoßen", "stød" on its
   // own (Danish: stød = clean & jerk; stødvend = clean; opadstød = jerk;
-  // stødhiv = clean pull).
-  if ((has('clean') && has('jerk')) || has('stoßen', 'stossen', 'stød')) {
+  // stødhiv = clean pull; stød dødløft = clean deadlift).
+  if ((clean && jerk) || exact('stoßen', 'stossen') || (exact('stød') && !deadlift && !pull)) {
     return 'clean-and-jerk';
   }
 
-  // Family.
-  const snatch = has('snatch', 'reißen', 'reissen', 'træk', 'trækhiv', 'råtræk', 'balancetræk', 'styrketræk');
-  const clean = has('clean', 'umsetzen', 'vend', 'stødvend', 'frivend', 'stødhiv', 'reißumsetzen');
-  const jerk = has('jerk', 'ausstoßen', 'ausstossen', 'opadstød', 'knickstød', 'push press', 'push pres', 'stem');
-  const press = has('press', 'pres', 'drücken', 'stem');
-
   if (jerk) {
-    if (has('push press', 'push pres', 'stem')) return 'push-press';
-    if (has('power', 'push jerk', 'knickstød', 'knick')) return 'power-jerk';
+    if (phrase('push press', 'push pres') || exact('pushpress', 'pushpres')) return 'push-press';
+    if (power || phrase('push jerk') || stem('knickstød', 'knick')) return 'power-jerk';
     return 'jerk';
   }
 
-  const muscle = has('muscle', 'strict', 'rå', 'råtræk');
-  const power = has('power', 'fri', 'frivend');
-  const pull = has('pull', 'hiv', 'zug', 'trækhiv', 'stødhiv');
-  const deadlift = has('deadlift', 'styrketræk', 'kreuzheben', 'dl');
-  const balance = has('balance', 'balancetræk');
-
-  if (balance && snatch) return 'snatch-balance';
-
-  const family = clean && !snatch ? 'clean' : snatch ? 'snatch' : clean ? 'clean' : null;
+  const family = exact('stød') ? 'clean' : clean && !snatch ? 'clean' : snatch ? 'snatch' : clean ? 'clean' : null;
   if (!family) return press ? 'press' : null;
 
+  if (balance) return 'snatch-balance';
   if (deadlift) return `${family}-deadlift`;
   if (pull) return `${family}-pull`;
   const position = positionFromName(n);
