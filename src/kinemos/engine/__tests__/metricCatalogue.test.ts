@@ -41,6 +41,7 @@ const metrics: LiftMetrics = {
   peakVelocityMs: 1.85,
   transitionVelocityLossMs: 0.12,
   analyzer: EMPTY_ANALYZER_METRICS,
+  jerk: null,
   turnoverVelocityMs: 0.6,
   peakPowerW: 2300,
 };
@@ -56,6 +57,12 @@ const summary: RepSummary = {
   peakPowerW: 2300,
   peakPowerT: 0.68,
   meanPropulsivePowerW: 1500,
+  riseStartT: 0.1,
+  concentricS: 0.85,
+  meanRiseVelocityMs: 1.1,
+  timeToPeakVelocityS: 0.6,
+  timeToPeakPowerS: 0.58,
+  pathLengthCm: 112,
 };
 
 describe('METRIC_CATALOGUE', () => {

@@ -40,8 +40,40 @@ export type BoundaryRuleId =
   | 'acceleration-trough'
   | 'peak-velocity'
   | 'apex'
+  /** The lowest (most negative) vertical velocity after Vmax — the bar
+   *  dropping under into the catch. Where the turnover ends (P9). */
+  | 'velocity-min'
+  /** The lowest point of the catch after the apex — S_sit. Where the catch
+   *  ends and the recovery begins (P9). */
+  | 'sit'
+  /** The bar leaving its high rest DOWNWARD: the start of a jerk's dip
+   *  (BVDG: Auftakt). Found by walking back from the lower turning point to
+   *  the last still sample, as lift-off is found from the peak. */
+  | 'dip-start'
+  /** Fastest descent inside the dip: where the lifter starts braking the
+   *  bar (the lower third of the Auftakt). */
+  | 'peak-downward-velocity'
+  /** The lower turning point s_u — the bar stops falling and the drive
+   *  (Anstoß) begins. */
+  | 'dip-bottom'
   | 'settle'
   | 'end-of-clip';
+
+/**
+ * What the bar does in a rep, physically — the small closed set the engine
+ * has to know about before any phase is named (P9 plan §3.1):
+ *
+ *   - `pull-catch` — rests low, rises, is caught below its apex (snatch, clean
+ *     and their variants);
+ *   - `pull` — rests low, rises, is lowered or dropped with no catch to read
+ *     (pulls, deadlifts);
+ *   - `dip-drive` — rests HIGH, descends first, drives up, is caught or
+ *     pressed out overhead (jerks, push press);
+ *   - `free` — any still run to any still run; no phases, universal metrics;
+ *   - `compound` — a clean and a jerk in one clip: cut on every rest and
+ *     classified by what comes first (see `reps.ts`).
+ */
+export type MotionShape = 'pull-catch' | 'pull' | 'dip-drive' | 'free' | 'compound';
 
 export interface PhaseDefinition {
   id: string;
@@ -97,23 +129,97 @@ export const DEFAULT_PHASE_THRESHOLDS: PhaseThresholds = {
   minTransitionRiseCm: 15,
 };
 
+// ── The phase definitions, one per phase id ─────────────────────────────────
+//
+// Colours are DATA — they identify the phase on every surface — and dark
+// enough to carry white 10 px type in the timeline band. A phase keeps its
+// colour across every set it appears in, so "second pull" looks the same on a
+// snatch from the floor and on a pull from blocks.
+
+const P = {
+  first_pull: { id: 'first_pull', label: 'First pull', shortLabel: 'FIRST PULL', color: '#3E6E9E' },
+  transition: { id: 'transition', label: 'Transition', shortLabel: 'TRANS', color: '#6E6D67' },
+  second_pull: { id: 'second_pull', label: 'Second pull', shortLabel: 'SECOND PULL', color: '#185FA5' },
+  /** A deadlift's one phase: lift-off to apex. */
+  pull: { id: 'pull', label: 'Pull', shortLabel: 'PULL', color: '#3E6E9E' },
+  turnover: { id: 'turnover', label: 'Turnover', shortLabel: 'TURN', color: '#A8681F' },
+  catch: { id: 'catch', label: 'Catch', shortLabel: 'CATCH', color: '#3E6E3A' },
+  recovery: { id: 'recovery', label: 'Recovery', shortLabel: 'RECOV', color: '#4F6D7A' },
+  dip: { id: 'dip', label: 'Dip', shortLabel: 'DIP', color: '#7A4E8A' },
+  braking: { id: 'braking', label: 'Braking', shortLabel: 'BRAKE', color: '#8A3E5E' },
+  drive: { id: 'drive', label: 'Drive', shortLabel: 'DRIVE', color: '#185FA5' },
+} as const;
+
 /**
- * The default five-phase model for a snatch or clean, in order.
+ * The snatch and clean from the floor: the BVDG model (RTK 2019 §4.4 after
+ * Knoll & Sandau 2018; P9 plan §3.2). The acceleration in three parts, then
+ * the turnover from Vmax to Vmin, the catch from Vmin to the lowest point of
+ * the sit, and the recovery from there to the bar being still again.
  *
- * Colours are the ones the P1 design work settled on, dark enough to carry
- * white 10 px type in the timeline band.
+ * Decided 09/09/2026: turnover = Vmax → Vmin, catch = Vmin → S_sit. Before
+ * that the turnover ended at the apex and the catch ran to the settle.
  */
-export const DEFAULT_PHASE_SET: PhaseDefinition[] = [
-  { id: 'first_pull', label: 'First pull', shortLabel: 'FIRST PULL', color: '#3E6E9E', startRule: 'liftoff' },
-  { id: 'transition', label: 'Transition', shortLabel: 'TRANS', color: '#6E6D67', startRule: 'first-velocity-peak' },
-  { id: 'second_pull', label: 'Second pull', shortLabel: 'SECOND PULL', color: '#185FA5', startRule: 'velocity-trough' },
-  { id: 'turnover', label: 'Turnover', shortLabel: 'TURN', color: '#A8681F', startRule: 'peak-velocity' },
-  { id: 'catch', label: 'Catch', shortLabel: 'CATCH', color: '#3E6E3A', startRule: 'apex' },
+export const PULL_CATCH_FLOOR_PHASES: PhaseDefinition[] = [
+  { ...P.first_pull, startRule: 'liftoff' },
+  { ...P.transition, startRule: 'first-velocity-peak' },
+  { ...P.second_pull, startRule: 'velocity-trough' },
+  { ...P.turnover, startRule: 'peak-velocity' },
+  { ...P.catch, startRule: 'velocity-min' },
+  { ...P.recovery, startRule: 'sit' },
 ];
 
+/** From the hang or blocks BELOW the knee: the RTK's first pull ends "just
+ *  above the knee", so there is none; the knee passage and the second pull
+ *  remain. */
+export const PULL_CATCH_BELOW_KNEE_PHASES: PhaseDefinition[] = [
+  { ...P.transition, startRule: 'liftoff' },
+  { ...P.second_pull, startRule: 'velocity-trough' },
+  { ...P.turnover, startRule: 'peak-velocity' },
+  { ...P.catch, startRule: 'velocity-min' },
+  { ...P.recovery, startRule: 'sit' },
+];
+
+/** From ABOVE the knee: only the second pull is left of the acceleration. No
+ *  edge is invented for a phase the lift does not have. */
+export const PULL_CATCH_ABOVE_KNEE_PHASES: PhaseDefinition[] = [
+  { ...P.second_pull, startRule: 'liftoff' },
+  { ...P.turnover, startRule: 'peak-velocity' },
+  { ...P.catch, startRule: 'velocity-min' },
+  { ...P.recovery, startRule: 'sit' },
+];
+
+/** A pull: the acceleration only, ending at the apex. */
+export const PULL_PHASES: PhaseDefinition[] = [
+  { ...P.first_pull, startRule: 'liftoff' },
+  { ...P.transition, startRule: 'first-velocity-peak' },
+  { ...P.second_pull, startRule: 'velocity-trough' },
+];
+
+/** A deadlift: one phase, lift-off to apex. */
+export const DEADLIFT_PHASES: PhaseDefinition[] = [{ ...P.pull, startRule: 'liftoff' }];
+
+/**
+ * The jerk (and push press): the BVDG's Auftakt split at its fastest descent
+ * into the dip proper and the braking, the Anstoß as the drive to Vmax, then
+ * the same turnover / catch / recovery as the pulls — the bar drops δ_Ab
+ * (2–6 cm) into the fix and is still again.
+ */
+export const DIP_DRIVE_PHASES: PhaseDefinition[] = [
+  { ...P.dip, startRule: 'dip-start' },
+  { ...P.braking, startRule: 'peak-downward-velocity' },
+  { ...P.drive, startRule: 'dip-bottom' },
+  { ...P.turnover, startRule: 'peak-velocity' },
+  { ...P.catch, startRule: 'velocity-min' },
+  { ...P.recovery, startRule: 'sit' },
+];
+
+/** The default set: a snatch or clean from the floor. */
+export const DEFAULT_PHASE_SET: PhaseDefinition[] = PULL_CATCH_FLOOR_PHASES;
+
 /** Where the last phase ends. Kept beside the set so a different model can end
- *  somewhere else. */
+ *  somewhere else — a pull ends at the apex. */
 export const DEFAULT_PHASE_END_RULE: BoundaryRuleId = 'settle';
+export const PULL_END_RULE: BoundaryRuleId = 'apex';
 
 /** Where a boundary's value came from — and therefore how much to trust it. */
 export type BoundarySource = 'detected' | 'fallback' | 'coach';
@@ -216,6 +322,42 @@ export interface LiftMetrics {
   turnoverVelocityMs: number | null;
   peakPowerW: number | null;
   analyzer: AnalyzerMetrics;
+  /** The jerk's own measures (P9). Null when the phase set has no dip —
+   *  every pull and every catch from the floor. */
+  jerk: JerkAnalyzerMetrics | null;
+}
+
+/**
+ * The Weightlifting Analyzer's measures for the jerk (BVDG parameter table,
+ * `KinEMOS Resources/Technical Knowledge`; English names from Darville 2018
+ * Fig. 10; P9 plan §5.5). Vmax, Vmin, t_turn, S_fly, S_remain, S_sit, S_fall,
+ * F_br and PSK are the shared ones and live in `AnalyzerMetrics`; these are
+ * the ones only a dip-and-drive has. Every field is null when the set has no
+ * `dip`, `braking` and `drive` phases that were actually found.
+ */
+export interface JerkAnalyzerMetrics {
+  /** v_Auft: peak DOWNWARD velocity in the dip, m/s (negative). */
+  vDipMs: number | null;
+  /** δ_Auf: dip depth, the start height minus the lower turning point, cm. */
+  sDipCm: number | null;
+  /** δv_Auf: how far the bar had descended when v_Auft occurred, cm. */
+  sToVDipCm: number | null;
+  /** δ_Stoß: the drive path, lower turning point to the height at Vmax, cm.
+   *  The material expects it 3–4 cm longer than δ_Auf. */
+  sDriveCm: number | null;
+  /** δ_Stoß − δ_Auf: the number the coach asks for as a yes/no. */
+  driveMinusDipCm: number | null;
+  /** F_Auf: peak vertical force while the dip is braked, % of load. */
+  fDipPct: number | null;
+  /** F_Stoß: peak vertical force in the drive, % of load. */
+  fDrivePct: number | null;
+  /** How many separate force maxima the drive shows — the material wants
+   *  two (≈180–190 %) rather than one (≈220–230 %). */
+  driveForcePeaks: number | null;
+  /** Durations of the three parts of the way up, s. */
+  dipS: number | null;
+  brakingS: number | null;
+  driveS: number | null;
 }
 
 /** Result of proposing boundaries: the times, plus whether the signatures were
@@ -429,6 +571,83 @@ function findSettle(series: KinematicSeries, apexIndex: number, th: PhaseThresho
   return null;
 }
 
+/**
+ * Vmin: the most negative vertical velocity after the apex — the bar dropping
+ * under into the catch. Null when the bar never comes down inside the clip
+ * (footage cut at the apex), so the turnover's end is a fallback rather than
+ * a frame the bar happened to be on.
+ */
+function velocityMinIndex(series: KinematicSeries, apexIndex: number, th: PhaseThresholds): number | null {
+  let best = -1;
+  let value = 0;
+  for (let i = apexIndex; i < series.vyMs.length; i++) {
+    if (series.vyMs[i] < value) {
+      value = series.vyMs[i];
+      best = i;
+    }
+  }
+  return best >= 0 && value <= -th.settleMs ? best : null;
+}
+
+/**
+ * S_sit: the lowest the bar gets between the apex and the settle (or the end
+ * of the clip) — the deepest point of the catch, where the recovery starts.
+ * Requires a Vmin: with no drop under there is no sit to speak of.
+ */
+function sitIndex(series: KinematicSeries, vminIndex: number, endIndex: number): number {
+  let best = vminIndex;
+  for (let i = vminIndex; i <= endIndex && i < series.yCm.length; i++) {
+    if (series.yCm[i] < series.yCm[best]) best = i;
+  }
+  return best;
+}
+
+/**
+ * The lower turning point of a dip-and-drive: walking back from Vmax, the
+ * last sample at which the bar was not yet rising. The drive begins here.
+ */
+function dipBottomIndex(series: KinematicSeries, peakIdx: number): number {
+  let i = peakIdx;
+  while (i > 0 && series.vyMs[i] > 0) i--;
+  return i;
+}
+
+/**
+ * Where the dip began: the mirror of `findLiftoff`. Walk back from the lower
+ * turning point until the bar was still for `liftoffHoldS`; the dip starts at
+ * the first sample after that run whose descent clears the lift-off
+ * threshold. Null when the clip starts mid-dip.
+ */
+function findDipStart(series: KinematicSeries, th: PhaseThresholds, bottomIdx: number): number | null {
+  const holdSamples = Math.max(1, Math.round(th.liftoffHoldS / series.dt));
+  let still = 0;
+  let descentStart: number | null = null;
+  for (let i = bottomIdx; i >= 0; i--) {
+    if (series.vyMs[i] > -th.liftoffMs) {
+      still++;
+      if (still >= holdSamples) {
+        descentStart = i + holdSamples;
+        break;
+      }
+    } else {
+      still = 0;
+    }
+  }
+  if (descentStart === null) return null;
+  for (let i = descentStart - holdSamples; i <= bottomIdx; i++) {
+    if (series.vyMs[i] <= -th.liftoffMs) return i;
+  }
+  return null;
+}
+
+/** The fastest descent between the dip's start and its bottom: where the
+ *  braking begins. */
+function peakDownwardIndex(series: KinematicSeries, fromIdx: number, toIdx: number): number {
+  let best = fromIdx;
+  for (let i = fromIdx; i <= toIdx; i++) if (series.vyMs[i] < series.vyMs[best]) best = i;
+  return best;
+}
+
 // ── Proposal ────────────────────────────────────────────────────────────────
 
 /**
@@ -444,6 +663,7 @@ export function proposePhases(
   phaseSet: readonly PhaseDefinition[] = DEFAULT_PHASE_SET,
   thresholds: PhaseThresholds = DEFAULT_PHASE_THRESHOLDS,
   endRule: BoundaryRuleId = DEFAULT_PHASE_END_RULE,
+  shape: MotionShape = 'pull-catch',
 ): PhaseProposal {
   const n = series.t.length;
   if (n < 4 || phaseSet.length === 0) {
@@ -454,20 +674,37 @@ export function proposePhases(
   const lastT = series.t[n - 1];
 
   const peakIdx = peakVelocityIndex(series);
-  const liftoffT = findLiftoff(series, thresholds, peakIdx);
-  const apexIdx = apexIndex(series, peakIdx);
+  const apexIdx = Math.max(apexIndex(series, peakIdx), peakIdx);
   const peakT = series.t[peakIdx];
-  const apexT = series.t[Math.max(apexIdx, peakIdx)];
+  const apexT = series.t[apexIdx];
 
+  // ── The way up ────────────────────────────────────────────────────────────
+  // A pull rises from a rest; a dip-and-drive descends from one first. The
+  // two families of rules are found on the same series, and a set only asks
+  // for the ones it names.
+  const dipDrive = shape === 'dip-drive';
+  const liftoffT = dipDrive ? null : findLiftoff(series, thresholds, peakIdx);
   const liftoffIdx = liftoffT === null ? 0 : series.t.findIndex(t => t >= liftoffT);
-  const velocityDip = findFirstVelocityPeak(series, Math.max(0, liftoffIdx), peakIdx, thresholds);
-  const unweighting = velocityDip ? null : findUnweighting(series, Math.max(0, liftoffIdx), peakIdx, thresholds);
+  const velocityDip = dipDrive ? null : findFirstVelocityPeak(series, Math.max(0, liftoffIdx), peakIdx, thresholds);
+  const unweighting = dipDrive || velocityDip ? null : findUnweighting(series, Math.max(0, liftoffIdx), peakIdx, thresholds);
   const dip = velocityDip ?? unweighting;
   // When the transition came from acceleration, the boundaries say so.
   const via: Partial<Record<BoundaryRuleId, BoundaryRuleId>> = unweighting
     ? { 'first-velocity-peak': 'acceleration-peak', 'velocity-trough': 'acceleration-trough' }
     : {};
-  const settleT = findSettle(series, Math.max(apexIdx, peakIdx), thresholds);
+
+  const bottomIdx = dipDrive ? dipBottomIndex(series, peakIdx) : null;
+  const dipStartIdx = bottomIdx !== null ? findDipStart(series, thresholds, bottomIdx) : null;
+  // A dip that never got going — the bar was already at its lowest when the
+  // clip began — has no bottom to speak of either.
+  const dipFound = bottomIdx !== null && dipStartIdx !== null && bottomIdx > dipStartIdx;
+  const pdvIdx = dipFound ? peakDownwardIndex(series, dipStartIdx, bottomIdx) : null;
+
+  // ── The way down ──────────────────────────────────────────────────────────
+  const settleT = findSettle(series, apexIdx, thresholds);
+  const settleIdx = settleT === null ? n - 1 : series.t.findIndex(t => t >= settleT);
+  const vminIdx = velocityMinIndex(series, apexIdx, thresholds);
+  const sitIdx = vminIdx !== null ? sitIndex(series, vminIdx, settleIdx) : null;
 
   const detected: Partial<Record<BoundaryRuleId, number>> = {
     'start-of-clip': firstT,
@@ -477,20 +714,34 @@ export function proposePhases(
     apex: apexT,
     'first-velocity-peak': dip ? series.t[dip.peakIndex] : undefined,
     'velocity-trough': dip ? series.t[dip.troughIndex] : undefined,
+    'velocity-min': vminIdx !== null ? series.t[vminIdx] : undefined,
+    sit: sitIdx !== null ? series.t[sitIdx] : undefined,
+    'dip-start': dipFound ? series.t[dipStartIdx] : undefined,
+    'peak-downward-velocity': pdvIdx !== null ? series.t[pdvIdx] : undefined,
+    'dip-bottom': dipFound ? series.t[bottomIdx] : undefined,
     settle: settleT ?? undefined,
   };
 
   // Fallback anchors, in rule order, so a missing boundary can be placed
   // between the ones either side of it rather than at an arbitrary time.
-  const startFallback = liftoffT ?? firstT;
+  const startFallback = liftoffT ?? (dipFound ? series.t[dipStartIdx] : firstT);
+  const bottomFallback = dipFound ? series.t[bottomIdx] : startFallback + (peakT - startFallback) * 0.6;
   const fallbacks: Partial<Record<BoundaryRuleId, number>> = {
     liftoff: startFallback,
     // No dip found: split the run-up to peak velocity at 55 % and 72 %, which
     // is roughly where a textbook pull puts them. Explicitly a guess.
     'first-velocity-peak': startFallback + (peakT - startFallback) * 0.55,
     'velocity-trough': startFallback + (peakT - startFallback) * 0.72,
+    'dip-start': startFallback,
+    // A textbook Auftakt brakes over its lower third.
+    'peak-downward-velocity': startFallback + (bottomFallback - startFallback) * 0.66,
+    'dip-bottom': bottomFallback,
     'peak-velocity': peakT,
     apex: apexT,
+    // No drop under found: the turnover is given the flight and the catch
+    // nothing, which reads honestly as "no catch here".
+    'velocity-min': apexT,
+    sit: settleT ?? apexT,
     settle: lastT,
   };
 
@@ -603,16 +854,16 @@ export function computeLiftMetrics(
   // The transition dip: the first pull's peak minus the lowest velocity reached
   // before the second pull gets going. Computed from the spans rather than
   // re-detected, so a coach who moved an edge sees the number move with it.
-  const firstPull = phases[0];
-  const transition = phases[1];
+  // By id, not by position: a set from the hang has no first pull at all.
+  const firstPull = phases.find(p => p.phaseId === 'first_pull') ?? null;
+  const transitionSpan = spans.find(s => s.definition.id === 'transition') ?? null;
   const transitionVelocityLossMs =
-    firstPull?.peakVelocityMs != null && transition
+    firstPull?.peakVelocityMs != null && transitionSpan
       ? firstPull.peakVelocityMs -
-        (minOver(series.t, series.vyMs, transition.durationS > 0 ? spans[1].fromT : 0, spans[1]?.toT ?? 0)?.value ??
-          firstPull.peakVelocityMs)
+        (minOver(series.t, series.vyMs, transitionSpan.fromT, transitionSpan.toT)?.value ?? firstPull.peakVelocityMs)
       : null;
 
-  const turnover = phases.find(p => p.phaseId === 'turnover') ?? phases[3] ?? null;
+  const turnover = phases.find(p => p.phaseId === 'turnover') ?? null;
 
   return {
     phases,
@@ -621,6 +872,7 @@ export function computeLiftMetrics(
     turnoverVelocityMs: turnover?.meanVelocityMs ?? null,
     peakPowerW: overallPower?.value ?? null,
     analyzer: computeAnalyzerMetrics(series, spans),
+    jerk: computeJerkMetrics(series, spans),
   };
 }
 
@@ -691,7 +943,7 @@ export function locateAnalyzerEvents(
   });
   const firstPull = spanOf('first_pull');
   const transition = spanOf('transition');
-  const catchSpan = spanOf('catch');
+  const catchEnd = catchEndOf(spans, tEnd);
 
   // The pull, phase by phase. V2 is the velocity where the second pull
   // starts — the velocity trough when there is one, the knee passing when
@@ -702,19 +954,20 @@ export function locateAnalyzerEvents(
   const v2 = transition ? valueAt(series.t, series.vyMs, transition.toT) : null;
   const vmax = peakOver(series.t, series.vyMs, series.t[0], tEnd);
 
-  // After Vmax: the flight to the apex, the drop under, the catch.
+  // After Vmax: the flight to the apex, the drop under, the catch. The apex
+  // is searched, not read off a phase edge — the turnover runs Vmax → Vmin
+  // and the apex sits inside it.
   let vmin: { value: number; t: number } | null = null;
-  let apexT: number | null = catchSpan ? catchSpan.fromT : null;
+  let apexT: number | null = null;
   if (vmax) {
     for (let i = 0; i < n; i++) {
       if (series.t[i] < vmax.t) continue;
       if (!vmin || series.vyMs[i] < vmin.value) vmin = { value: series.vyMs[i], t: series.t[i] };
-      // The apex, when no catch phase says where it is: the first moment
-      // after Vmax that the bar stops rising.
+      // The first moment after Vmax that the bar stops rising.
       if (apexT === null && i > 0 && series.vyMs[i] <= 0 && series.t[i - 1] >= vmax.t) apexT = series.t[i];
     }
   }
-  const sit = apexT !== null ? minOver(series.t, series.yCm, apexT, catchSpan ? catchSpan.toT : tEnd) : null;
+  const sit = apexT !== null ? minOver(series.t, series.yCm, apexT, catchEnd) : null;
 
   return {
     v1: v1 ? at(v1.t, v1.value) : null,
@@ -770,7 +1023,7 @@ export function computeAnalyzerMetrics(
   const firstPull = spanOf('first_pull');
   const transition = spanOf('transition');
   const secondPull = spanOf('second_pull');
-  const catchSpan = spanOf('catch');
+  const catchEnd = catchEndOf(spans, tEnd);
 
   const f1 = firstPull ? peakOver(series.t, forcePct, firstPull.fromT, firstPull.toT) : null;
   const f2 = transition ? minOver(series.t, forcePct, transition.fromT, transition.toT) : null;
@@ -782,7 +1035,7 @@ export function computeAnalyzerMetrics(
   const ballisticCm = vmax ? ((vmax.valueMs * vmax.valueMs) / (2 * G_MS2)) * 100 : null;
   const sRemain = sFly !== null && ballisticCm !== null ? sFly - ballisticCm : null;
   const sSit = sit ? sit.heightCm : null;
-  const fbr = apex ? peakOver(series.t, forcePct, apex.t, catchSpan ? catchSpan.toT : tEnd) : null;
+  const fbr = apex ? peakOver(series.t, forcePct, apex.t, catchEnd) : null;
 
   return {
     v1Ms: v1?.valueMs ?? null,
@@ -803,6 +1056,106 @@ export function computeAnalyzerMetrics(
     fbrPct: fbr?.value ?? null,
     pskNs: series.massKg && vmax ? series.massKg * vmax.valueMs : null,
   };
+}
+
+/**
+ * Where the catch ends, for the sit and the braking force: the end of a found
+ * `catch` span, else the start of a found `recovery`, else the end of the
+ * series. Under the P9 sets the catch runs Vmin → S_sit, so its end IS the
+ * sit; under the pre-P9 set it ran to the settle, which the search over it
+ * also handles.
+ */
+function catchEndOf(spans: readonly PhaseSpan[], tEnd: number): number {
+  const found = (id: string) => spans.find(s => s.definition.id === id && s.source !== 'fallback') ?? null;
+  const catchSpan = found('catch');
+  if (catchSpan) return catchSpan.toT;
+  const recovery = found('recovery');
+  if (recovery) return recovery.fromT;
+  return tEnd;
+}
+
+/** The jerk block with nothing in it. */
+export const EMPTY_JERK_METRICS: JerkAnalyzerMetrics = {
+  vDipMs: null, sDipCm: null, sToVDipCm: null, sDriveCm: null, driveMinusDipCm: null,
+  fDipPct: null, fDrivePct: null, driveForcePeaks: null, dipS: null, brakingS: null, driveS: null,
+};
+
+/**
+ * The jerk's measures, read off the dip / braking / drive spans. Null as a
+ * whole when the set has no dip — the panels then show nothing rather than
+ * a block of dashes. Every number needs the spans it reads to have been
+ * FOUND; a fallback edge yields null, as it does for the pull's measures.
+ */
+export function computeJerkMetrics(
+  series: KinematicSeries,
+  spans: readonly PhaseSpan[],
+): JerkAnalyzerMetrics | null {
+  const any = (id: string) => spans.find(s => s.definition.id === id) ?? null;
+  if (!any('dip') || !any('drive')) return null;
+  const spanOf = (id: string) => spans.find(s => s.definition.id === id && s.source !== 'fallback') ?? null;
+  const dip = spanOf('dip');
+  const braking = spanOf('braking');
+  const drive = spanOf('drive');
+  if (series.t.length < 2) return EMPTY_JERK_METRICS;
+  const forcePct = forcePercentOf(series);
+
+  // The dip is the dip and the braking together when the set splits them.
+  const dipFrom = dip?.fromT ?? null;
+  const dipTo = drive?.fromT ?? braking?.toT ?? dip?.toT ?? null;
+  const vDip = dipFrom !== null && dipTo !== null ? minOver(series.t, series.vyMs, dipFrom, dipTo) : null;
+  const startY = dipFrom !== null ? valueAt(series.t, series.yCm, dipFrom) : null;
+  const bottomY = dipTo !== null ? valueAt(series.t, series.yCm, dipTo) : null;
+  const sDip = startY !== null && bottomY !== null ? startY - bottomY : null;
+  const sToVDip = startY !== null && vDip ? startY - (valueAt(series.t, series.yCm, vDip.t) ?? startY) : null;
+
+  const vmax = drive ? peakOver(series.t, series.vyMs, drive.fromT, drive.toT) : null;
+  const vmaxY = vmax ? valueAt(series.t, series.yCm, vmax.t) : null;
+  const sDrive = vmaxY !== null && bottomY !== null ? vmaxY - bottomY : null;
+
+  const fDip = dipFrom !== null && dipTo !== null ? peakOver(series.t, forcePct, dipFrom, dipTo) : null;
+  const fDrive = drive ? peakOver(series.t, forcePct, drive.fromT, drive.toT) : null;
+
+  return {
+    vDipMs: vDip?.value ?? null,
+    sDipCm: sDip,
+    sToVDipCm: sToVDip,
+    sDriveCm: sDrive,
+    driveMinusDipCm: sDrive !== null && sDip !== null ? sDrive - sDip : null,
+    fDipPct: fDip?.value ?? null,
+    fDrivePct: fDrive?.value ?? null,
+    driveForcePeaks: drive ? countPeaks(series.t, forcePct, drive.fromT, drive.toT, 10) : null,
+    dipS: dip ? Math.max(0, (braking ? braking.fromT : dip.toT) - dip.fromT) : null,
+    brakingS: braking ? Math.max(0, braking.toT - braking.fromT) : dip && drive ? 0 : null,
+    driveS: drive ? Math.max(0, drive.toT - drive.fromT) : null,
+  };
+}
+
+/**
+ * How many local maxima a series shows inside a window, counting only those
+ * that stand `prominence` above the trough that follows them — a wiggle in
+ * the filter is not a second force peak.
+ */
+function countPeaks(
+  t: readonly number[],
+  values: readonly number[],
+  fromT: number,
+  toT: number,
+  prominence: number,
+): number {
+  const idx: number[] = [];
+  for (let i = 0; i < t.length; i++) if (t[i] >= fromT && t[i] <= toT) idx.push(i);
+  if (idx.length < 3) return idx.length > 0 ? 1 : 0;
+  let count = 0;
+  for (let k = 1; k < idx.length - 1; k++) {
+    const i = idx[k];
+    if (!(values[i] >= values[i - 1] && values[i] > values[i + 1])) continue;
+    let trough = values[i];
+    for (let m = k + 1; m < idx.length; m++) trough = Math.min(trough, values[idx[m]]);
+    if (values[i] - trough >= prominence) count++;
+  }
+  // The window's end can be the top of a rising force with no turn inside it.
+  if (count === 0) count = 1;
+  return count;
 }
 
 /** Minimum of a series over a closed window, and when it occurs. */

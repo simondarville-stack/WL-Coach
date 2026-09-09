@@ -118,6 +118,21 @@ export interface RepSummary {
    *  the propulsive portion, not the whole clip, which would be diluted by the
    *  catch. Null without a mass. */
   meanPropulsivePowerW: number | null;
+
+  // ── The universal set (P9 plan §3.3): what any lift can say ─────────────
+  /** When the bar left its rest for the rise that reached Vmax, s — the last
+   *  still moment before it, found as lift-off is. Null when the series
+   *  starts mid-rise. */
+  riseStartT: number | null;
+  /** Rest → apex, s. */
+  concentricS: number | null;
+  /** Mean upward velocity over the rise, m/s. */
+  meanRiseVelocityMs: number | null;
+  /** Rest → Vmax and rest → peak power, s. */
+  timeToPeakVelocityS: number | null;
+  timeToPeakPowerS: number | null;
+  /** How far the bar end travelled in all, cm. */
+  pathLengthCm: number;
 }
 
 /**
@@ -247,10 +262,17 @@ export function summariseRep(series: KinematicSeries): RepSummary {
     peakPowerW: null,
     peakPowerT: null,
     meanPropulsivePowerW: null,
+    riseStartT: null,
+    concentricS: null,
+    meanRiseVelocityMs: null,
+    timeToPeakVelocityS: null,
+    timeToPeakPowerS: null,
+    pathLengthCm: 0,
   };
   if (n === 0) return empty;
 
   let peakV = -Infinity;
+  let peakVI = 0;
   let peakVT = series.t[0];
   let peakSpeed = 0;
   let peakY = -Infinity;
@@ -261,10 +283,12 @@ export function summariseRep(series: KinematicSeries): RepSummary {
   let peakPT: number | null = null;
   let propulsiveSum = 0;
   let propulsiveCount = 0;
+  let pathLength = 0;
 
   for (let i = 0; i < n; i++) {
     if (series.vyMs[i] > peakV) {
       peakV = series.vyMs[i];
+      peakVI = i;
       peakVT = series.t[i];
     }
     peakSpeed = Math.max(peakSpeed, series.speedMs[i]);
@@ -274,6 +298,7 @@ export function summariseRep(series: KinematicSeries): RepSummary {
     }
     minX = Math.min(minX, series.xCm[i]);
     maxX = Math.max(maxX, series.xCm[i]);
+    if (i > 0) pathLength += Math.hypot(series.xCm[i] - series.xCm[i - 1], series.yCm[i] - series.yCm[i - 1]);
 
     if (series.powerW) {
       const p = series.powerW[i];
@@ -291,6 +316,36 @@ export function summariseRep(series: KinematicSeries): RepSummary {
     }
   }
 
+  // The rise that reached Vmax: back from the peak to the last sample under
+  // the still threshold (the same idea as the phase layer's lift-off, and
+  // the same number for a lift from the floor). The apex of THAT rise is the
+  // first stop after the peak, not the clip's highest point — a recovery to
+  // lockout would otherwise stretch the rise to the end of the clip.
+  const STILL_MS = 0.1;
+  let riseStartI = -1;
+  for (let i = peakVI; i >= 0; i--) {
+    if (series.vyMs[i] < STILL_MS) {
+      riseStartI = i;
+      break;
+    }
+  }
+  let riseEndI = n - 1;
+  for (let i = peakVI + 1; i < n; i++) {
+    if (series.vyMs[i] <= 0) {
+      riseEndI = i;
+      break;
+    }
+  }
+  const riseStartT = riseStartI >= 0 && peakV > STILL_MS ? series.t[riseStartI] : null;
+  let riseSum = 0;
+  let riseCount = 0;
+  if (riseStartI >= 0) {
+    for (let i = riseStartI; i <= riseEndI; i++) {
+      riseSum += series.vyMs[i];
+      riseCount++;
+    }
+  }
+
   return {
     durationS: series.t[n - 1] - series.t[0],
     peakVerticalVelocityMs: peakV,
@@ -302,6 +357,12 @@ export function summariseRep(series: KinematicSeries): RepSummary {
     peakPowerW: peakP,
     peakPowerT: peakPT,
     meanPropulsivePowerW: propulsiveCount > 0 ? propulsiveSum / propulsiveCount : null,
+    riseStartT,
+    concentricS: riseStartT !== null ? series.t[riseEndI] - riseStartT : null,
+    meanRiseVelocityMs: riseStartT !== null && riseCount > 0 ? riseSum / riseCount : null,
+    timeToPeakVelocityS: riseStartT !== null ? peakVT - riseStartT : null,
+    timeToPeakPowerS: riseStartT !== null && peakPT !== null ? peakPT - riseStartT : null,
+    pathLengthCm: pathLength,
   };
 }
 

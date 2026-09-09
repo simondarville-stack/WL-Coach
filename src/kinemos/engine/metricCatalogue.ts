@@ -24,7 +24,8 @@
  * Engine purity: types and pure functions only.
  */
 import type { RepSummary } from './kinematics';
-import type { AnalyzerMetrics, LiftMetrics } from './phases';
+import type { LiftModel } from './liftModels';
+import type { AnalyzerMetrics, JerkAnalyzerMetrics, LiftMetrics, MotionShape } from './phases';
 
 /** Which way is up, for a given metric. Null where it genuinely depends on the
  *  lifter and the interface must not pass judgement. */
@@ -53,10 +54,41 @@ export interface MetricDefinition {
    * COACH-CONFIG in spirit — a hardcore-tier setup could tighten them.
    */
   significant: number;
+  /**
+   * What a lift must be for this metric to exist at all (P9 plan §3.3): the
+   * motion shapes it applies to, and the phases its reader needs. A surface
+   * lists a metric only when the rep's model satisfies it — a deadlift shows
+   * no turnover row, a jerk no first pull. Absent: universal.
+   */
+  requires?: { shape?: readonly MotionShape[]; phases?: readonly string[] };
 }
 
 function phase(m: LiftMetrics, id: string) {
   return m.phases.find(p => p.phaseId === id) ?? null;
+}
+
+/** The shapes that have a flight and a catch to read. */
+const CAUGHT: readonly MotionShape[] = ['pull-catch', 'dip-drive'];
+
+/**
+ * Whether a metric can exist for a lift model. Free shapes satisfy no phase
+ * requirement; a compound is judged by its parts, which is the caller's to
+ * do once the clip is cut.
+ */
+export function metricApplies(metric: MetricDefinition, model: LiftModel): boolean {
+  const req = metric.requires;
+  if (!req) return true;
+  if (req.shape && !req.shape.includes(model.shape)) return false;
+  if (req.phases) {
+    const ids = new Set((model.phaseSet ?? []).map(p => p.id));
+    for (const id of req.phases) if (!ids.has(id)) return false;
+  }
+  return true;
+}
+
+/** The catalogue as one lift model sees it, in catalogue order. */
+export function catalogueFor(model: LiftModel): MetricDefinition[] {
+  return METRIC_CATALOGUE.filter(m => metricApplies(m, model));
 }
 
 /**
@@ -75,6 +107,58 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     read: l => l.metrics.peakVelocityMs,
     significant: 0.03,
   },
+  // ── Universal: every lift, whatever its shape ─────────────────────────────
+  {
+    id: 'meanRiseVelocity',
+    label: 'Mean velocity, rise',
+    unit: 'm/s',
+    decimals: 2,
+    betterWhen: 'higher',
+    why: 'Average upward velocity from where the bar left its rest to its apex — the VBT number for a lift with no phases.',
+    read: l => l.summary?.meanRiseVelocityMs ?? null,
+    significant: 0.03,
+  },
+  {
+    id: 'timeToPeakVelocity',
+    label: 'Time to peak velocity',
+    unit: 's',
+    decimals: 2,
+    betterWhen: null,
+    why: 'From the bar leaving its rest to Vmax. Shorter reads as more explosive; the right value depends on the lift.',
+    read: l => l.summary?.timeToPeakVelocityS ?? null,
+    significant: 0.03,
+  },
+  {
+    id: 'timeToPeakPower',
+    label: 'Time to peak power',
+    unit: 's',
+    decimals: 2,
+    betterWhen: null,
+    why: 'From the bar leaving its rest to peak barbell power. Needs a mass.',
+    read: l => l.summary?.timeToPeakPowerS ?? null,
+    significant: 0.03,
+  },
+  {
+    id: 'concentric',
+    label: 'Rise duration',
+    unit: 's',
+    decimals: 2,
+    betterWhen: null,
+    why: 'From the bar leaving its rest to its apex.',
+    read: l => l.summary?.concentricS ?? null,
+    significant: 0.05,
+  },
+  {
+    id: 'pathLength',
+    label: 'Path length',
+    unit: 'cm',
+    decimals: 0,
+    betterWhen: null,
+    why: 'How far the bar end travelled in all, against how high it got. A straighter path is a shorter one.',
+    read: l => l.summary?.pathLengthCm ?? null,
+    significant: 3,
+  },
+  // ── The pull, phase by phase ──────────────────────────────────────────────
   {
     id: 'firstPull',
     label: 'First pull',
@@ -86,6 +170,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'How fast the bar left the floor. Faster is not automatically better: a patient first pull is a coaching choice.',
     read: l => phase(l.metrics, 'first_pull')?.peakVelocityMs ?? null,
     significant: 0.03,
+    requires: { phases: ['first_pull'] },
   },
   {
     id: 'secondPull',
@@ -96,6 +181,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'The extension. This is where a missed lift is usually lost.',
     read: l => phase(l.metrics, 'second_pull')?.peakVelocityMs ?? null,
     significant: 0.03,
+    requires: { phases: ['second_pull'] },
   },
   {
     id: 'transitionLoss',
@@ -106,6 +192,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'How much speed the bar gave up through the transition. Less is generally better, though some dip is normal.',
     read: l => l.metrics.transitionVelocityLossMs,
     significant: 0.03,
+    requires: { phases: ['first_pull', 'transition'] },
   },
   {
     id: 'turnover',
@@ -116,6 +203,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'Mean upward velocity while the bar is being pulled under.',
     read: l => l.metrics.turnoverVelocityMs,
     significant: 0.03,
+    requires: { phases: ['turnover'] },
   },
   {
     id: 'peakHeight',
@@ -168,6 +256,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'The slowest the bar gets through the transition. With V1 it says how much the double knee bend costs; on its own it is a matter of style.',
     read: l => l.metrics.analyzer?.v2Ms ?? null,
     significant: 0.03,
+    requires: { phases: ['transition'] },
   },
   {
     id: 'vmin',
@@ -178,6 +267,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'The fastest the bar comes down into the catch. Negative by definition.',
     read: l => l.metrics.analyzer?.vminMs ?? null,
     significant: 0.05,
+    requires: { shape: CAUGHT },
   },
   {
     id: 'tTurn',
@@ -188,6 +278,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'From Vmax to Vmin: how quickly the lifter gets under the bar. Käks ranked it third, after Vmax and the path.',
     read: l => l.metrics.analyzer?.tTurnS ?? null,
     significant: 0.02,
+    requires: { shape: CAUGHT },
   },
   {
     id: 'sVmax',
@@ -198,6 +289,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'Where in the pull the bar was fastest, above its start.',
     read: l => l.metrics.analyzer?.sVmaxCm ?? null,
     significant: 1,
+    requires: { shape: CAUGHT },
   },
   {
     id: 'sFly',
@@ -208,6 +300,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'How far the bar keeps rising after peak velocity, to the top of its flight.',
     read: l => l.metrics.analyzer?.sFlyCm ?? null,
     significant: 1,
+    requires: { shape: CAUGHT },
   },
   {
     id: 'sRemain',
@@ -218,6 +311,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'Share of the flight height the impulse alone (Vmax²/2g) does not explain — what the arms and the pull-under added.',
     read: l => l.metrics.analyzer?.sRemainPct ?? null,
     significant: 1,
+    requires: { shape: CAUGHT },
   },
   {
     id: 'sSit',
@@ -228,6 +322,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'The bar at the deepest point of the catch, above its start. Anthropometry as much as technique.',
     read: l => l.metrics.analyzer?.sSitCm ?? null,
     significant: 1,
+    requires: { shape: CAUGHT },
   },
   {
     id: 'sFall',
@@ -238,6 +333,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'From the top of the flight down to the catch.',
     read: l => l.metrics.analyzer?.sFallCm ?? null,
     significant: 1,
+    requires: { shape: CAUGHT },
   },
   {
     id: 'f1',
@@ -248,6 +344,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'Peak vertical force on the bar in the first pull, as a share of the load. 100 % holds the bar still.',
     read: l => l.metrics.analyzer?.f1Pct ?? null,
     significant: 5,
+    requires: { phases: ['first_pull'] },
   },
   {
     id: 'f2',
@@ -258,6 +355,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'Lowest vertical force through the transition. Below 100 % the bar is slowing.',
     read: l => l.metrics.analyzer?.f2Pct ?? null,
     significant: 5,
+    requires: { phases: ['transition'] },
   },
   {
     id: 'f3',
@@ -268,6 +366,7 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'Peak vertical force on the bar in the second pull, as a share of the load.',
     read: l => l.metrics.analyzer?.f3Pct ?? null,
     significant: 5,
+    requires: { phases: ['second_pull'] },
   },
   {
     id: 'fbr',
@@ -278,6 +377,96 @@ export const METRIC_CATALOGUE: readonly MetricDefinition[] = [
     why: 'Peak vertical force braking the bar in the catch, as a share of the load.',
     read: l => l.metrics.analyzer?.fbrPct ?? null,
     significant: 10,
+    requires: { shape: CAUGHT },
+  },
+  // ── The jerk (P9 plan §5.5) ───────────────────────────────────────────────
+  {
+    id: 'vDip',
+    label: 'Dip velocity (v_Auft)',
+    unit: 'm/s',
+    decimals: 2,
+    betterWhen: null,
+    why: 'Peak downward velocity in the dip. The material expects about −1,0 to −1,1 m/s; faster needs a longer brake.',
+    read: l => l.metrics.jerk?.vDipMs ?? null,
+    significant: 0.05,
+    requires: { phases: ['dip', 'drive'] },
+  },
+  {
+    id: 'sDip',
+    label: 'Dip depth (δ_Auf)',
+    unit: 'cm',
+    decimals: 1,
+    betterWhen: null,
+    why: 'How far the bar descended before the drive — 16 to 22 cm by weight class in the BVDG tables.',
+    read: l => l.metrics.jerk?.sDipCm ?? null,
+    significant: 1,
+    requires: { phases: ['dip', 'drive'] },
+  },
+  {
+    id: 'sDrive',
+    label: 'Drive path (δ_Stoß)',
+    unit: 'cm',
+    decimals: 1,
+    betterWhen: null,
+    why: 'From the lower turning point to the height at Vmax. Expected 3–4 cm longer than the dip.',
+    read: l => l.metrics.jerk?.sDriveCm ?? null,
+    significant: 1,
+    requires: { phases: ['dip', 'drive'] },
+  },
+  {
+    id: 'driveMinusDip',
+    label: 'Drive − dip',
+    unit: 'cm',
+    decimals: 1,
+    betterWhen: 'higher',
+    why: 'The number the coach wants as a yes or no: did the drive go on past where the dip began? 3–4 cm is the target.',
+    read: l => l.metrics.jerk?.driveMinusDipCm ?? null,
+    significant: 1,
+    requires: { phases: ['dip', 'drive'] },
+  },
+  {
+    id: 'fDip',
+    label: 'Force, braking (F_Auf)',
+    unit: '%',
+    decimals: 0,
+    betterWhen: null,
+    why: 'Peak vertical force while the dip is braked, as a share of the load. About 180 % in the tables.',
+    read: l => l.metrics.jerk?.fDipPct ?? null,
+    significant: 5,
+    requires: { phases: ['dip', 'drive'] },
+  },
+  {
+    id: 'fDrive',
+    label: 'Force, drive (F_Stoß)',
+    unit: '%',
+    decimals: 0,
+    betterWhen: null,
+    why: 'Peak vertical force in the drive. 180–190 % with two maxima, 220–230 % with one.',
+    read: l => l.metrics.jerk?.fDrivePct ?? null,
+    significant: 5,
+    requires: { phases: ['dip', 'drive'] },
+  },
+  {
+    id: 'dipDuration',
+    label: 'Dip + braking',
+    unit: 's',
+    decimals: 2,
+    betterWhen: null,
+    why: 'The whole Auftakt: 0,45 to 0,50 s in the material.',
+    read: l => (l.metrics.jerk && l.metrics.jerk.dipS !== null ? l.metrics.jerk.dipS + (l.metrics.jerk.brakingS ?? 0) : null),
+    significant: 0.03,
+    requires: { phases: ['dip', 'drive'] },
+  },
+  {
+    id: 'driveDuration',
+    label: 'Drive',
+    unit: 's',
+    decimals: 2,
+    betterWhen: null,
+    why: 'The Anstoß: about 0,25 s in the material.',
+    read: l => l.metrics.jerk?.driveS ?? null,
+    significant: 0.03,
+    requires: { phases: ['dip', 'drive'] },
   },
 ];
 
@@ -297,8 +486,11 @@ export function metricById(id: string): MetricDefinition | null {
  *       `LiftMetrics` and no summary.
  *   1 — `LiftMetrics` plus the rep summary, under this key.
  *   2 — plus the `analyzer` block (phases.ts `AnalyzerMetrics`).
+ *   3 — plus the `jerk` block and the universal rise figures on the
+ *       summary (P9); the default phase set now ends the turnover at Vmin
+ *       and the catch at S_sit, so a schema-2 turnover is a different span.
  */
-export const STORED_METRICS_SCHEMA = 2;
+export const STORED_METRICS_SCHEMA = 3;
 
 export interface StoredMetrics extends LiftMetrics {
   schema: number;
@@ -350,8 +542,32 @@ export function fromStoredMetrics(raw: unknown): StoredMetrics | null {
           peakPowerW: numberOrNull(s.peakPowerW),
           peakPowerT: numberOrNull(s.peakPowerT),
           meanPropulsivePowerW: numberOrNull(s.meanPropulsivePowerW),
+          riseStartT: numberOrNull(s.riseStartT),
+          concentricS: numberOrNull(s.concentricS),
+          meanRiseVelocityMs: numberOrNull(s.meanRiseVelocityMs),
+          timeToPeakVelocityS: numberOrNull(s.timeToPeakVelocityS),
+          timeToPeakPowerS: numberOrNull(s.timeToPeakPowerS),
+          pathLengthCm: numberOr(s.pathLengthCm, 0),
         }
       : null;
+
+  // The jerk block arrived with schema 3, and only a dip-and-drive has one.
+  const j = r.jerk && typeof r.jerk === 'object' ? (r.jerk as Record<string, unknown>) : null;
+  const jerk: JerkAnalyzerMetrics | null = j
+    ? {
+        vDipMs: numberOrNull(j.vDipMs),
+        sDipCm: numberOrNull(j.sDipCm),
+        sToVDipCm: numberOrNull(j.sToVDipCm),
+        sDriveCm: numberOrNull(j.sDriveCm),
+        driveMinusDipCm: numberOrNull(j.driveMinusDipCm),
+        fDipPct: numberOrNull(j.fDipPct),
+        fDrivePct: numberOrNull(j.fDrivePct),
+        driveForcePeaks: numberOrNull(j.driveForcePeaks),
+        dipS: numberOrNull(j.dipS),
+        brakingS: numberOrNull(j.brakingS),
+        driveS: numberOrNull(j.driveS),
+      }
+    : null;
 
   // The analyzer block arrived with schema 2; an older row simply has none of
   // its numbers, and says so with nulls rather than zeros.
@@ -384,6 +600,7 @@ export function fromStoredMetrics(raw: unknown): StoredMetrics | null {
     turnoverVelocityMs: numberOrNull(r.turnoverVelocityMs),
     peakPowerW: numberOrNull(r.peakPowerW),
     analyzer,
+    jerk,
     summary,
   };
 }
