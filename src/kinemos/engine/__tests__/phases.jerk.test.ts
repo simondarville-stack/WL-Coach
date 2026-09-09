@@ -108,6 +108,19 @@ describe('proposePhases — a dip-and-drive', () => {
     for (let i = 1; i < b.length; i++) expect(b[i].t).toBeGreaterThanOrEqual(b[i - 1].t);
   });
 
+  it('starts the dip at the top when the series has no stillness before it', () => {
+    // A jerk taken straight out of the clean's recovery: the series begins
+    // at the highest point, already turning down.
+    const startT = 0.41;
+    const cut = syntheticJerk().filter(p => p.t >= startT);
+    const s = computeKinematics(cut, cal, { massKg: 120 })!;
+    const p = proposePhases(s, DIP_DRIVE_PHASES, DEFAULT_PHASE_THRESHOLDS, DEFAULT_PHASE_END_RULE, 'dip-drive');
+    const dip = p.boundaries.find(b => b.rule === 'dip-start')!;
+    expect(dip.source).toBe('detected');
+    expect(dip.t).toBeLessThan(0.6);
+    expect(p.boundaries.find(b => b.rule === 'dip-bottom')!.t).toBeCloseTo(0.9, 1);
+  });
+
   it('refuses to see a dip in a pull, and a pull in a dip', () => {
     // The same series read as a pull from the floor: no lift-off is found
     // before the peak because the bar was DESCENDING there, so the edges

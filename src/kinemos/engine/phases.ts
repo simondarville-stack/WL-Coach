@@ -641,10 +641,19 @@ function findDipStart(series: KinematicSeries, th: PhaseThresholds, bottomIdx: n
       still = 0;
     }
   }
-  if (descentStart === null) return null;
-  for (let i = descentStart - holdSamples; i <= bottomIdx; i++) {
-    if (series.vyMs[i] <= -th.liftoffMs) return i;
+  if (descentStart !== null) {
+    for (let i = descentStart - holdSamples; i <= bottomIdx; i++) {
+      if (series.vyMs[i] <= -th.liftoffMs) return i;
+    }
   }
+  // No stillness before the descent: a jerk taken straight out of the
+  // clean's recovery (P9, the 2009 clean & jerk). The dip then starts where
+  // the bar was highest before the bottom — the turn from rising to
+  // falling, a real event on the bar — provided it did come down from
+  // there; a series that begins mid-descent has no start to give.
+  let top = 0;
+  for (let i = 0; i <= bottomIdx; i++) if (series.yCm[i] > series.yCm[top]) top = i;
+  if (top < bottomIdx && series.yCm[top] - series.yCm[bottomIdx] > 0 && (top > 0 || series.vyMs[0] > -th.liftoffMs)) return top;
   return null;
 }
 

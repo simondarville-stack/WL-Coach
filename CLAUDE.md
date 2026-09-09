@@ -228,6 +228,30 @@ All modules are **active** — nothing is currently disabled or hidden:
   *Track the rest of the clip*, the set tracker held to the frames after
   that point (`trackSet`'s `range`), each lift found landing on the next
   rep index — how a set the tracker cut wrongly is finished.
+  From 0.101.0 (`docs/KINEMOS_P9_PLAN.md`, built against the BVDG sources
+  in `KinEMOS Resources/`, which stay out of git): **lift models**. A rep
+  is segmented under a model (`engine/liftModels.ts`, data: snatch, clean
+  and jerk families, pulls, deadlifts, from-position variants, push press,
+  the clean & jerk compound, and the unspecified lift with no phases) whose
+  **motion shape** — pull-catch, pull, dip-drive, free, compound — decides
+  how the set is cut (`engine/reps.ts`, now reading a dip-and-drive and
+  cutting a clean & jerk into two reps stored as clean and jerk) and which
+  phase set is proposed. The default set changed: **turnover = Vmax → Vmin,
+  catch = Vmin → S_sit, then a recovery to the settle**; the jerk set is
+  dip / braking / drive / turnover / catch / recovery with the Analyzer's
+  jerk measures (`JerkAnalyzerMetrics`). The catalogue carries a universal
+  set (mean rise velocity, time to Vmax and to peak power, rise duration,
+  path length) and per-metric `requires`, so a deadlift shows no turnover
+  row. The exercise declares its model (`exercises.kinemos_lift_model`,
+  the form's select) or the library resolves one — parent, lift slot, name
+  in English / German / Danish (`lib/liftModelResolve.ts`); the rep stores
+  what segmented it (`kinemos_analyses.lift_model_id`, migration
+  20260909120000); the viewer shows a LIFT chip to change it and pills that
+  name a compound's parts. The bar-path column draws **force and power
+  against height** beside path and velocity. Comparison offers only lifts
+  of the same shape. The bench takes `?model=` and `?rep=`;
+  `verify/fixtures/testset-v3/` holds the 2009 archive clips transcoded
+  (384 × 288, 50 fps — for the cutting and phase rules, not accuracy).
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on

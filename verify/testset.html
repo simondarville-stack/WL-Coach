@@ -459,7 +459,7 @@
         // short lead only: the clean's catch is right behind it, and on
         // jittery footage its spikes would out-run the jerk's own Vmax.
         let from = seg ? seg.from : 0;
-        const leadS = seg?.kind === 'dip-drive' ? 0.12 : 0.4;
+        const leadS = seg?.kind === 'dip-drive' ? 0 : 0.4;
         if (seg) while (from > 0 && all[seg.from].t - all[from - 1].t <= leadS) from--;
         const pts = seg ? all.slice(from, seg.to + 1) : all;
         B.reps = segments;
