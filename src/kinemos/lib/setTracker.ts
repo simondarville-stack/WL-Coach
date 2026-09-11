@@ -137,10 +137,12 @@ export interface TrackSetOptions {
    */
   range?: { from: number; to: number };
   /**
-   * Asked before every frame of every piece and before every search for
-   * the plate again; true ends the set where it is (P8 plan §2). The
-   * result is what was tracked by then — the caller decides whether that
-   * is worth keeping, and the automatic pipeline decides it is not.
+   * Asked before every frame of every piece, on both sides of every plate
+   * search, and before each rep is calibrated; true ends the set where it
+   * is (P8 plan §2). The result is what was tracked by then — fewer reps
+   * than the clip holds, and a rep stopped mid-calibration keeps the set's
+   * calibration rather than its own. The caller decides whether that is
+   * worth keeping, and the automatic pipeline decides it is not.
    */
   shouldStop?: () => boolean;
   onProgress?: (done: number, total: number) => void;
@@ -268,6 +270,7 @@ export async function trackSet(
         let cut = all.length;
         if (colour) {
           for (let i = tail; i < all.length; i++) {
+            if (options.shouldStop?.()) break;
             const onPlate = colourMatchFraction(
               await source.getRgba(all[i].index),
               { ...options.ellipse, cx: all[i].x, cy: all[i].y },
@@ -308,6 +311,7 @@ export async function trackSet(
         const vy = (lastGood.y - before.y) / frames;
         const until = Math.min(end, lastGood.index + Math.round(FLIGHT_WINDOW_S * fps));
         for (let at = startAt; at <= until; at += FLIGHT_STEP) {
+          if (options.shouldStop?.()) break;
           report(at);
           const elapsed = at - lastGood.index;
           const carry = Math.min(elapsed, FLIGHT_CARRY_FRAMES);
@@ -334,8 +338,15 @@ export async function trackSet(
         // Ten frames short of the end: fewer than that is not a piece
         // worth tracking on from.
         for (let at = resumeFrom; at + 10 <= end; at += REACQUIRE_STEP) {
+          if (options.shouldStop?.()) break;
           report(at);
+          // A FULL-frame read (no region) and then `findPlate` at the clip's
+          // NATIVE resolution — this loop bypasses assists.ts's downscale, so
+          // one iteration is ~0,7-1,5 s and ~48 of them run on a double or a
+          // triple. Polled on both sides of the read: the gap between the two
+          // was the longest uninterruptible stretch in KinEMOS.
           const gray = await source.getGray(at);
+          if (options.shouldStop?.()) break;
           const candidate = await findPlate(gray, radiusOpts);
           if (!candidate || candidate.support < REACQUIRE_MIN_SUPPORT) continue;
           const e = candidate.ellipse;
@@ -433,13 +444,16 @@ export async function trackSet(
 
     const reps: TrackedRep[] = [];
     for (const [k, segment] of segments.entries()) {
+      if (options.shouldStop?.()) break;
       const repPoints = points.slice(segment.from, segment.to + 1);
       // The plate at this rep's rest: the median outline over the last frames
       // before lift-off, seeded by the tracked point.
       const restPoints = points.slice(Math.max(0, segment.from - REST_FIT_FRAMES), segment.from + 1);
       const fits: PlateEllipse[] = [];
       for (const p of restPoints) {
+        if (options.shouldStop?.()) break;
         const gray = await source.getGray(server.nearestIndex(p.t));
+        if (options.shouldStop?.()) break;
         const fit = await refinePlateEllipse(gray, { ...options.ellipse, cx: p.x, cy: p.y });
         if (fit && fit.support >= 0.6) fits.push(fit.ellipse);
       }

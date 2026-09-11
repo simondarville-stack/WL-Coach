@@ -278,6 +278,26 @@ All modules are **active** — nothing is currently disabled or hidden:
   from the BVDG band** for the athlete's sex and class instead of a flat
   1,5 m/s, labelled as the material's. The bench falls back to the plate
   detector on the first frame when the activity scan finds no lift.
+  From 0.107.0: the backlog sweep's **stop is honoured inside the clip in
+  flight**, not only between clips. `runArrivalQueue` forwards `shouldStop`
+  to `analyseArrival` (the athlete's phone path always did; the coach's two
+  callers never had), `trackSet` polls it in its four search loops — the
+  reacquire-at-rest search was 35–70 s of full-resolution `findPlate` with
+  no poll at all — and `findPlateOnFrame` takes a fifth `gate` argument.
+  Because all of that is straight-line main-thread work (OpenCV is
+  synchronous wasm, and a cached frame resolves as a microtask), the click
+  could not even be *dispatched*: `lib/yieldToInput.ts` hands the thread
+  back once per frame read via `scheduler.yield` or a `MessageChannel` —
+  never `setTimeout`, which a hidden tab throttles to 1 Hz, and the sweep
+  runs in hidden tabs. A stopped clip stores nothing (`autoAnalyse` spreads
+  `empty()`), so hiding the tab or leaving the page now abandons it rather
+  than running it to completion. The UI states the sweep as a phase machine
+  (`idle | starting | sweeping | stopping | finishing`) so the click paints
+  on the next frame; `components/SweepStatus.tsx` names the running clip
+  directly above the table, the row is marked through `DataTable`'s
+  `isCurrentRow`, its Analysis cell counts, progress is throttled to ~4 Hz,
+  the per-row wand is disabled during a sweep, and a stopped sweep reports
+  what was actually attempted instead of claiming the whole backlog.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on

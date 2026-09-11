@@ -23,7 +23,7 @@
  * (docs/KINEMOS_DESIGN.md §6.4). The editor still offers it; nothing pushes
  * the coach there.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { Button, Select } from '../../components/ui';
 import { useClipEditor } from '../../components/planner/useClipEditor';
@@ -55,6 +55,14 @@ export function ImportControl({ athletes, exercises, onImported, onArrivalNote }
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoAnalyse, setAutoAnalyse] = useState(analyseOnImportEnabled);
+  /** A six-clip split import is six analyses at 40-120 s each, and this was
+   *  the one path through the queue with no stop at all — it ran on after the
+   *  coach had navigated away. Leaving abandons the clip in flight with
+   *  nothing stored, as the library's sweep and the athlete's phone do. */
+  const cancelled = useRef(false);
+  useEffect(() => () => {
+    cancelled.current = true;
+  }, []);
 
   const clipEditor = useClipEditor({
     maxBytes: KINEMOS_IMPORT_MAX_BYTES,
@@ -134,6 +142,7 @@ export function ImportControl({ athletes, exercises, onImported, onArrivalNote }
     try {
       await runArrivalQueue(arrivals, {
         ownerId: getOwnerId(),
+        shouldStop: () => cancelled.current,
         onProgress: p =>
           onArrivalNote?.(
             p.total > 1

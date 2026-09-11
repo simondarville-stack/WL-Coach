@@ -22,9 +22,11 @@
  * **Why a queue and not `Promise.all`.** A split competition recording is six
  * files at once, and each analysis holds a `VideoDecoder`, a full-resolution
  * frame buffer and a tracker running flat out. Six of those in parallel is
- * how a browser tab is killed. The queue is strictly sequential and can be
- * stopped between clips — never mid-clip, because a half-stored set is worse
- * than an unanalysed one.
+ * how a browser tab is killed. The queue is strictly sequential and is
+ * stopped both between clips AND inside the clip in flight — the latter is
+ * safe precisely because a half-stored set is worse than an unanalysed one:
+ * every stopped return in `autoAnalyse` spreads `empty()`, so a clip
+ * abandoned mid-track writes nothing at all rather than a partial set.
  *
  * **Why it is a setting and not a behaviour.** Analysis is a minute of the
  * coach's own CPU per clip, on the laptop they are standing next to. Default
@@ -88,6 +90,11 @@ export interface ArrivalProgress {
   index: number;
   total: number;
   label: string;
+  /** WHICH clip this is, so a surface can mark the right row. `label` is
+   *  lossy by construction — `targetFor` joins athlete and exercise, and an
+   *  unattached import is simply "Clip" — so it can never identify a row. */
+  source: LibrarySource;
+  sourceId: string;
   /** What the pipeline is doing right now, and how far in. */
   stage: string;
   done: number;
@@ -100,7 +107,8 @@ export interface ArrivalRunOptions {
   /** Called as each clip finishes, so a caller can refresh incrementally
    *  rather than waiting for a six-clip queue to end. */
   onDone?: (outcome: ArrivalOutcome) => void;
-  /** Checked between clips. Returning true stops the queue. */
+  /** Checked between clips AND handed to the clip in flight, which abandons
+   *  it with nothing stored. Returning true stops the queue. */
   shouldStop?: () => boolean;
 }
 
@@ -130,9 +138,23 @@ export async function analyseArrival(
   if (!url) {
     return { target, result: null, message: `${target.label}: nothing to read the frames from.` };
   }
+  // `openFrameServer` walks every packet of the container to build the
+  // timestamp table, over the network for a hosted clip, and accepts no
+  // AbortSignal. It cannot be interrupted — so it is bracketed instead, and
+  // a stop costs at most one of them.
+  const stoppedOutcome = (): ArrivalOutcome => ({
+    target,
+    result: null,
+    message: `${target.label}: the analysis was stopped before anything was stored.`,
+  });
+  if (options.shouldStop?.()) {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    return stoppedOutcome();
+  }
   let server: Awaited<ReturnType<typeof openFrameServer>> | null = null;
   try {
     server = await openFrameServer(url);
+    if (options.shouldStop?.()) return stoppedOutcome();
     const result = await autoAnalyse(server, {
       source: target.source,
       sourceId: target.sourceId,
@@ -177,8 +199,22 @@ export async function runArrivalQueue(
     if (options.shouldStop?.()) break;
     const outcome = await analyseArrival(target, {
       ownerId: options.ownerId,
+      // THE hop. Without this every per-frame check below is dead code and
+      // the earliest a stop can land is when the whole clip has finished —
+      // 40 to 120 s on the measured testset. The athlete's phone path has
+      // always passed it (P8); the coach's two callers never did.
+      shouldStop: options.shouldStop,
       onProgress: (stage, done, steps) =>
-        options.onProgress?.({ index: i + 1, total: targets.length, label: target.label, stage, done, steps }),
+        options.onProgress?.({
+          index: i + 1,
+          total: targets.length,
+          label: target.label,
+          source: target.source,
+          sourceId: target.sourceId,
+          stage,
+          done,
+          steps,
+        }),
     });
     outcomes.push(outcome);
     options.onDone?.(outcome);

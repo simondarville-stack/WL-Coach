@@ -30,6 +30,7 @@ import {
   type GrayImage,
 } from '../engine/tracker';
 import { lumaRegionReadsEnabled } from './featureFlags';
+import { yieldToInput } from './yieldToInput';
 
 export interface TrackerSource extends FrameSource {
   /** The frame in colour, for the colour assists. Not cached: a caller that
@@ -100,6 +101,9 @@ export function trackerSourceFrom(server: FrameServer): TrackerSource {
 
   /** The whole frame's pixels, through the same grow-only canvas. */
   const readRgba = async (index: number): Promise<RgbaImage> => {
+    // Every full-frame colour read the colour assists make comes through
+    // here, and each is ~170 ms of readback the main thread owns outright.
+    await yieldToInput();
     const frame = await server.frameAt(index);
     const width = server.displayWidth;
     const height = server.displayHeight;
@@ -123,6 +127,14 @@ export function trackerSourceFrom(server: FrameServer): TrackerSource {
     getRgba: readRgba,
 
     async getGray(index: number, region?: FrameRegion): Promise<GrayImage> {
+      // The one place every frame read in the pipeline passes through: the
+      // tracker's per-frame walk, all four of `trackSet`'s search loops, and
+      // `assists.refineOnRegion`. Before the cache lookup, not after it — a
+      // hit returns `Promise.resolve(cached)`, a microtask, so the loops that
+      // re-read cached frames (the unsure tail, the per-rep rest fit) would
+      // otherwise never reach a task boundary at all and the coach's click
+      // could not be dispatched. ~0,1 ms against a frame costing 20-170 ms.
+      await yieldToInput();
       const width = server.displayWidth;
       const height = server.displayHeight;
       const wanted = region ? clampRegion(region, width, height) : null;
