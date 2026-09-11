@@ -19,6 +19,7 @@ import { liftModelById, liftModelsByFamily, type LiftModel } from '../engine/lif
 import type { LiftMetrics } from '../engine/phases';
 import type { Verdict } from '../lib/verdict';
 import { num } from '../lib/viewerFormat';
+import { StopTrackButton, type TrackPhase } from './StopTrackButton';
 
 interface LiftPanelProps {
   repIndices: number[];
@@ -42,7 +43,11 @@ interface LiftPanelProps {
    *  end of the clip. Null when there is nothing to track on from. */
   trackRest?: { hint: string; run: () => void } | null;
   /** A track in progress, so the offer waits. */
-  trackBusy?: { done: number; total: number } | null;
+  trackBusy?: { done: number; total: number; lift?: number; lifts?: number } | null;
+  /** Which of the four states the Stop control is in. */
+  trackPhase?: TrackPhase;
+  /** Stop the run in flight. Nothing from it is stored. */
+  onStopTrack?: () => void;
   /** What the last track said, shown under the offer on an empty rep. */
   setNote?: string | null;
 
@@ -77,6 +82,8 @@ function LiftPanelImpl({
   onAddRep,
   trackRest = null,
   trackBusy = null,
+  trackPhase,
+  onStopTrack,
   setNote = null,
   metrics,
   summary,
@@ -184,16 +191,43 @@ function LiftPanelImpl({
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {trackRest && !trackBusy && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <Button size="sm" variant="primary" onClick={trackRest.run} title={trackRest.hint} style={{ alignSelf: 'flex-start' }}>
-                Track the rest of the clip
-              </Button>
+              {/* The layout goes on a wrapper, never on Button: Button
+                  spreads `...rest` AFTER its own `style`, so a passed style
+                  replaces the computed size object wholesale — height,
+                  padding, gap and the disabled dimming with it. */}
+              <span style={{ alignSelf: 'flex-start' }}>
+                <Button size="sm" variant="primary" onClick={trackRest.run} title={trackRest.hint}>
+                  Track the rest of the clip
+                </Button>
+              </span>
               <p style={{ margin: 0, fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-tertiary)' }}>{trackRest.hint}</p>
             </div>
           )}
           {trackBusy && (
-            <p style={{ margin: 0, fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-secondary)' }}>
-              {`Tracking · frame ${trackBusy.done} / ${trackBusy.total}`}
-            </p>
+            <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-secondary)' }}>
+                  {trackPhase === 'stopping'
+                    ? 'Stopping…'
+                    : trackPhase === 'saving'
+                      ? 'Storing the reps…'
+                      : trackBusy.lifts
+                        ? `Lift ${trackBusy.lift} of ${trackBusy.lifts} · tracking`
+                        : 'Tracking'}
+                </span>
+                {trackPhase && onStopTrack && (
+                  <span style={{ flexShrink: 0 }}>
+                    <StopTrackButton phase={trackPhase} onStop={onStopTrack} />
+                  </span>
+                )}
+              </div>
+              <span
+                aria-hidden="true"
+                style={{ fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-tertiary)' }}
+              >
+                {`frame ${trackBusy.done} / ${trackBusy.total}`}
+              </span>
+            </div>
           )}
           {setNote && (
             <p style={{ margin: 0, fontSize: 'var(--text-caption)', lineHeight: 1.4, color: 'var(--color-text-secondary)' }}>{setNote}</p>

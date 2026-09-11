@@ -329,18 +329,29 @@ export async function trackMarkerFrom(
   server: FrameServer,
   anchor: { index: number; x: number; y: number },
   onProgress?: (done: number, total: number) => void,
-): Promise<{ points: KinemosTrackPoint[]; lowConfidenceIndices: number[]; gaveUp: boolean; found: boolean }> {
+  gate: { shouldStop?: () => boolean } = {},
+): Promise<{
+  points: KinemosTrackPoint[];
+  lowConfidenceIndices: number[];
+  gaveUp: boolean;
+  /** The walk was stopped, not lost. The caller must check this BEFORE
+   *  `found`: the colour is sampled from the anchor frame before either walk
+   *  begins, so a stopped run always looks "found". */
+  stopped: boolean;
+  found: boolean;
+}> {
   const source = trackerSourceFrom(server);
   try {
     const result = await trackMarker(
       { frameCount: server.frameCount, timestamps: server.timestamps, getRgba: i => source.getRgba(i) },
       anchor,
-      { onProgress },
+      { onProgress, shouldStop: gate.shouldStop },
     );
     return {
       points: result.points.map(toTrackPoint),
       lowConfidenceIndices: result.lowConfidenceIndices,
       gaveUp: result.gaveUp,
+      stopped: result.stopped,
       found: result.colour !== null,
     };
   } finally {

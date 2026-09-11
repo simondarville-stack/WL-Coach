@@ -35,6 +35,10 @@ interface CalibrationPanelProps {
   onSnap: () => void;
   /** Which assist is running, and what the last one said. */
   assist: { busy: 'find' | 'snap' | null; note: string | null };
+  /** A track is running. "Find the plate" starts one, so it is held back
+   *  until that finishes — otherwise one Stop would have two tracks to
+   *  stop and would only half-work. */
+  trackBusy?: boolean;
   /** How the next find or snap fits the outline: a free ellipse, or a circle
    *  for a round plate filmed square-on. */
   shape: 'ellipse' | 'circle';
@@ -79,6 +83,7 @@ function CalibrationPanelImpl({
   onSnap,
   lens,
   assist,
+  trackBusy = false,
   shape,
   onShape,
   frontView,
@@ -135,8 +140,12 @@ function CalibrationPanelImpl({
               size="sm"
               variant="primary"
               onClick={onFind}
-              disabled={assist.busy !== null}
-              title="Find and outline the plate, then track · OpenCV, ~13 MB first time"
+              disabled={assist.busy !== null || trackBusy}
+              title={
+                trackBusy
+                  ? 'A track is running — stop it first.'
+                  : 'Find and outline the plate, then track · OpenCV, ~13 MB first time'
+              }
             >
               {assist.busy === 'find' ? 'Finding the plate…' : 'Find the plate'}
             </Button>

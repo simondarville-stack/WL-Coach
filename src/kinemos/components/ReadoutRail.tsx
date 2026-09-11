@@ -26,6 +26,7 @@ import { distance, drift, num } from '../lib/viewerFormat';
 import type { ViewerTool } from './ViewerStage';
 import { TrackConfidenceStrip, type PhaseEdge } from './TrackConfidenceStrip';
 import type { FrameConfidence } from '../lib/trackedPoints';
+import { StopTrackButton, type TrackPhase } from './StopTrackButton';
 
 /** The rail's sections. The viewer's rail is composed of collapsible
  *  panels, and these sections are dealt out among them: the rep picker to
@@ -76,8 +77,13 @@ interface ReadoutRailProps {
 export interface TrackingState {
   /** False until there is an anchor to track from. */
   canTrack: boolean;
-  /** Progress while a track runs, or null. */
-  busy: { done: number; total: number } | null;
+  /** Progress while a track runs, or null. `lift`/`lifts` are present only
+   *  while TRACK THE SET walks the lifts the scan found. */
+  busy: { done: number; total: number; lift?: number; lifts?: number } | null;
+  /** Which of the four states the Stop control is in. */
+  phase: TrackPhase;
+  /** Stop the run in flight. Nothing from it is stored. */
+  onStopTrack: () => void;
   tier: 'manual' | 'assisted';
   /** How many frames the tracker flagged, and how many the coach has fixed. */
   uncertainCount: number;
@@ -282,8 +288,32 @@ function ReadoutRailImpl({
         {/* ── Assisted tracking ─────────────────────────────────────────── */}
         <div style={{ marginTop: 'var(--space-sm)' }}>
           {tracking.busy ? (
-            <>
+            // `role="status"` announces the coarse line only: the counter and
+            // the bar change several times a second and are aria-hidden.
+            <div role="status">
               <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--space-sm)',
+                }}
+              >
+                <p style={hint}>
+                  {tracking.phase === 'stopping'
+                    ? 'Stopping…'
+                    : tracking.phase === 'saving'
+                      ? 'Storing the reps…'
+                      : tracking.busy.lifts
+                        ? `Lift ${tracking.busy.lift} of ${tracking.busy.lifts} · tracking`
+                        : 'Tracking'}
+                </p>
+                <span style={{ flexShrink: 0 }}>
+                  <StopTrackButton phase={tracking.phase} onStop={tracking.onStopTrack} />
+                </span>
+              </div>
+              <div
+                aria-hidden="true"
                 style={{
                   height: 4,
                   borderRadius: 2,
@@ -299,10 +329,15 @@ function ReadoutRailImpl({
                   }}
                 />
               </div>
-              <p style={hint}>
-                {`Tracking · frame ${tracking.busy.done} / ${tracking.busy.total}`}
+              <p aria-hidden="true" style={hint}>
+                {`frame ${tracking.busy.done} / ${tracking.busy.total}`}
               </p>
-            </>
+              {tracking.phase === 'stopping' && (
+                <p style={{ ...hint, color: 'var(--color-danger-text)' }}>
+                  Stopping — nothing from this run will be stored.
+                </p>
+              )}
+            </div>
           ) : (
             <>
               <Button

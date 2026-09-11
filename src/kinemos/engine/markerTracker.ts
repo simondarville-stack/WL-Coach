@@ -59,6 +59,12 @@ export interface MarkerTrackOptions {
   minFill?: number;
   /** Consecutive misses before the track is given up. */
   giveUpAfter?: number;
+  /**
+   * Asked before every frame of both walks; true ends the track where it is.
+   * `stopped` in the result says it happened — a stopped track is not a lost
+   * one, and must not be reported as the marker having been hidden too long.
+   */
+  shouldStop?: () => boolean;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -66,6 +72,9 @@ export interface MarkerTrackResult {
   points: MarkerPoint[];
   lowConfidenceIndices: number[];
   gaveUp: boolean;
+  /** Whether a walk was ended by `shouldStop` rather than finished or lost.
+   *  Required, so a caller cannot forget to tell a stop from a loss. */
+  stopped: boolean;
   /** The colour it followed, or null when the anchor was not on one. */
   colour: PlateColourModel | null;
 }
@@ -98,7 +107,7 @@ export async function trackMarker(
   const radiusPx = options.radiusPx ?? Math.max(3, first.height / 40);
   const colour = sampleSpotColour(first, { x: anchor.x, y: anchor.y }, radiusPx);
   if (!colour) {
-    return { points: [], lowConfidenceIndices: [], gaveUp: true, colour: null };
+    return { points: [], lowConfidenceIndices: [], gaveUp: true, stopped: false, colour: null };
   }
 
   const dt = medianStep(source.timestamps);
@@ -119,11 +128,16 @@ export async function trackMarker(
   };
 
   let gaveUp = false;
+  let stopped = false;
   const low: number[] = [];
   const walk = async (direction: 1 | -1): Promise<MarkerPoint[]> => {
     const points: MarkerPoint[] = [anchorPoint];
     let misses = 0;
     for (let step = 1; ; step++) {
+      if (options.shouldStop?.()) {
+        stopped = true;
+        break;
+      }
       const index = anchor.index + direction * step;
       if (index < 0 || index >= source.frameCount) break;
       const image = await source.getRgba(index);
@@ -170,6 +184,7 @@ export async function trackMarker(
     points,
     lowConfidenceIndices: [...new Set(low)].sort((a, b) => a - b),
     gaveUp,
+    stopped,
     colour,
   };
 }

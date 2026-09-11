@@ -298,6 +298,20 @@ All modules are **active** — nothing is currently disabled or hidden:
   `isCurrentRow`, its Analysis cell counts, progress is throttled to ~4 Hz,
   the per-row wand is disabled during a sweep, and a stopped sweep reports
   what was actually attempted instead of claiming the whole backlog.
+  From 0.108.0 the **viewer's tracking is stoppable too**: TRACK THE SET,
+  "Track the rest of the clip", TRACK and "Track a marker" all take the
+  `shouldStop` gate, with a Stop control in the rail's tracking block, in
+  "This lift", in the tracking panel's header (the copy that survives a
+  collapse) and on Escape (`components/StopTrackButton.tsx`). A stopped run
+  **stores nothing and applies nothing to the screen** — the same meaning
+  the sweep's stop has, and not a preference: `persistRep` upserts each rep
+  in place with no undo (`deleteAnalysis` has no caller), a rep whose
+  calibration loop was cut short is stored byte-identical to a good one
+  (`ownCalibration` is never persisted), and a truncated track can fabricate
+  a rep, since `engine/reps.ts` treats the last sample as an apex. The write
+  loop itself is deliberately not stoppable (a "Storing…" state says so).
+  `engine/markerTracker.ts` gained `shouldStop` and a required `stopped` on
+  its result, so a stop is never reported as the marker having been lost.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on

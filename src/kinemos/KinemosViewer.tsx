@@ -79,6 +79,7 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { historyRows } from './lib/history';
 import { LiftPanel } from './components/LiftPanel';
 import { HeadlineChip, RailPanel } from './components/RailPanel';
+import { StopTrackButton, type TrackPhase } from './components/StopTrackButton';
 import { useEvent } from './hooks/useEvent';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { DEPTH_LABELS, PANEL_KEYS, useViewerPanels, type ViewerDepth } from './hooks/useViewerPanels';
@@ -152,6 +153,22 @@ const LIFT_SCAN_KEY = 'kinemos.scan.';
 /** What TRACK THE SET reads of a set tracker's result, whether from one
  *  call over the whole clip or several inside the lifts. */
 type SetOutcome = Pick<TrackSetResult, 'points' | 'reps' | 'joins' | 'lostAtEnd' | 'colour'>;
+
+/**
+ * What a stopped run says. All four make the same promise in the same words,
+ * because the promise is the point: a stop stores nothing and changes
+ * nothing, so the coach can press it without weighing what they might lose.
+ */
+const STOPPED_SET_NOTE =
+  'Stopped. Nothing from this run was stored — the marks, the outline and the reps on this clip are ' +
+  'as they were. The lifts the scan found are still marked, so pressing TRACK THE SET again starts ' +
+  'straight in on the tracking.';
+const STOPPED_REST_NOTE =
+  'Stopped. Nothing from this run was stored — the reps on this clip are as they were, and the offer ' +
+  'to track the rest of the clip is still there.';
+const STOPPED_TRACK_NOTE = 'Stopped. The track was left as it was — nothing from this run was kept.';
+const STOPPED_MARKER_NOTE =
+  'Stopped. The marker track was left as it was — nothing from this run was kept.';
 
 /** "12,4 s" — a clip time for a sentence. */
 function secs(t: number): string {
@@ -239,7 +256,31 @@ export function KinemosViewer() {
    *  scrub strip before anything is tracked, and what TRACK THE SET works
    *  inside. Null until the scan has run (or was found cached). */
   const [liftScan, setLiftScan] = useState<LiftScan | null>(null);
-  const [trackProgress, setTrackProgress] = useState<{ done: number; total: number } | null>(null);
+  const [trackProgress, setTrackProgress] = useState<
+    { done: number; total: number; lift?: number; lifts?: number } | null
+  >(null);
+  /** The flag the pipeline polls. A ref, not state: a run started minutes ago
+   *  closes over the render it began in, and must see the latest value. */
+  const stopTrackRef = useRef(false);
+  /** What the button paints. Committed in the click handler itself, so the
+   *  press shows on the very next paint whatever OpenCV is doing — the
+   *  lesson the library's sweep records at KinemosLibrary.tsx. */
+  const [trackPhase, setTrackPhase] = useState<TrackPhase>('idle');
+  const beginTrack = useCallback(() => {
+    // Reset on EVERY entry: a stale true would silently abort the next track
+    // at its first poll, which reads as "the tracker did nothing".
+    stopTrackRef.current = false;
+    setTrackPhase('tracking');
+  }, []);
+  const endTrack = useCallback(() => {
+    setTrackPhase('idle');
+    stopTrackRef.current = false;
+  }, []);
+  const stopTracking = useEvent(() => {
+    if (trackPhase !== 'tracking') return;
+    stopTrackRef.current = true;
+    setTrackPhase('stopping');
+  });
 
   const [comparing, setComparing] = useState(false);
   // Trends and comparison are two readings of the same athlete's history and
@@ -1080,6 +1121,7 @@ export function KinemosViewer() {
       if (!server) return;
       const source = trackerSourceFrom(server);
       setTrackProgress({ done: 0, total: server.frameCount });
+      beginTrack();
       try {
         const result = await trackFromAnchor(
           source,
@@ -1089,9 +1131,18 @@ export function KinemosViewer() {
             // than guessed — quietly the most useful thing the calibration does
             // for the tracker.
             templateRadiusPx: radiusPx === undefined ? undefined : Math.max(10, radiusPx),
+            shouldStop: () => stopTrackRef.current,
             onProgress: (done, total) => setTrackProgress({ done, total }),
           },
         );
+        // First, above everything: a stopped track can have fewer than two
+        // points, and both `dirtyRef.current = true` and `setPoints` below
+        // are exactly what "discard" forbids — the former is what arms the
+        // debounced save.
+        if (result.stoppedAt?.reason === 'stopped') {
+          setSaveError(STOPPED_TRACK_NOTE);
+          return;
+        }
         if (result.points.length < 2) {
           setSaveError(
             'Tracking could not get hold of the bar from that point. Mark the bar end more ' +
@@ -1169,9 +1220,10 @@ export function KinemosViewer() {
       } finally {
         source.dispose();
         setTrackProgress(null);
+        endTrack();
       }
     },
-    [server, calibration],
+    [server, calibration, beginTrack, endTrack],
   );
 
   /**
@@ -1254,6 +1306,8 @@ export function KinemosViewer() {
     if (!server || !source || !id || !restStart) return;
     const from = Math.min(restStart.index, server.frameCount - 1);
     setTrackProgress({ done: 0, total: server.frameCount - from });
+    beginTrack();
+    const gate = { shouldStop: () => stopTrackRef.current };
     setSetNote(null);
     setRestNote(null);
     const say = (note: string) => {
@@ -1265,8 +1319,13 @@ export function KinemosViewer() {
       let outline = restStart.ellipse;
       if (restStart.atPlayhead) {
         const found =
-          (await findPlateOnFrame(server, from, { x: restStart.x, y: restStart.y }, { shape: plateShape })) ??
-          (await findPlateOnFrame(server, from, undefined, { shape: plateShape }));
+          (await findPlateOnFrame(server, from, { x: restStart.x, y: restStart.y }, { shape: plateShape }, gate)) ??
+          (await findPlateOnFrame(server, from, undefined, { shape: plateShape }, gate));
+        // Before the null is read as a miss — see trackSetNow.
+        if (stopTrackRef.current) {
+          say(STOPPED_REST_NOTE);
+          return;
+        }
         if (found) {
           at = { index: from, x: found.ellipse.cx, y: found.ellipse.cy };
           outline = found.ellipse;
@@ -1278,8 +1337,15 @@ export function KinemosViewer() {
         shape: clipModel.shape,
         fromFloor: clipModel.fromFloor,
         range: { from, to: server.frameCount - 1 },
+        shouldStop: gate.shouldStop,
         onProgress: (done, total) => setTrackProgress({ done, total }),
       });
+      // Before the failure branch, so a press is not diagnosed as a tracking
+      // failure. `restStart` is cleared only on success, so the offer stands.
+      if (stopTrackRef.current) {
+        say(STOPPED_REST_NOTE);
+        return;
+      }
       if (result.reps.length === 0) {
         say(
           result.points.length < 8
@@ -1288,6 +1354,7 @@ export function KinemosViewer() {
         );
         return;
       }
+      setTrackPhase('saving');
       const indices = await persistSetReps(result);
       setRestStart(null);
       say(
@@ -1299,8 +1366,9 @@ export function KinemosViewer() {
       say(e instanceof Error ? e.message : 'Tracking the rest of the clip failed — the clip could not be read frame by frame.');
     } finally {
       setTrackProgress(null);
+      endTrack();
     }
-  }, [server, source, id, restStart, plateShape, plateDiameterCm, persistSetReps]);
+  }, [server, source, id, restStart, plateShape, plateDiameterCm, persistSetReps, beginTrack, endTrack]);
 
   const trackSetNow = useCallback(async () => {
     if (!server || !source || !id || currentT === null || !ellipse) return;
@@ -1312,11 +1380,13 @@ export function KinemosViewer() {
     if (!anchorPoint) return;
     setTrackProgress({ done: 0, total: server.frameCount });
     setSetNote(null);
+    beginTrack();
     try {
       const anchorIndex = server.nearestIndex(anchorPoint.t);
+      const gate = { shouldStop: () => stopTrackRef.current };
       const onProgress = (done: number, total: number) => setTrackProgress({ done, total });
       const whole = () =>
-        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, shape: clipModel.shape, fromFloor: clipModel.fromFloor, onProgress });
+        trackSet(server, { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y }, { ellipse, plateDiameterCm, shape: clipModel.shape, fromFloor: clipModel.fromFloor, shouldStop: gate.shouldStop, onProgress });
 
       // Inside the lifts the scan found (P7 plan), when it found any. The
       // coach's mark anchors the lift it sits in; every other lift is
@@ -1328,15 +1398,25 @@ export function KinemosViewer() {
       let result: SetOutcome | null = null;
       if (windows.length > 0) {
         const combined: SetOutcome = { points: [], reps: [], joins: [], lostAtEnd: false, colour: null };
-        for (const range of windowRanges(windows, server.timestamps)) {
+        const ranges = windowRanges(windows, server.timestamps);
+        for (const [k, range] of ranges.entries()) {
+          // Before the next window's two plate finds (~1-3 s each) and
+          // trackSet's own unguarded prologue (two full-frame reads).
+          if (stopTrackRef.current) break;
           let at = { index: range.restIndex, x: anchorPoint.x, y: anchorPoint.y };
           let outline = ellipse;
           if (anchorIndex >= range.from && anchorIndex <= range.to) {
             at = { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y };
           } else {
             const found =
-              (await findPlateOnFrame(server, range.restIndex, { x: anchorPoint.x, y: anchorPoint.y }, { shape: plateShape })) ??
-              (await findPlateOnFrame(server, range.restIndex, undefined, { shape: plateShape }));
+              (await findPlateOnFrame(server, range.restIndex, { x: anchorPoint.x, y: anchorPoint.y }, { shape: plateShape }, gate)) ??
+              (await findPlateOnFrame(server, range.restIndex, undefined, { shape: plateShape }, gate));
+            // BEFORE `found` is read: a stopped find returns null, which is
+            // indistinguishable from a genuine miss — and the fallback here
+            // is not `continue` but "track from the coach's mark", which
+            // belongs to a different lift. That would be a garbage track
+            // splitReps may still cut into a rep.
+            if (stopTrackRef.current) break;
             if (found) {
               at = { index: range.restIndex, x: found.ellipse.cx, y: found.ellipse.cy };
               outline = found.ellipse;
@@ -1348,7 +1428,11 @@ export function KinemosViewer() {
             shape: clipModel.shape,
             fromFloor: clipModel.fromFloor,
             range: { from: range.from, to: range.to },
-            onProgress,
+            shouldStop: gate.shouldStop,
+            // Which lift of how many, so the readout can say what a Stop
+            // would be throwing away: `trackSet` reports `total` per call,
+            // so the bar restarts on every window.
+            onProgress: (done, total) => setTrackProgress({ done, total, lift: k + 1, lifts: ranges.length }),
           });
           combined.points.push(...piece.points);
           combined.joins.push(...piece.joins);
@@ -1359,7 +1443,21 @@ export function KinemosViewer() {
         if (combined.reps.length > 0) result = combined;
       }
       const usedLifts = result !== null;
+      // Above `whole()`, not just above the write: otherwise the cheapest
+      // cancel — pressed early, before any window produced a rep — would
+      // start a full whole-clip re-track, making an early Stop the most
+      // expensive one.
+      if (stopTrackRef.current) {
+        setSetNote(STOPPED_SET_NOTE);
+        return;
+      }
       if (!result) result = await whole();
+      // Before the `reps.length === 0` branch, so a deliberate press is
+      // never reported as "the tracker could not get hold of the bar".
+      if (stopTrackRef.current) {
+        setSetNote(STOPPED_SET_NOTE);
+        return;
+      }
       if (result.reps.length === 0) {
         setSetNote(
           result.points.length < 8
@@ -1368,6 +1466,10 @@ export function KinemosViewer() {
         );
         return;
       }
+      // The one stretch that is deliberately not stoppable: a stop between
+      // rep 1 and rep 2 of the write loop would produce exactly the half-set
+      // this whole design refuses. It is a few round trips per rep.
+      setTrackPhase('saving');
       await persistSetReps(result);
       const own = result.reps.filter(r => r.ownCalibration).length;
       const byColour = result.joins.filter(j => j.how === 'colour').length;
@@ -1390,8 +1492,9 @@ export function KinemosViewer() {
       setSetNote(e instanceof Error ? e.message : 'Tracking the set failed — the clip could not be read frame by frame.');
     } finally {
       setTrackProgress(null);
+      endTrack();
     }
-  }, [server, source, id, currentT, ellipse, points, plateDiameterCm, liftScan, plateShape, persistSetReps]);
+  }, [server, source, id, currentT, ellipse, points, plateDiameterCm, liftScan, plateShape, persistSetReps, beginTrack, endTrack]);
 
   /**
    * Follow a marker on the bar end rather than the plate. The coach clicks
@@ -1408,12 +1511,21 @@ export function KinemosViewer() {
     if (!anchorPoint) return;
     setTrackProgress({ done: 0, total: server.frameCount });
     setSetNote(null);
+    beginTrack();
     try {
       const result = await trackMarkerFrom(
         server,
         { index: server.nearestIndex(anchorPoint.t), x: anchorPoint.x, y: anchorPoint.y },
         (done, total) => setTrackProgress({ done, total }),
+        { shouldStop: () => stopTrackRef.current },
       );
+      // BEFORE `found`: the colour is sampled from the anchor frame before
+      // either walk begins, so a stopped run always looks found and would
+      // otherwise fall through into the success path with half a path.
+      if (result.stopped) {
+        setSetNote(STOPPED_MARKER_NOTE);
+        return;
+      }
       if (!result.found) {
         setSetNote(
           'Nothing coloured under that mark. A marker has to be a colour nothing else in shot shares — a bright sticker on the end cap. Without one, TRACK follows the plate.',
@@ -1434,8 +1546,9 @@ export function KinemosViewer() {
       setSetNote(e instanceof Error ? e.message : 'The marker could not be followed.');
     } finally {
       setTrackProgress(null);
+      endTrack();
     }
-  }, [server, currentT, points]);
+  }, [server, currentT, points, beginTrack, endTrack]);
 
   const runTrack = useCallback(async () => {
     if (!server || currentT === null) return;
@@ -1460,9 +1573,11 @@ export function KinemosViewer() {
     if (!server || currentT === null) return;
     setAssist({ busy: 'find', note: null });
     try {
-      const found = await findPlateOnFrame(server, index, undefined, { shape: plateShape });
+      const found = await findPlateOnFrame(server, index, undefined, { shape: plateShape }, {
+        shouldStop: () => stopTrackRef.current,
+      });
       if (!found) {
-        setAssist({ busy: null, note: 'No plate found on this frame. Try a frame where the whole plate is in view, or outline it by hand.' });
+        setAssist(a => ({ ...a, note: 'No plate found on this frame. Try a frame where the whole plate is in view, or outline it by hand.' }));
         return;
       }
       dirtyRef.current = true;
@@ -1470,8 +1585,12 @@ export function KinemosViewer() {
       // The plate's centre is the bar end: the anchor the tracker needs.
       const anchor: KinemosTrackPoint = { t: currentT, x: found.ellipse.cx, y: found.ellipse.cy, s: 'm' };
       setPoints(prev => [...prev.filter(p => Math.abs(p.t - currentT) > 1e-6), anchor].sort((a, b) => a.t - b.t));
+      // `busy` is KEPT across the track this starts. Clearing it here — as
+      // this did — re-enabled "Find the plate" while the ~90 s track it had
+      // just launched was still running, so a second track could start under
+      // the one stop flag and one press of Stop would half-work.
       setAssist({
-        busy: null,
+        busy: 'find',
         note: `Plate found, edge under ${Math.round(found.support * 100)} % of the outline. Tracking from its centre.`,
       });
       // A template exactly the plate's face lost the lock at the second pull
@@ -1479,7 +1598,9 @@ export function KinemosViewer() {
       // (docs/KINEMOS_ACCURACY_STUDY.md §7).
       await trackFrom(index, found.ellipse.cx, found.ellipse.cy, found.ellipse.semiMajorPx * 1.08);
     } catch (e) {
-      setAssist({ busy: null, note: e instanceof Error ? e.message : 'The plate finder could not run.' });
+      setAssist(a => ({ ...a, note: e instanceof Error ? e.message : 'The plate finder could not run.' }));
+    } finally {
+      setAssist(a => ({ ...a, busy: null }));
     }
   }, [server, currentT, index, trackFrom, plateShape]);
 
@@ -2199,6 +2320,17 @@ export function KinemosViewer() {
           e.preventDefault();
           resetBoundaries();
           break;
+        case 'Escape':
+          // Free: no other case claims it, TOOLS are V/C/M/D/A/K, and the
+          // only other Escape listener in the viewer is DisplayOptions'
+          // popover, which is capture-phase and only while it is open. The
+          // INPUT/TEXTAREA/SELECT early-return above is inherited, so a
+          // coach typing a note is safe.
+          if (trackPhase === 'tracking') {
+            e.preventDefault();
+            stopTracking();
+          }
+          break;
         default: {
           const match = TOOLS.find(t => t.key.toLowerCase() === e.key.toLowerCase());
           if (match) {
@@ -2210,7 +2342,8 @@ export function KinemosViewer() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [step, togglePlay, seek, server, resetBoundaries]);
+    // `stopTracking` is a useEvent handler and is stable.
+  }, [step, togglePlay, seek, server, resetBoundaries, trackPhase, stopTracking]);
 
   const toggleReference = async () => {
     if (referenceBusy || !clip) return;
@@ -2341,6 +2474,8 @@ export function KinemosViewer() {
     () => ({
       canTrack: points.length > 0 && status === 'ready',
       busy: trackProgress,
+      phase: trackPhase,
+      onStopTrack: stopTracking,
       tier: trackerTier === 'manual' ? 'manual' : 'assisted',
       uncertainCount: uncertainIndices.length,
       correctionCount,
@@ -2354,7 +2489,7 @@ export function KinemosViewer() {
       uncertainIndices,
       onJumpTo: seek,
     }),
-    [points.length, status, trackProgress, trackerTier, uncertainIndices, correctionCount, ellipse, setNote, seek, jumpToNextUncertain, on.track, on.trackSet, on.trackMarker, trackRest],
+    [points.length, status, trackProgress, trackPhase, stopTracking, trackerTier, uncertainIndices, correctionCount, ellipse, setNote, seek, jumpToNextUncertain, on.track, on.trackSet, on.trackMarker, trackRest],
   );
   const phaseEdges = useMemo(
     () => (server ? spans.map(s => ({ index: server.nearestIndex(s.fromT), label: s.definition.label })) : []),
@@ -2473,7 +2608,11 @@ export function KinemosViewer() {
 
   const gradeTone = grade.grade === 'A' ? 'success' : grade.grade === 'B' ? 'warning' : grade.grade === 'C' ? 'danger' : 'neutral';
 
-  const trackingHeadline = trackProgress ? (
+  const trackingHeadline = trackPhase === 'stopping' ? (
+    <HeadlineChip tone="danger">stopping…</HeadlineChip>
+  ) : trackPhase === 'saving' ? (
+    <HeadlineChip mono>storing…</HeadlineChip>
+  ) : trackProgress ? (
     <HeadlineChip mono>{`frame ${trackProgress.done} / ${trackProgress.total}`}</HeadlineChip>
   ) : uncertainIndices.length > 0 ? (
     <HeadlineChip tone="danger">{`${uncertainIndices.length} frames flagged`}</HeadlineChip>
@@ -3017,6 +3156,8 @@ export function KinemosViewer() {
               onAddRep={addRep}
               trackRest={trackRest}
               trackBusy={trackProgress}
+              trackPhase={trackPhase}
+              onStopTrack={stopTracking}
               setNote={restNote}
               metrics={liftMetrics}
               summary={repSummary}
@@ -3077,6 +3218,11 @@ export function KinemosViewer() {
           <RailPanel
             title="Tracking & correction"
             headline={trackingHeadline}
+            // RailPanel unmounts its children when collapsed, and this panel
+            // is closed in the `look` and `read` depth presets — so the rail's
+            // own Stop can vanish under a coach mid-track. The header slot is
+            // rendered outside the toggle and survives. Returns null when idle.
+            actions={<StopTrackButton phase={trackPhase} onStop={stopTracking} iconOnly />}
             open={panels.open.tracking}
             onToggle={() => panels.toggle('tracking')}
           >
@@ -3115,6 +3261,7 @@ export function KinemosViewer() {
           >
             <CalibrationPanel
               hideTitle
+              trackBusy={trackProgress !== null}
               ellipse={ellipse}
               calibration={calibration}
               plateDiameterCm={plateDiameterCm}
