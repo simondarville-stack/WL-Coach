@@ -84,6 +84,10 @@ export function LoadVelocityPanel({
     if (velocityMs === null || !band) return null;
     return {
       velocityMs,
+      /** The fastest a maximum of this class moves. A rep quicker than this
+       *  was not near-maximal, whatever share of the athlete's own heaviest
+       *  analysed load it was. */
+      ceilingMs: band.kind === 'range' ? band.hi : velocityMs,
       label: `${SEXES.find(s => s.id === sex)?.label} · ${WEIGHT_CLASSES.find(c => c.id === tier)?.label}`,
       text: formatBand(band, 2),
     };
@@ -132,9 +136,18 @@ export function LoadVelocityPanel({
   }, [records]);
   const estimate = useMemo(() => {
     if (!profile) return null;
-    const threshold = thresholdFrom(points) ?? { velocityMs: assumedThreshold, source: 'assumed' as const };
+    // `thresholdFrom` returns the slowest of the heaviest reps analysed,
+    // which is only a MEASURED threshold if those reps were actually near
+    // this athlete's maximum — and against their own data alone there is no
+    // way to know. The material's band is that missing reference: a snatch
+    // that moved faster than a maximum of this class does was submaximal,
+    // however heavy it was for them, so the band stands in instead.
+    const candidate = thresholdFrom(points);
+    const measured =
+      candidate && (!bandThreshold || candidate.velocityMs <= bandThreshold.ceilingMs) ? candidate : null;
+    const threshold = measured ?? { velocityMs: assumedThreshold, source: 'assumed' as const };
     return estimateOneRepMax(profile, threshold);
-  }, [profile, points, assumedThreshold]);
+  }, [profile, points, assumedThreshold, bandThreshold]);
   const prescribed = useMemo(
     () => (profile ? loadForVelocity(profile, targetVelocity) : null),
     [profile, targetVelocity],

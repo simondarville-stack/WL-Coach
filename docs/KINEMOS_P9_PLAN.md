@@ -675,3 +675,13 @@ The three gaps §14's clip table left open, closed:
   midpoint for their sex and weight class (a snatch maximum moves at
   1,5–1,7 in the lower classes and 1,8–1,95 in the upper), and says so.
   A measured threshold still wins, and the coach can still type their own.
+
+  Building it turned up a flaw in the old behaviour worth naming.
+  `thresholdFrom` returns the slowest of the heaviest reps analysed and
+  calls it MEASURED — but "heaviest analysed" is relative to the athlete's
+  own data, so three warm-up sets made the top warm-up a "near-maximal
+  attempt" and the flat 1,5 m/s assumption was nearly unreachable. The band
+  is the missing reference: a snatch that moved faster than a maximum of
+  that class does was submaximal, whatever share of their own heaviest it
+  was, so the panel now declines to call it measured and uses the band
+  instead. Without a class to look up, the old behaviour stands.

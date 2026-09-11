@@ -14,6 +14,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryVideo } from '../lib/videoLibrary';
 import { KinemosViewer } from '../KinemosViewer';
 
+// Each case mounts the WHOLE viewer — seven rail panels, the stage, the
+// plots — against a stubbed frame server. That lands within a second or two
+// of vitest's 5 s default on a quiet machine and past it on a busy one, so
+// the file says how long it actually needs rather than failing by weather.
+vi.setConfig({ testTimeout: 30000 });
+
 const clip = vi.hoisted(() => ({ value: null as LibraryVideo | null }));
 const frameServerState = vi.hoisted(() => ({
   status: 'ready' as 'ready' | 'error' | 'opening',
