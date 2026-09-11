@@ -202,3 +202,17 @@ describe('the dip as a share of height', () => {
     expect(without.jerk!.sDipPctHeight).toBeNull();
   });
 });
+
+describe('power per kilo of lifter', () => {
+  it('is the barbell power over the athlete’s bodyweight, and null without one', () => {
+    const spans = spansFrom(proposal.boundaries, DIP_DRIVE_PHASES);
+    const withBw = computeLiftMetrics(series, spans, { bodyweightKg: 96 });
+    const without = computeLiftMetrics(series, spans);
+    expect(withBw.peakPowerW).not.toBeNull();
+    expect(withBw.peakPowerPerKgBwW).toBeCloseTo(withBw.peakPowerW! / 96, 6);
+    expect(without.peakPowerPerKgBwW).toBeNull();
+    // A lift with no bar mass has no power to divide.
+    const noMass = computeKinematics(syntheticJerk(), cal, {})!;
+    expect(computeLiftMetrics(noMass, spans, { bodyweightKg: 96 }).peakPowerPerKgBwW).toBeNull();
+  });
+});

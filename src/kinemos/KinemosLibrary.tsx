@@ -208,6 +208,7 @@ export function KinemosLibrary() {
         massSource: row.loadKg == null ? null : 'logged',
         liftModelId: row.liftModelId,
         athleteHeightCm: row.athleteHeightCm ?? null,
+        athleteBodyweightKg: row.athleteBodyweightKg ?? null,
         onProgress: (stage, done, total) =>
           setAutoNote(total > 1 ? `${stage} — ${done} of ${total}` : `${stage}…`),
       });

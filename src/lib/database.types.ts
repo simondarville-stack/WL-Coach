@@ -1305,6 +1305,10 @@ export interface KinemosAnalysis {
   /** Phase edges as the coach has them: engine proposals until one is dragged,
    *  and each carries where it came from — see engine/phases.ts. */
   phase_boundaries: KinemosPhaseBoundaryRow[] | null;
+  /** The coach's word on whether the camera looks along the bar, overriding
+   *  the plate's foreshortening. Null: not declared (migration
+   *  20260911100000). */
+  front_view: boolean | null;
   /** Which lift model segmented this rep (src/kinemos/engine/liftModels.ts).
    *  Null on rows from before P9: those were analysed under the five-phase
    *  snatch/clean model and read as a snatch from the floor. */

@@ -52,6 +52,15 @@ export interface KinemosLiftRecord {
   massKg: number | null;
   massSource: 'logged' | 'manual' | null;
 
+  /** What the athlete's profile says, for the figures that need it: the
+   *  reference bands' tier, and bodyweight-relative power. Null where the
+   *  profile does not say (P9 §11.1). */
+  athleteSex: string | null;
+  athleteWeightClass: string | null;
+  athleteBodyweightKg: number | null;
+  /** Which lift model segmented this rep; null on a row from before P9. */
+  liftModelId: string | null;
+
   grade: 'A' | 'B' | 'C' | null;
   /** One-sigma estimate of the error on peak velocity, m/s — the number behind
    *  the letter. */
@@ -126,6 +135,10 @@ export function projectLiftRecords(
       exerciseName: clip.exerciseName,
       date: clip.date,
       loadKg: clip.loadKg,
+      athleteSex: clip.athleteSex ?? null,
+      athleteWeightClass: clip.athleteWeightClass ?? null,
+      athleteBodyweightKg: clip.athleteBodyweightKg ?? null,
+      liftModelId: analysis.lift_model_id ?? null,
       massKg: analysis.mass_kg === null ? null : Number(analysis.mass_kg),
       massSource: analysis.mass_source,
       grade: analysis.grade,

@@ -39,6 +39,13 @@ interface CalibrationPanelProps {
    *  for a round plate filmed square-on. */
   shape: 'ellipse' | 'circle';
   onShape: (shape: 'ellipse' | 'circle') => void;
+  /**
+   * The coach's word on whether the camera looks along the bar: null means
+   * "not declared", and the plate's foreshortening decides. A front view
+   * keeps every vertical measure and drops the bar path.
+   */
+  frontView: boolean | null;
+  onFrontView: (frontView: boolean | null) => void;
   /** The lens tier: which correction this clip is being measured through,
    *  and how to measure one. */
   lens: LensState;
@@ -74,8 +81,26 @@ function CalibrationPanelImpl({
   assist,
   shape,
   onShape,
+  frontView,
+  onFrontView,
   hideTitle = false,
 }: CalibrationPanelProps) {
+  // Checked shows the EFFECTIVE answer, so a coach sees what the engine
+  // decided and can disagree with it; unchecking a plate the angle called a
+  // front view stores a "no", it does not fall back to the angle.
+  const frontViewOn = frontView ?? calibration?.frontView ?? false;
+  const frontViewToggle = (
+    <label
+      style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'var(--space-sm)', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+      title="The camera looks along the bar. Velocities, phases, forces and power are still measured; the bar path, loop width and path length are not. A small plate seen edge-on can fit at a modest angle, so this is the reliable way to say so."
+    >
+      <input type="checkbox" checked={frontViewOn} onChange={e => onFrontView(e.target.checked)} />
+      Front view — camera along the bar, no bar path
+      {calibration && calibration.frontViewSource === 'angle' && calibration.frontView && (
+        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>· from the angle</span>
+      )}
+    </label>
+  );
   const shapeToggle = (
     <label
       style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'var(--space-sm)', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
@@ -208,6 +233,7 @@ function CalibrationPanelImpl({
             </div>
           )}
           {!active && shapeToggle}
+          {frontViewToggle}
           {assist.note && !active && <p style={hintStyle}>{assist.note}</p>}
           {active && (
             <p style={hintStyle}>Outer handle: size + rotate · side handle: squash · centre: move</p>

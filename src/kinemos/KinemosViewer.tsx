@@ -214,6 +214,13 @@ export function KinemosViewer() {
   const [massKg, setMassKg] = useState<number | null>(null);
   const [massSource, setMassSource] = useState<'logged' | 'manual' | null>(null);
   const [camera, setCamera] = useState<CameraStability>('unknown');
+  /** The coach's word on a front view (null: the plate's angle decides). */
+  const [frontView, setFrontView] = useState<boolean | null>(null);
+  /** Stable, so the calibration panel does not re-render with the playhead. */
+  const onFrontView = useCallback((next: boolean | null) => {
+    setFrontView(next);
+    dirtyRef.current = true;
+  }, []);
   /** Null means "whatever the engine proposes". As soon as the coach drags an
    *  edge this holds their whole set and the proposal stops being consulted —
    *  automation proposes, the coach disposes (design §7). */
@@ -480,6 +487,7 @@ export function KinemosViewer() {
     setMeasurePoints([]);
     setCoachBoundaries(null);
     setCamera('unknown');
+    setFrontView(null);
     setIsReference(false);
     setIsModel(false);
     setModelLabel(null);
@@ -516,6 +524,7 @@ export function KinemosViewer() {
           setMassSource(bundle.analysis.mass_source ?? 'manual');
         }
         if (bundle.analysis.camera) setCamera(bundle.analysis.camera);
+        setFrontView(bundle.analysis.front_view ?? null);
         // The model the rep was stored under. A row analysed before P9 has
         // none and reads as a snatch from the floor; a row that was only
         // ever created — no metrics yet — has nothing to say, and the clip's
@@ -579,8 +588,8 @@ export function KinemosViewer() {
   );
 
   const calibration = useMemo(
-    () => (measuredEllipse ? calibrateFromEllipse(measuredEllipse, plateDiameterCm) : null),
-    [measuredEllipse, plateDiameterCm],
+    () => (measuredEllipse ? calibrateFromEllipse(measuredEllipse, plateDiameterCm, { frontView }) : null),
+    [measuredEllipse, plateDiameterCm, frontView],
   );
 
   const metrics = useMemo(() => pathMetrics(measuredPoints, calibration), [measuredPoints, calibration]);
@@ -653,9 +662,12 @@ export function KinemosViewer() {
   const liftMetrics = useMemo(
     () =>
       kinematics && (spans.length > 0 || model.phaseSet === null)
-        ? computeLiftMetrics(kinematics, spans, { heightCm: clip?.athleteHeightCm ?? null })
+        ? computeLiftMetrics(kinematics, spans, {
+            heightCm: clip?.athleteHeightCm ?? null,
+            bodyweightKg: clip?.athleteBodyweightKg ?? null,
+          })
         : null,
-    [kinematics, spans, model.phaseSet, clip?.athleteHeightCm],
+    [kinematics, spans, model.phaseSet, clip?.athleteHeightCm, clip?.athleteBodyweightKg],
   );
 
   const repSummary = useMemo(() => (kinematics ? summariseRep(kinematics) : null), [kinematics]);
@@ -868,6 +880,7 @@ export function KinemosViewer() {
             phaseBoundaries: boundaries.length > 0 ? boundaries : null,
             phaseSetId: model.phaseSetId,
             liftModelId: model.id,
+            frontView,
             // The cache the trend views read. Schema-stamped so a season of
             // rows can be told apart if what is stored ever changes meaning.
             metrics: liftMetrics ? toStoredMetrics(liftMetrics, repSummary) : null,
@@ -1206,6 +1219,7 @@ export function KinemosViewer() {
           camera,
           model: part,
           heightCm: clip?.athleteHeightCm ?? null,
+          bodyweightKg: clip?.athleteBodyweightKg ?? null,
         });
         indices.push(index);
         models[index] = part.id;
@@ -3113,6 +3127,8 @@ export function KinemosViewer() {
               assist={assist}
               shape={plateShape}
               onShape={setPlateShape}
+              frontView={frontView}
+              onFrontView={onFrontView}
               lens={lensState}
             />
           </RailPanel>

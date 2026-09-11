@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBand, referenceBand, withinBand } from '../referenceBands';
+import { bandMidpoint, formatBand, referenceBand, withinBand } from '../referenceBands';
 
 describe('referenceBand', () => {
   it('reads the snatch’s peak velocity by weight class', () => {
@@ -38,5 +38,18 @@ describe('withinBand and formatBand', () => {
     expect(formatBand(referenceBand('fbr', 'snatch', 'middle', 'men')!, 0)).toBe('≤ 145');
     expect(formatBand(referenceBand('vmin', 'snatch', 'middle', 'men')!, 2)).toBe('≥ −0,85');
     expect(formatBand(referenceBand('vDip', 'jerk', 'middle', 'men')!, 2)).toBe('−1,10 to −1,00');
+  });
+});
+
+describe('bandMidpoint', () => {
+  it('takes the middle of a range and the value of a mean', () => {
+    expect(bandMidpoint(referenceBand('peakVelocity', 'snatch', 'lower', 'men'))).toBeCloseTo(1.6, 5);
+    expect(bandMidpoint(referenceBand('f1', 'snatch', 'lower', 'men'))).toBe(137);
+  });
+
+  it('takes the one bound of a one-sided band, and nothing at all from none', () => {
+    expect(bandMidpoint(referenceBand('fbr', 'snatch', 'lower', 'men'))).toBe(145);
+    expect(bandMidpoint(referenceBand('vmin', 'snatch', 'lower', 'men'))).toBeCloseTo(-0.85, 5);
+    expect(bandMidpoint(null)).toBeNull();
   });
 });

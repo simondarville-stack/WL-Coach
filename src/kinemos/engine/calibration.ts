@@ -145,9 +145,18 @@ export interface Calibration {
   /** Why the confidence is not `ok`. Null when it is. */
   reason: string | null;
   /** Whether horizontal distances mean anything: false for a front view
-   *  (`FRONT_VIEW_ANGLE_DEG`) and for a degenerate outline. Vertical
-   *  measures stand either way. */
+   *  and for a degenerate outline. Vertical measures stand either way. */
   pathUsable: boolean;
+  /** Whether the camera looks along the bar. */
+  frontView: boolean;
+  /**
+   * How that was decided. `angle` — from the plate's foreshortening past
+   * `FRONT_VIEW_ANGLE_DEG`; `coach` — declared on the calibration panel.
+   * The angle rule needs a plate big enough to fit truthfully: an 18 px
+   * plate seen edge-on fitted at 28° in the 2009 archive, so the coach's
+   * word is the reliable trigger and overrides it in both directions.
+   */
+  frontViewSource: 'angle' | 'coach';
 }
 
 /**
@@ -160,6 +169,12 @@ export interface Calibration {
 export interface CalibrationOptions {
   /** Camera roll, degrees clockwise from level. See `Calibration.rollDeg`. */
   rollDeg?: number;
+  /**
+   * The coach's declaration that the camera does (or does not) look along
+   * the bar, overriding the angle rule. Null or absent: derive from the
+   * plate's foreshortening.
+   */
+  frontView?: boolean | null;
 }
 
 export function calibrateFromEllipse(
@@ -168,6 +183,7 @@ export function calibrateFromEllipse(
   options: CalibrationOptions = {},
 ): Calibration {
   const rollDeg = Number.isFinite(options.rollDeg) ? (options.rollDeg as number) : 0;
+  const declaredFrontView = typeof options.frontView === 'boolean' ? options.frontView : null;
   // Whichever axis the coach dragged longer IS the major one; a UI that lets
   // both handles move will produce the other order sooner or later. Swapping
   // the axes rotates the frame by a quarter turn, so the tilt follows.
@@ -189,6 +205,8 @@ export function calibrateFromEllipse(
       confidence: 'degenerate',
       reason: 'The plate outline has no size — drag the handles onto the plate edge.',
       pathUsable: false,
+      frontView: declaredFrontView === true,
+      frontViewSource: declaredFrontView === null ? 'angle' : 'coach',
     };
   }
 
@@ -198,6 +216,10 @@ export function calibrateFromEllipse(
   // handle a pixel past the major one on a nearly-perpendicular shot.
   const viewingAngleDeg = (Math.acos(Math.min(1, b / a)) * 180) / Math.PI;
 
+  // The coach's word wins in both directions; the angle decides when they
+  // have not said.
+  const frontView = declaredFrontView ?? viewingAngleDeg > FRONT_VIEW_ANGLE_DEG;
+
   let confidence: CalibrationConfidence = 'ok';
   let reason: string | null = null;
   if (a < MIN_TRUSTWORTHY_SEMI_MAJOR_PX) {
@@ -206,10 +228,12 @@ export function calibrateFromEllipse(
       `The plate is only ${Math.round(2 * a)} px across — one pixel is ` +
       `${(cmPerPxV * 10).toFixed(0).replace('.', ',')} mm, so nothing measured here is worth quoting. ` +
       'Film closer, or analyse a clip with more resolution.';
-  } else if (viewingAngleDeg > FRONT_VIEW_ANGLE_DEG) {
+  } else if (declaredFrontView === true || (declaredFrontView === null && viewingAngleDeg > FRONT_VIEW_ANGLE_DEG)) {
     confidence = 'wide';
     reason =
-      `The camera is ${viewingAngleDeg.toFixed(0).replace('.', ',')}° off perpendicular — a front view. ` +
+      (declaredFrontView === true
+        ? 'Filmed as a front view: the camera looks along the bar. '
+        : `The camera is ${viewingAngleDeg.toFixed(0).replace('.', ',')}° off perpendicular — a front view. `) +
       'Vertical velocities, phases and forces are measured; the bar path and horizontal distances are not.';
   } else if (viewingAngleDeg > MAX_VALID_VIEWING_ANGLE_DEG) {
     confidence = 'wide';
@@ -228,7 +252,9 @@ export function calibrateFromEllipse(
     plateDiameterCm: diameter,
     confidence,
     reason,
-    pathUsable: confidence !== 'degenerate' && viewingAngleDeg <= FRONT_VIEW_ANGLE_DEG,
+    pathUsable: confidence !== 'degenerate' && !frontView,
+    frontView,
+    frontViewSource: declaredFrontView === null ? 'angle' : 'coach',
   };
 }
 

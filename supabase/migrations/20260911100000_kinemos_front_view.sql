@@ -1,0 +1,11 @@
+-- KinEMOS — the coach's word on a front view.
+--
+-- `pathUsable` was derived from the plate's foreshortening alone (past 60°
+-- off perpendicular = the camera looks along the bar). That rule needs a
+-- plate big enough to fit truthfully: in the 2009 archive an 18 px plate
+-- seen edge-on fitted at 28°, so a front view read as an oblique one and
+-- its horizontal scale was believed.
+--
+-- So the coach can say. Null = not declared, and the angle decides; true or
+-- false is their word and overrides it in both directions.
+ALTER TABLE kinemos_analyses ADD COLUMN IF NOT EXISTS front_view boolean NULL;

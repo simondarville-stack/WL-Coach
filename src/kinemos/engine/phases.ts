@@ -333,6 +333,13 @@ export interface LiftMetrics {
    *  pulled under. */
   turnoverVelocityMs: number | null;
   peakPowerW: number | null;
+  /**
+   * Peak barbell power per kilo of the LIFTER, W/kg — the one power figure
+   * that compares across body sizes, where the raw watts of a 110 kg lifter
+   * and a 55 kg lifter say almost nothing to each other. Null without both
+   * a bar mass and the athlete's bodyweight.
+   */
+  peakPowerPerKgBwW: number | null;
   analyzer: AnalyzerMetrics;
   /** The jerk's own measures (P9). Null when the phase set has no dip —
    *  every pull and every catch from the floor. */
@@ -853,6 +860,9 @@ export interface LiftMetricsOptions {
   /** The lifter's standing height, cm, so a jerk's dip reads as a share of
    *  it. Null or absent: the share is null. */
   heightCm?: number | null;
+  /** The lifter's bodyweight, kg, so barbell power reads per kilo of
+   *  lifter. Null or absent: the per-kilo figure is null. */
+  bodyweightKg?: number | null;
 }
 
 export function computeLiftMetrics(
@@ -904,6 +914,10 @@ export function computeLiftMetrics(
     transitionVelocityLossMs,
     turnoverVelocityMs: turnover?.meanVelocityMs ?? null,
     peakPowerW: overallPower?.value ?? null,
+    peakPowerPerKgBwW:
+      overallPower && options.bodyweightKg && options.bodyweightKg > 0
+        ? overallPower.value / options.bodyweightKg
+        : null,
     analyzer: computeAnalyzerMetrics(series, spans),
     jerk: computeJerkMetrics(series, spans, options.heightCm ?? null),
   };

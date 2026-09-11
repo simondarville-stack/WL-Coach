@@ -115,6 +115,25 @@ export function referenceBand(metricId: string, family: LiftFamily, weightClass:
   return spec as Band;
 }
 
+/**
+ * One number to stand for a band: the middle of a range, the mean itself, or
+ * the single bound of a one-sided one. What a surface uses when it needs a
+ * value rather than a range — an assumed velocity threshold, say.
+ */
+export function bandMidpoint(band: Band | null): number | null {
+  if (!band) return null;
+  switch (band.kind) {
+    case 'range':
+      return (band.lo + band.hi) / 2;
+    case 'mean':
+      return band.lo;
+    case 'max':
+      return Number.isFinite(band.hi) ? band.hi : null;
+    case 'min':
+      return Number.isFinite(band.lo) ? band.lo : null;
+  }
+}
+
 /** Whether a value sits inside a band. Null when there is nothing to say. */
 export function withinBand(value: number | null, band: Band | null): boolean | null {
   if (value === null || !band || !Number.isFinite(value)) return null;

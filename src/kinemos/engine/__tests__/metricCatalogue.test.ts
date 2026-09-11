@@ -40,6 +40,7 @@ const metrics: LiftMetrics = {
   ],
   peakVelocityMs: 1.85,
   transitionVelocityLossMs: 0.12,
+  peakPowerPerKgBwW: null,
   analyzer: EMPTY_ANALYZER_METRICS,
   jerk: null,
   turnoverVelocityMs: 0.6,

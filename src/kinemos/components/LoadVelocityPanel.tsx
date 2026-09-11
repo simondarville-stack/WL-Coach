@@ -33,6 +33,9 @@ import {
   velocityLoss,
   type LoadVelocityPoint,
 } from '../engine/loadVelocity';
+import { liftModelOfStored } from '../engine/liftModels';
+import { SEXES, WEIGHT_CLASSES, bandMidpoint, formatBand, referenceBand } from '../engine/referenceBands';
+import { sexOf, tierForAthlete } from '../engine/weightClass';
 import { num } from '../lib/viewerFormat';
 
 /** Where a snatch's maximum tends to move, absent a measured attempt of this
@@ -53,7 +56,44 @@ export function LoadVelocityPanel({
   exerciseName: string | null;
 }) {
   const [targetVelocity, setTargetVelocity] = useState(1.6);
-  const [assumedThreshold, setAssumedThreshold] = useState(ASSUMED_THRESHOLD_MS);
+  /** The coach's own threshold, when they have typed one. Null: use the
+   *  material's band for this athlete, or the flat assumption. */
+  const [thresholdOverride, setThresholdOverride] = useState<number | null>(null);
+
+  /**
+   * What the BVDG tables expect a maximum of THIS lift to move at, for this
+   * athlete's sex and weight class (P9 §6). A far better assumption than a
+   * flat 1,5 m/s — a maximal snatch in the upper classes moves at 1,8–1,95
+   * and in the lower at 1,5–1,7 — and it is labelled as the material's, not
+   * as measured. Null when the profile does not say, or the tables do not
+   * cover this family.
+   */
+  const bandThreshold = useMemo(() => {
+    const first = records[0];
+    if (!first) return null;
+    const sex = sexOf(first.athleteSex);
+    const tier = tierForAthlete({
+      sex: first.athleteSex,
+      weightClass: first.athleteWeightClass,
+      bodyweightKg: first.athleteBodyweightKg,
+    });
+    if (!sex || !tier) return null;
+    const family = liftModelOfStored(first.liftModelId, first.phaseSetId).family;
+    const band = referenceBand('peakVelocity', family, tier, sex);
+    const velocityMs = bandMidpoint(band);
+    if (velocityMs === null || !band) return null;
+    return {
+      velocityMs,
+      /** The fastest a maximum of this class moves. A rep quicker than this
+       *  was not near-maximal, whatever share of the athlete's own heaviest
+       *  analysed load it was. */
+      ceilingMs: band.kind === 'range' ? band.hi : velocityMs,
+      label: `${SEXES.find(s => s.id === sex)?.label} · ${WEIGHT_CLASSES.find(c => c.id === tier)?.label}`,
+      text: formatBand(band, 2),
+    };
+  }, [records]);
+
+  const assumedThreshold = thresholdOverride ?? bandThreshold?.velocityMs ?? ASSUMED_THRESHOLD_MS;
 
   const points = useMemo<LoadVelocityPoint[]>(
     () =>
@@ -96,9 +136,18 @@ export function LoadVelocityPanel({
   }, [records]);
   const estimate = useMemo(() => {
     if (!profile) return null;
-    const threshold = thresholdFrom(points) ?? { velocityMs: assumedThreshold, source: 'assumed' as const };
+    // `thresholdFrom` returns the slowest of the heaviest reps analysed,
+    // which is only a MEASURED threshold if those reps were actually near
+    // this athlete's maximum — and against their own data alone there is no
+    // way to know. The material's band is that missing reference: a snatch
+    // that moved faster than a maximum of this class does was submaximal,
+    // however heavy it was for them, so the band stands in instead.
+    const candidate = thresholdFrom(points);
+    const measured =
+      candidate && (!bandThreshold || candidate.velocityMs <= bandThreshold.ceilingMs) ? candidate : null;
+    const threshold = measured ?? { velocityMs: assumedThreshold, source: 'assumed' as const };
     return estimateOneRepMax(profile, threshold);
-  }, [profile, points, assumedThreshold]);
+  }, [profile, points, assumedThreshold, bandThreshold]);
   const prescribed = useMemo(
     () => (profile ? loadForVelocity(profile, targetVelocity) : null),
     [profile, targetVelocity],
@@ -199,7 +248,9 @@ export function LoadVelocityPanel({
           <p style={hint}>
             {estimate.thresholdSource === 'measured'
               ? `The threshold is measured: the slowest of this athlete's near-maximal reps moved at ${num(estimate.thresholdMs, 2)} m/s.`
-              : 'The threshold is assumed, not measured — no near-maximal rep of this athlete has been analysed. Until one has, treat the estimate as a shape, not a number.'}
+              : bandThreshold && thresholdOverride === null
+                ? `The threshold is the German material's, not measured: a maximum in the ${bandThreshold.label} moves at ${bandThreshold.text} m/s. Until a near-maximal rep of this athlete has been analysed, treat the estimate as a shape, not a number.`
+                : 'The threshold is assumed, not measured — no near-maximal rep of this athlete has been analysed. Until one has, treat the estimate as a shape, not a number.'}
             {estimate.extrapolation > 0.5 &&
               ' The line is also being extended well past the loads it was fitted over.'}
           </p>
@@ -211,8 +262,8 @@ export function LoadVelocityPanel({
                 step="0.05"
                 min="0.5"
                 max="3"
-                value={assumedThreshold}
-                onChange={e => setAssumedThreshold(Number(e.target.value))}
+                value={num(assumedThreshold, 2)}
+                onChange={e => setThresholdOverride(Number(e.target.value.replace(',', '.')))}
                 className="emos-input"
                 style={{ width: 72, height: 26, fontSize: 'var(--text-caption)' }}
               />
