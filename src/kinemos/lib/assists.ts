@@ -15,6 +15,7 @@ import { trackMarker } from '../engine/markerTracker';
 import { grayFromRgba, type GrayImage } from '../engine/tracker';
 import { toTrackPoint } from './trackedPoints';
 import { trackerSourceFrom } from './trackerSource';
+import { pausePoint } from './yieldToInput';
 
 /**
  * Longest frame edge the plate SEARCH runs at. Finding a plate is a coarse
@@ -92,11 +93,25 @@ export async function findPlateOnFrame(
   index: number,
   near?: { x: number; y: number },
   fit: OutlineFitOptions = {},
+  // A SEPARATE parameter, never folded into `fit`: `fit` is spread into
+  // `findPlate`'s cv options, and a stray `shouldStop` there would ride into
+  // the detector. Returning `null` on a stop reads as "no plate found", so
+  // every caller must ask `shouldStop` itself before believing the null —
+  // `autoAnalyse` does.
+  gate: { shouldStop?: () => boolean } = {},
 ): Promise<RefineResult | null> {
   const source = trackerSourceFrom(server);
   try {
+    // Three cancellation points around the three long, unyielded stretches:
+    // the decode-and-downscale, the Hough pass (257 ms at 720p, over half a
+    // second at native phone resolution) and the Canny refine. OpenCV is
+    // straight-line wasm with no await inside it, and `loadOpenCv()` is a
+    // memoised resolved promise, so without these the whole ~3 s call is one
+    // uninterruptible task in which no click can be dispatched.
+    if (await pausePoint(gate.shouldStop)) return null;
     const { gray, scale } = await grayScaled(server, index, FIND_MAX_EDGE);
     const range = radiusRange(server);
+    if (await pausePoint(gate.shouldStop)) return null;
     const found = await findPlate(gray, {
       minRadiusPx: Math.max(3, Math.round(range.minRadiusPx * scale)),
       maxRadiusPx: Math.max(4, Math.round(range.maxRadiusPx * scale)),
@@ -115,6 +130,7 @@ export async function findPlateOnFrame(
     // Back on the real pixels for the fit the calibration will read. Should
     // the refinement not hold, the scaled-up find stands, with its own
     // support figure.
+    if (await pausePoint(gate.shouldStop)) return null;
     return (await refineOnRegion(source, index, up, fit)) ?? { ...found, ellipse: up };
   } finally {
     source.dispose();

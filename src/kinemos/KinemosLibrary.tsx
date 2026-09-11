@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Radio, Ruler, Trash2, Wand2, X } from 'lucide-react';
+import { Loader2, Radio, Ruler, Square, Trash2, Wand2, X } from 'lucide-react';
 import {
   Button,
   DataTable,
@@ -35,6 +35,7 @@ import { deleteDirectVideo } from './lib/directImport';
 import { loadLibrary, type LibraryFilters, type LibrarySource, type LibraryVideo } from './lib/videoLibrary';
 import { SharedWithYou } from './components/SharedWithYou';
 import { TrainingDataPanel } from './components/TrainingDataPanel';
+import { SweepStatus, type SweepAt, type SweepPhase } from './components/SweepStatus';
 import { useCoachStore } from '../store/coachStore';
 import { getOwnerId } from '../lib/ownerContext';
 import { openFrameServer } from './engine/frameServer';
@@ -48,6 +49,11 @@ import {
   type ClipAnalysisSummary,
 } from './lib/arrivals';
 import { clipKeyOf, listRecentAnalyses } from './lib/analysisService';
+
+/** How often the sweep's progress is committed to state. Fast enough that the
+ *  numbers visibly move, slow enough that the table reconciles ~4 times a
+ *  second rather than once per decoded frame. */
+const PROGRESS_TICK_MS = 250;
 
 /**
  * Is this machine on power? A minute of flat-out decoding per clip is not
@@ -105,7 +111,14 @@ export function KinemosLibrary() {
 
   const [autoBusy, setAutoBusy] = useState<string | null>(null);
   const [autoNote, setAutoNote] = useState<string | null>(null);
-  const [sweeping, setSweeping] = useState(false);
+  /** The sweep's one source of truth for RENDERING. `starting` has no clip
+   *  open yet; `stopping` acknowledges the click while the clip in flight is
+   *  abandoned; `finishing` covers the read-back, during which a second sweep
+   *  would run against a stale `analysisByClip` and re-analyse what just
+   *  finished. */
+  const [sweepPhase, setSweepPhase] = useState<SweepPhase>('idle');
+  /** Which clip, how far in. Drives the status line and the row highlight. */
+  const [sweepAt, setSweepAt] = useState<SweepAt | null>(null);
   /** What each clip already has: stored reps and the best grade among them.
    *  Keyed by clip key; absent = never analysed. */
   const [analysisByClip, setAnalysisByClip] = useState<Map<string, ClipAnalysisSummary>>(new Map());
@@ -115,6 +128,12 @@ export function KinemosLibrary() {
   /** A ref, not state: the queue reads it between clips and must see the
    *  latest value, not the one captured when the sweep started. */
   const stopSweep = useRef(false);
+  /** Why it stopped, so the closing sentence can say. */
+  const stopReason = useRef<'coach' | 'hidden' | null>(null);
+  /** `onProgress` fires per decoded frame. Committing state that often would
+   *  reconcile the whole table 300-600 times a clip; this throttles it to
+   *  ~4 Hz, committing immediately whenever the clip or the stage changes. */
+  const lastTick = useRef({ at: 0, clipKey: '', stage: '' });
 
   const [athleteId, setAthleteId] = useState('');
   const [source, setSource] = useState<'' | LibrarySource>('');
@@ -232,35 +251,81 @@ export function KinemosLibrary() {
    */
   const runSweep = useCallback(
     async (why: 'asked' | 'opportunistic' = 'asked') => {
-      setSweeping(true);
+      setSweepPhase('starting');
+      setSweepAt(null);
+      setAutoNote(null);
       stopSweep.current = false;
+      stopReason.current = null;
+      lastTick.current = { at: 0, clipKey: '', stage: '' };
+      // On EVERY entry, not just the opportunistic one: otherwise a manual
+      // sweep leaves this false, and the moment a stopped sweep reaches
+      // `idle` the opportunistic effect re-runs, every guard passes — the
+      // backlog is still non-empty, which is WHY the coach stopped — and
+      // three seconds later the whole thing restarts with the stop flag
+      // cleared. No amount of stop plumbing survives that.
+      autoSweepStarted.current = true;
       try {
         const pending = unanalysedClips(rows, new Set(analysisByClip.keys()));
         if (pending.length === 0) {
           if (why === 'asked') setAutoNote('Every clip in the library has already been analysed.');
           return;
         }
-        const lead = why === 'opportunistic' ? 'Analysing the backlog while you are here — ' : 'Analysing ';
         let analysedCount = 0;
-        await runArrivalQueue(pending.map(targetFor), {
+        const outcomes = await runArrivalQueue(pending.map(targetFor), {
           ownerId: getOwnerId(),
           shouldStop: () => stopSweep.current,
-          onProgress: p => setAutoNote(`${lead}${p.index} of ${p.total}, ${p.label}: ${p.stage.toLowerCase()}`),
+          onProgress: p => {
+            const clipKey = clipKeyOf(p.source, p.sourceId);
+            const now = performance.now();
+            const fresh = clipKey !== lastTick.current.clipKey || p.stage !== lastTick.current.stage;
+            if (!fresh && now - lastTick.current.at < PROGRESS_TICK_MS) return;
+            lastTick.current = { at: now, clipKey, stage: p.stage };
+            // Functional: a progress event that lands after the coach's click
+            // must never undo `stopping` and flip the button back to "Stop".
+            setSweepPhase(ph => (ph === 'starting' ? 'sweeping' : ph));
+            setSweepAt({
+              clipKey,
+              index: p.index,
+              total: p.total,
+              label: p.label,
+              stage: p.stage,
+              done: p.done,
+              steps: p.steps,
+            });
+          },
           onDone: outcome => {
             if (outcome.result && !outcome.result.problem) analysedCount += 1;
             // The row's column turns over as each clip finishes, not at the end.
             void refreshAnalyses();
           },
         });
+        setSweepPhase('finishing');
+        setSweepAt(null);
         await refreshAnalyses();
-        setAutoNote(
-          `Swept ${pending.length} clip${pending.length === 1 ? '' : 's'}: ${analysedCount} analysed. ` +
-            'The rest need a plate outlined by hand — open them in the viewer.',
-        );
+        // Built from what the queue ACTUALLY returned, never from `pending`:
+        // stopping after 3 of 40 used to report "Swept 40 clips" and send the
+        // coach off to hand-outline 37 clips nothing had touched.
+        if (outcomes.length < pending.length) {
+          const lead =
+            stopReason.current === 'hidden' ? 'The tab was hidden, so the sweep stopped' : 'Stopped';
+          setAutoNote(
+            `${lead} after ${outcomes.length} of ${pending.length} clips: ${analysedCount} analysed. ` +
+              'The rest were not attempted — press Analyse the backlog to carry on.',
+          );
+        } else {
+          const noPlate = outcomes.filter(o => o.result?.problem === 'no-plate').length;
+          setAutoNote(
+            `Swept ${outcomes.length} clip${outcomes.length === 1 ? '' : 's'}: ${analysedCount} analysed` +
+              (noPlate > 0
+                ? `; ${noPlate} need a plate outlined by hand — open them in the viewer.`
+                : '.'),
+          );
+        }
       } catch (e) {
         setAutoNote(e instanceof Error ? e.message : 'The sweep could not be run.');
       } finally {
-        setSweeping(false);
+        setSweepPhase('idle');
+        setSweepAt(null);
       }
     },
     [refreshAnalyses, rows, analysisByClip],
@@ -275,7 +340,7 @@ export function KinemosLibrary() {
   // preference is on, the tab is visible, and the laptop is on power (or is
   // not a laptop). Never on battery, never in a hidden tab, never twice.
   useEffect(() => {
-    if (loading || autoSweepStarted.current || sweeping || autoBusy !== null) return;
+    if (loading || autoSweepStarted.current || sweepPhase !== 'idle' || autoBusy !== null) return;
     if (waiting.length === 0 || !analyseOnImportEnabled()) return;
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     let cancelled = false;
@@ -290,12 +355,20 @@ export function KinemosLibrary() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [loading, waiting.length, sweeping, autoBusy, runSweep]);
+  }, [loading, waiting.length, sweepPhase, autoBusy, runSweep]);
 
-  // Leaving the page, or hiding the tab, stops the sweep between clips.
+  // Leaving the page, or hiding the tab, stops the sweep — now including the
+  // clip in flight, which is abandoned with nothing stored. That frees the
+  // decoder and the CPU immediately; before this the clip ran to completion,
+  // decoding and writing rows for up to a minute after the coach had gone.
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState !== 'visible') stopSweep.current = true;
+      if (document.visibilityState !== 'visible') {
+        stopReason.current = 'hidden';
+        stopSweep.current = true;
+        // Functional, so the empty dep array stays correct.
+        setSweepPhase(p => (p === 'starting' || p === 'sweeping' ? 'stopping' : p));
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
@@ -420,7 +493,50 @@ export function KinemosLibrary() {
       header: 'Analysis',
       width: '92px',
       render: row => {
-        const done = analysisByClip.get(clipKeyOf(row.source, row.sourceId));
+        const key = clipKeyOf(row.source, row.sourceId);
+        // The clip consuming the laptop, right now. Used to read `waiting`,
+        // exactly like every other row. The stage sentence stays in the
+        // title so the 92 px column need not grow.
+        if (sweepAt != null && key === sweepAt.clipKey) {
+          const pct = Math.round((sweepAt.done / Math.max(1, sweepAt.steps)) * 100);
+          return (
+            <span
+              title={`${sweepAt.stage} — ${sweepAt.label}`}
+              style={{
+                display: 'inline-flex',
+                flexDirection: 'column',
+                gap: 2,
+                color: 'var(--color-accent)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <span>{sweepAt.steps > 1 ? `${sweepAt.done}/${sweepAt.steps}` : 'analysing'}</span>
+              {sweepAt.steps > 1 && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 56,
+                    height: 3,
+                    borderRadius: 999,
+                    background: 'var(--color-bg-tertiary)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'block',
+                      height: '100%',
+                      borderRadius: 999,
+                      background: 'var(--color-accent)',
+                      width: `${pct}%`,
+                    }}
+                  />
+                </span>
+              )}
+            </span>
+          );
+        }
+        const done = analysisByClip.get(key);
         if (done) {
           return (
             <span title={`${done.reps} stored rep${done.reps === 1 ? '' : 's'}; best grade ${done.grade ?? 'not graded'}`}>
@@ -471,13 +587,20 @@ export function KinemosLibrary() {
             size="sm"
             iconOnly
             icon={<Wand2 size={14} />}
-            disabled={row.isEmbed || autoBusy !== null}
+            // The sweep now disables it too: `autoBusy` is set only by
+            // `runAuto`, so one click during a sweep used to start a SECOND
+            // decoder, frame buffer and tracker on the same main thread —
+            // which is exactly how arrivals.ts says a tab gets killed, and it
+            // made the stop far slower.
+            disabled={row.isEmbed || autoBusy !== null || sweepPhase !== 'idle'}
             title={
               row.isEmbed
                 ? 'A streaming clip cannot be opened in this browser; it is analysed on the athlete’s phone at upload'
-                : autoBusy === row.key
-                  ? 'Analysing…'
-                  : 'Analyse it now, with no clicks: find the plate, follow the bar, split the reps and store them. Loads OpenCV the first time, about 13 MB.'
+                : sweepPhase !== 'idle'
+                  ? 'The backlog sweep is running — stop it to analyse one clip.'
+                  : autoBusy === row.key
+                    ? 'Analysing…'
+                    : 'Analyse it now, with no clicks: find the plate, follow the bar, split the reps and store them. Loads OpenCV the first time, about 13 MB.'
             }
             aria-label="Analyse automatically"
             onClick={e => {
@@ -528,6 +651,35 @@ export function KinemosLibrary() {
     },
   ];
 
+  // The button's seven states, derived in one place rather than inline.
+  const sweepRunning = sweepPhase === 'starting' || sweepPhase === 'sweeping';
+  const sweepBusyIcon = sweepPhase === 'stopping' || sweepPhase === 'finishing';
+  const backlogClear = sweepPhase === 'idle' && waiting.length === 0;
+  const sweepDisabled =
+    sweepBusyIcon || backlogClear || (sweepPhase === 'idle' && autoBusy !== null);
+  const sweepLabel =
+    sweepPhase === 'stopping'
+      ? 'Stopping…'
+      : sweepPhase === 'finishing'
+        ? 'Finishing…'
+        : sweepRunning
+          ? 'Stop sweep'
+          : backlogClear
+            ? 'Backlog clear'
+            : 'Analyse the backlog';
+  const sweepTitle =
+    sweepPhase === 'stopping'
+      ? 'Stopping — the clip in flight is being abandoned.'
+      : sweepPhase === 'finishing'
+        ? 'Reading back the stored reps.'
+        : sweepRunning
+          ? 'Stop the sweep. The clip in flight is abandoned; nothing from it is stored.'
+          : backlogClear
+            ? 'Every clip in the library already has stored reps.'
+            : autoBusy !== null
+              ? 'A clip is being analysed.'
+              : 'Analyse every clip that has none yet, one at a time, in this browser.';
+
   return (
     <StandardPage>
       <div style={{ padding: 'var(--space-xl)', flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -558,18 +710,6 @@ export function KinemosLibrary() {
 
         <SharedWithYou coachId={activeCoachId} coachNames={coachNames} />
         <TrainingDataPanel athletes={athletes.map(a => ({ id: a.id, name: a.name }))} />
-        {autoNote && (
-          <p
-            style={{
-              margin: '0 0 var(--space-md)',
-              fontSize: 'var(--text-caption)',
-              color: 'var(--color-text-secondary)',
-            }}
-          >
-            {autoNote}
-          </p>
-        )}
-
         <div
           style={{
             display: 'flex',
@@ -647,19 +787,37 @@ export function KinemosLibrary() {
             onArrivalNote={setAutoNote}
           />
 
+          {/* One control, every prop derived from the phase. The state commit
+              happens in the click handler itself, so the label, the icon and
+              the colour all change on the very next paint whatever the
+              pipeline is doing — the ref alone rendered nothing, which is
+              the literal mechanism of "does not respond very well". */}
           <Button
-            variant="ghost"
+            variant={sweepRunning || sweepPhase === 'stopping' ? 'danger' : 'ghost'}
             size="sm"
-            icon={<Wand2 size={14} />}
+            icon={sweepBusyIcon ? <Loader2 size={13} className="animate-spin" /> : sweepRunning ? <Square size={13} /> : <Wand2 size={14} />}
+            disabled={sweepDisabled}
+            title={sweepTitle}
             onClick={() => {
-              if (sweeping) stopSweep.current = true;
-              else void runSweep();
+              if (sweepPhase === 'idle') {
+                void runSweep();
+                return;
+              }
+              if (sweepPhase === 'starting' || sweepPhase === 'sweeping') {
+                stopReason.current = 'coach';
+                stopSweep.current = true;
+                setSweepPhase('stopping');
+              }
             }}
-            title="Analyse every clip that has none yet, one at a time, in this browser."
           >
-            {sweeping ? 'Stop sweep' : 'Analyse the backlog'}
+            {sweepLabel}
           </Button>
         </div>
+
+        {/* Directly above the table, so "which clip" is one glance from
+            "which row". It used to sit ninety lines up, above the filter bar,
+            and scrolled off the moment the coach looked at the rows. */}
+        <SweepStatus phase={sweepPhase} at={sweepAt} note={autoNote} />
 
         {loading ? (
           <div style={{ padding: 'var(--space-xl)', textAlign: 'center' }}>
@@ -681,6 +839,11 @@ export function KinemosLibrary() {
             columns={columns}
             rows={visible}
             getRowKey={row => row.key}
+            // DataTable's own row-level hook, never used by this page until
+            // now: it tints the row and puts a 2 px accent rail on the first
+            // cell, with the space reserved on every other row so nothing
+            // shifts as the sweep moves down the table.
+            isCurrentRow={row => sweepAt != null && clipKeyOf(row.source, row.sourceId) === sweepAt.clipKey}
             onRowClick={row => setPlaying(row)}
           />
         )}

@@ -243,9 +243,15 @@ export async function autoAnalyse(
       // With the previous lift's plate centre as a hint first — `near` is a
       // hard constraint in the finder — and without it if that finds
       // nothing: the bar may have been rolled between reps.
+      const gate = { shouldStop: options.shouldStop };
       const found =
-        (near ? await findPlateOnFrame(server, range.restIndex, near) : null) ??
-        (await findPlateOnFrame(server, range.restIndex));
+        (near ? await findPlateOnFrame(server, range.restIndex, near, {}, gate) : null) ??
+        (await findPlateOnFrame(server, range.restIndex, undefined, {}, gate));
+      // BEFORE `found` is interpreted: a stopped find returns null, which is
+      // indistinguishable from a genuine miss. Without this the coach who
+      // stopped the sweep would be told the clip needs a plate outlined by
+      // hand, or the window would be skipped and the next one started.
+      if (stopped()) return { ...empty(), problem: 'stopped', joins, fellBack: false };
       if (!found) continue;
       ellipse ??= found.ellipse;
       near = { x: found.ellipse.cx, y: found.ellipse.cy };
@@ -280,7 +286,11 @@ export async function autoAnalyse(
   if (stopped()) return { ...empty(), problem: 'stopped', joins: 0, fellBack };
   const anchorIndex = options.anchorIndex ?? 0;
   options.onProgress?.('Looking for the plate', 0, 1);
-  const found = await findPlateOnFrame(server, anchorIndex);
+  const found = await findPlateOnFrame(server, anchorIndex, undefined, {}, {
+    shouldStop: options.shouldStop,
+  });
+  // Again before the null is read as "no plate" — see the by-lifts branch.
+  if (stopped()) return { ...empty(), problem: 'stopped', joins: 0, fellBack };
   if (!found) {
     return { ...empty(), problem: 'no-plate', joins: 0, fellBack };
   }

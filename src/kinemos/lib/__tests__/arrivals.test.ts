@@ -21,17 +21,39 @@ vi.mock('../../engine/frameServer', () => ({
   openFrameServer: vi.fn(async () => ({ close: vi.fn() })),
 }));
 
-vi.mock('../autoAnalyse', () => ({
-  autoAnalyse: vi.fn(async (_server: unknown, options: { sourceId: string }) => {
+/** The options each call received, so the tests can assert on the wiring —
+ *  the same indirection `autoAnalyse.test.ts` uses for `findPlateOnFrame`. */
+const autoAnalyseMock = vi.fn(
+  async (
+    _server: unknown,
+    options: {
+      sourceId: string;
+      shouldStop?: () => boolean;
+      onProgress?: (stage: string, done: number, total: number) => void;
+    },
+  ) => {
     inFlight += 1;
     peakInFlight = Math.max(peakInFlight, inFlight);
+    // The real pipeline reports per frame; one event is enough to prove the
+    // queue decorates it with the clip's identity.
+    options.onProgress?.('Following the bar', 1, 2);
     // A tick, so a parallel caller would overlap here and be caught.
     await new Promise(resolve => setTimeout(resolve, 1));
     inFlight -= 1;
     if (failOn.has(options.sourceId)) throw new Error('the plate went behind a pillar');
+    // What the real `autoAnalyse` does when it is asked to stop: nothing
+    // stored, `problem: 'stopped'` (it spreads `empty()`).
+    if (options.shouldStop?.()) {
+      return { reps: [], analysisIds: [], ellipse: null, joins: 0, problem: 'stopped' };
+    }
     analysed.push(options.sourceId);
     return { reps: [{}], analysisIds: ['a'], ellipse: {}, joins: 0 };
-  }),
+  },
+);
+
+vi.mock('../autoAnalyse', () => ({
+  autoAnalyse: (...args: unknown[]) =>
+    (autoAnalyseMock as unknown as (...a: unknown[]) => unknown)(...args),
   describeAutoAnalysis: (_r: unknown, label: string) => `${label}: 1 rep analysed`,
 }));
 
@@ -40,7 +62,9 @@ vi.mock('../analysisService', async () => {
   return { ...actual, listRecentAnalyses: vi.fn(async () => []) };
 });
 
-const { runArrivalQueue, unanalysedClips, targetFor, summariseAnalyses } = await import('../arrivals');
+const { runArrivalQueue, analyseArrival, unanalysedClips, targetFor, summariseAnalyses } =
+  await import('../arrivals');
+const { openFrameServer } = await import('../../engine/frameServer');
 
 function target(id: string) {
   return { source: 'direct' as const, sourceId: id, label: id, url: `blob:${id}` };
@@ -66,6 +90,8 @@ beforeEach(() => {
   peakInFlight = 0;
   analysed.length = 0;
   failOn.clear();
+  autoAnalyseMock.mockClear();
+  vi.mocked(openFrameServer).mockClear();
 });
 
 describe('runArrivalQueue', () => {
@@ -84,7 +110,7 @@ describe('runArrivalQueue', () => {
     expect(outcomes[1].message).toContain('pillar');
   });
 
-  it('stops between clips when asked, never mid-clip', async () => {
+  it('stops the queue between clips when asked', async () => {
     let done = 0;
     await runArrivalQueue([target('a'), target('b'), target('c')], {
       ownerId: null,
@@ -93,19 +119,51 @@ describe('runArrivalQueue', () => {
         done += 1;
       },
     });
-    // The first clip finished — it was not abandoned half-stored.
+    // The first clip finished; the other two were never attempted.
     expect(analysed).toEqual(['a']);
+    expect(autoAnalyseMock).toHaveBeenCalledTimes(1);
   });
 
-  it('reports which clip of how many is running', async () => {
-    const seen: string[] = [];
+  it('hands the stop flag to the clip in flight, not only between clips', async () => {
+    // The bug this file did not catch: the queue built the per-clip options
+    // with only `ownerId` and `onProgress`, so every per-frame check inside
+    // the pipeline was dead code and a stop waited out the whole clip —
+    // 40 to 120 s on the measured testset.
+    await runArrivalQueue([target('a')], { ownerId: null, shouldStop: () => false });
+    expect(autoAnalyseMock.mock.calls[0][1].shouldStop).toBeTypeOf('function');
+  });
+
+  it('abandons the clip in flight with nothing stored', async () => {
+    // Stopping mid-clip is safe because `autoAnalyse` writes nothing on a
+    // stop — it returns `problem: 'stopped'` over an empty result.
+    const outcomes = await runArrivalQueue([target('a')], {
+      ownerId: null,
+      shouldStop: () => true,
+    });
+    expect(analysed).toEqual([]);
+    expect(outcomes).toHaveLength(0);
+  });
+
+  it('does not open a frame server for a clip already stopped', async () => {
+    const outcome = await analyseArrival(target('a'), { ownerId: null, shouldStop: () => true });
+    expect(openFrameServer).not.toHaveBeenCalled();
+    expect(outcome.result).toBeNull();
+    expect(outcome.message).toContain('stopped before anything was stored');
+  });
+
+  it('says which clip of how many is running, and which clip it is', async () => {
+    const seen: { at: string; source: string; sourceId: string }[] = [];
     await runArrivalQueue([target('a'), target('b')], {
       ownerId: null,
-      onProgress: p => seen.push(`${p.index}/${p.total}`),
+      onProgress: p =>
+        seen.push({ at: `${p.index}/${p.total}`, source: p.source, sourceId: p.sourceId }),
     });
-    // The fake pipeline reports no stages, so progress comes only from the
-    // queue's own indices; what matters is that they are 1-based and bounded.
-    expect(seen.every(s => s === '1/2' || s === '2/2')).toBe(true);
+    // `label` is lossy — an unattached import is simply "Clip" — so the
+    // progress event carries the clip's identity too, and a surface can mark
+    // the right row with it.
+    expect(seen.map(s => s.at)).toEqual(['1/2', '2/2']);
+    expect(seen.map(s => s.sourceId)).toEqual(['a', 'b']);
+    expect(seen.every(s => s.source === 'direct')).toBe(true);
   });
 
   it('says so rather than throwing when a target has no frames to read', async () => {
