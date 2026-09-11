@@ -3,6 +3,7 @@ import { X, Trophy, Video } from 'lucide-react';
 import type { Event, Athlete, EventAttempts, EventVideo } from '../lib/database.types';
 import { formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { useEvents } from '../hooks/useEvents';
+import { logError } from '../lib/errorLogger';
 
 interface EventOverviewModalProps {
   event: Event;
@@ -29,6 +30,7 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
       const data = await fetchEventOverview(event.id);
       setAthletes(data as AthleteWithAttempts[]);
     } catch (error) {
+      void logError(error, { source: 'manual', context: { at: 'EventOverviewModal/loadEventData', eventId: event.id } });
     } finally {
       setLoading(false);
     }

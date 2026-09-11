@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
+import { logError } from '../lib/errorLogger';
 import type {
   Athlete,
   AthletePR,
@@ -272,6 +273,10 @@ export function useWeekPlans() {
       setAthletePRs(data || []);
       setAthletePRHistory(histError ? [] : ((hist as AthletePRHistory[] | null) ?? []));
     } catch (err) {
+      // Degrading to "no PRs" is deliberate — the planner still renders, it
+      // just can't bold lines above a PR. Logging it is not optional though:
+      // silently, this is indistinguishable from an athlete having no PRs.
+      void logError(err, { source: 'manual', context: { at: 'useWeekPlans/fetchAthletePRs', athleteId } });
       setAthletePRs([]);
       setAthletePRHistory([]);
     }

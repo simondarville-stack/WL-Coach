@@ -73,7 +73,11 @@ const LEGACY_OVERLAYS = [
 ];
 
 export default tseslint.config(
-  { ignores: ['dist'] },
+  // `.agents/` holds retired review-team artifacts (the 2025 team is archived
+  // under docs/history/agents/) and vendored skill docs. Not application code,
+  // and training-log-review.workflow.js doesn't even parse as a module — it was
+  // failing every lint run for nothing.
+  { ignores: ['dist', '.agents'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
@@ -91,6 +95,24 @@ export default tseslint.config(
         'warn',
         { allowConstantExport: true },
       ],
+      /**
+       * `_foo` means "deliberately unused". The codebase already wrote it that
+       * way — most often to drop columns before an insert
+       * (`const { id: _id, created_at: _c, ...row } = source`) — but nothing
+       * configured the convention, so 13 idiomatic discards were lint errors.
+       *
+       * `caughtErrorsIgnorePattern` rather than `caughtErrors: 'none'` on
+       * purpose: an unused `catch (error)` is usually a swallowed failure, and
+       * silencing the whole category would have hidden the ones fixed in
+       * 0.108.1. Discarding an error must be written `catch (_e)` — visibly
+       * deliberate.
+       */
+      '@typescript-eslint/no-unused-vars': ['error', {
+        varsIgnorePattern: '^_',
+        argsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_',
+      }],
     },
   },
   {

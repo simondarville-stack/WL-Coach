@@ -6,11 +6,11 @@
  * removes that step. The `=` is an explicit opt-in, so nothing about the
  * existing prescription grammar changes for anyone who doesn't type it.
  *
- * Deliberately hand-rolled rather than `eval`/`new Function`/mathjs:
+ * Deliberately hand-rolled rather than `eval`/`new Function`/a maths library:
  *  - a coach's cell is a *number*, not a program — identifiers, calls and
  *    property access have no meaning here and are simply not in the grammar;
- *  - mathjs is already bundled for the Calculator, but it would happily
- *    evaluate things a prescription cell should never contain.
+ *  - a general-purpose evaluator would happily evaluate things a prescription
+ *    cell should never contain, and would cost a dependency for one input.
  *
  * The parser is a plain recursive descent over
  *   expr    := term (('+' | '-') term)*

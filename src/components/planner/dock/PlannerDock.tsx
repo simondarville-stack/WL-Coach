@@ -117,7 +117,9 @@ export function PlannerDock({
   const endResize = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!resizing) return;
     setResizing(false);
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    // Throws if the pointer was already released (the browser drops capture on
+    // its own when the pointer is cancelled). Nothing to do either way.
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
   };
 
   const placeholder = tab === 'exercises'

@@ -63,7 +63,7 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
       const wpMap = new Map((weekPlans || []).map(wp => [wp.week_start, wp.id]));
 
       const planIds = Array.from(wpMap.values());
-      let istByWpId = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
+      const istByWpId = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
       if (planIds.length > 0) {
         const { data: pes } = await supabase
           .from('planned_exercises')

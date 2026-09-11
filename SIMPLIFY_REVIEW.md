@@ -189,6 +189,29 @@ the next reader.
 
 **Fix:** `npm uninstall mathjs`; correct both comments. **Effort: 10 min. Risk: none.**
 
+### 2.2b `npm ci` is broken — the lockfile is out of sync with `package.json`
+
+Found while removing `mathjs`, and **pre-existing** — it reproduces identically on untouched
+`main` at 0.108.0, so it is not a side effect of that removal:
+
+```
+$ npm ci
+npm error `npm ci` can only install packages when your package.json and
+npm error package-lock.json are in sync.
+npm error Missing: esbuild@0.27.7 from lock file
+npm error Missing: @esbuild/aix-ppc64@0.27.7 from lock file       (…and ~25 more)
+```
+
+`vitest` pulls `esbuild@0.27.7`, which the committed lockfile never recorded. Any pipeline
+using `npm ci` — the correct command for CI and for Cloudflare Workers Builds — fails at the
+install step. `npm install` papers over it by re-resolving, which is why it has gone unnoticed.
+
+**Fix:** run `npm install` locally and commit the regenerated lockfile (~515 added lines, all
+optional platform binaries). Deliberately **not** done as part of 0.108.1 — it would have
+buried this batch's reviewable 83-line deletion in unrelated churn, and it is worth landing as
+its own commit so the reason is legible in `git log`. **Effort: 2 min. Priority: high** if
+anything in your deploy path runs `npm ci`.
+
 ### 2.3 Thirteen DB round-trips issued inside loops
 
 Confirmed sites (write loops, one HTTP round trip per row):
@@ -376,7 +399,23 @@ re-raise them:
 Sequenced so the cheap, zero-risk wins land first and nothing blocks on a decision you
 haven't made.
 
-### Batch A — mechanical, no behaviour change (~2 h, risk: none)
+### Batch A — mechanical, no behaviour change (~2 h, risk: none) · **SHIPPED in 0.108.1**
+
+> Outcome: lint **48 errors → 14**, typecheck clean, 1663 tests pass. Two deviations from
+> the plan below, both deliberate:
+> - The e1RM tables could not simply be deleted — `RepMaxCalculator` renders a *per-formula*
+>   breakdown and needs the table by name. They moved to `xrmUtils.ts` and are now exported
+>   from there; the component imports them. Same outcome (one source of truth), different
+>   mechanism than "delete the duplicate".
+> - `caughtErrors: 'none'` was rejected in favour of `caughtErrorsIgnorePattern: '^_'`.
+>   Silencing every unused `catch` binding would have hidden exactly the swallowed errors
+>   this batch was fixing; now a deliberate discard must be written `catch (_e)`.
+>
+> Also: the empty catches were not uniformly "add a log". Three were deliberate and only
+> needed their rationale stated (`DayEditor`, `PlannerDock`, and the degradation in
+> `useWeekPlans`); four were real silent failures. The two user-initiated ones in
+> `EventAttemptsModal` (add video, delete video) now surface an alert as well as logging —
+> previously the button simply did nothing.
 
 1. Delete the duplicate e1RM tables; import from `xrmUtils` (§1.1)
 2. `npm uninstall mathjs`; fix the two stale comments (§2.2)
@@ -386,14 +425,15 @@ haven't made.
    errors in one line (§3.5)
 6. `prefer-const` ×3, `no-useless-catch` ×3 (`useEvents.ts`)
 
-→ **Result: 48 lint errors → 15**, three single-source violations closed, two silent
-data-loading failures surfaced. The 15 that remain are 8 `no-explicit-any`, the 6
-`AdaptiveDialog` errors (Batch C), and one parse error — see below. Recommend one commit.
+→ **Result: 48 lint errors → 14**, three single-source violations closed, four silent
+failures surfaced. The 14 that remain are 8 `no-explicit-any` and the 6 `AdaptiveDialog`
+errors (Batch C).
 
-**Also worth 2 minutes:** `.agents/training-log-review.workflow.js` (25 kB, git-tracked) fails
-to parse (`'return' outside of function`) and is linted on every run. Per CLAUDE.md the 2025
-review team is retired and archived under `docs/history/agents/`; this file was left behind.
-Move it there or add it to the eslint ignores.
+7. `.agents/` added to the eslint ignores — `training-log-review.workflow.js` (25 kB,
+   git-tracked) fails to parse (`'return' outside of function`) and was linted on every run
+   for nothing. Per CLAUDE.md the 2025 review team is retired and archived under
+   `docs/history/agents/`; the file itself was left in place rather than moved, since
+   relocating a tracked artifact is your call.
 
 ### Batch B — needs your decision (~1 h once approved)
 

@@ -11,7 +11,14 @@
  *     distance so close anchors dominate and far ones nudge.
  */
 
-const FORMULAS: Record<string, (w: number, r: number) => number> = {
+/**
+ * The published formulas, keyed by name. Exported because the xRM calculator
+ * shows a per-formula breakdown row and needs to name each one — it must read
+ * them from here rather than keep its own copy, which is what it did until
+ * 0.108.1 (a byte-identical duplicate whose reps<=0 guard had already drifted).
+ * A correction to any formula belongs here and nowhere else.
+ */
+export const FORMULAS: Record<string, (w: number, r: number) => number> = {
   'Epley':      (w, r) => w * (1 + r / 30),
   'Brzycki':    (w, r) => w * (36 / (37 - r)),
   'Adams':      (w, r) => w * (1 / (1 - 0.02 * r)),
@@ -25,7 +32,8 @@ const FORMULAS: Record<string, (w: number, r: number) => number> = {
   'Wathen':     (w, r) => w * (1 / (0.4880 + 0.538 * Math.exp(-0.075 * r))),
 };
 
-const REVERSE_FORMULAS: Record<string, (m: number, r: number) => number> = {
+/** Each formula inverted: weight achievable at a rep count, given a 1RM. Keys match FORMULAS. */
+export const REVERSE_FORMULAS: Record<string, (m: number, r: number) => number> = {
   'Epley':      (m, r) => m / (1 + r / 30),
   'Brzycki':    (m, r) => m * (37 - r) / 36,
   'Adams':      (m, r) => m * (1 - 0.02 * r),

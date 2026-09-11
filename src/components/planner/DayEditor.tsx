@@ -224,7 +224,9 @@ export function DayEditor({
 
   async function flushAndClose() {
     if (pendingSaveRef.current) {
-      try { await pendingSaveRef.current; } catch {}
+      // Rejection is already handled by the `p.catch` that refreshes above —
+      // this await only sequences the close behind the in-flight save.
+      try { await pendingSaveRef.current; } catch { /* handled at enqueue */ }
       pendingSaveRef.current = null;
     }
     onClose();

@@ -31,30 +31,17 @@ import {
 import { getOwnerId } from '../../../lib/ownerContext';
 import { METRIC_TRACKING_DEFAULTS } from '../../../lib/trainingLogModel';
 import { confirmDialog } from '../../ui';
+import { describeError } from '../../../lib/errorMessage';
 
-/** Supabase errors are plain objects, not Error instances, so the usual
- *  `e instanceof Error` branch falls through to String(e) = "[object
- *  Object]". Pull every useful field out so the popover can show
- *  something actionable (most often "relation does not exist" when the
- *  migration hasn't been applied yet, or an RLS violation). */
-function describeError(e: unknown): string {
-  // Always echo to the console too — even with the popover message,
-  // the full structured object (stack, supabase code) is more useful
-  // when filed in a bug report.
+/** Describe an error for the popover, and echo the raw object to the console —
+ *  even with the message on screen, the full structured object (stack, supabase
+ *  code) is what's useful in a bug report. The description itself comes from
+ *  lib/errorMessage, which also maps unique-constraint violations to coach-facing
+ *  copy; this file kept a private copy of that logic until 0.108.1 and so showed
+ *  raw Postgres constraint text where the rest of the app showed plain language. */
+function describeAndLog(e: unknown): string {
   console.error('[WeekMetricsSettings]', e);
-  if (e instanceof Error) return e.message;
-  if (typeof e === 'string') return e;
-  if (e && typeof e === 'object') {
-    const obj = e as Record<string, unknown>;
-    const parts: string[] = [];
-    if (typeof obj.message === 'string') parts.push(obj.message);
-    if (typeof obj.details === 'string') parts.push(obj.details);
-    if (typeof obj.hint === 'string') parts.push(`hint: ${obj.hint}`);
-    if (typeof obj.code === 'string') parts.push(`code ${obj.code}`);
-    if (parts.length) return parts.join(' · ');
-    try { return JSON.stringify(obj); } catch { /* noop */ }
-  }
-  return String(e);
+  return describeError(e);
 }
 
 interface WeekMetricsSettingsProps {
@@ -145,7 +132,7 @@ export function WeekMetricsSettings({
             : { ...DEFAULT_PANEL, enabledIds: new Set() },
         });
       } catch (e) {
-        if (!cancelled) setError(describeError(e));
+        if (!cancelled) setError(describeAndLog(e));
       }
     })();
     return () => { cancelled = true; };
@@ -168,7 +155,7 @@ export function WeekMetricsSettings({
       setState(s => ({ ...s, config: cfg }));
       onChange?.(saved);
     } catch (e) {
-      setError(describeError(e));
+      setError(describeAndLog(e));
     } finally {
       setSaving(false);
     }
@@ -212,7 +199,7 @@ export function WeekMetricsSettings({
       setNewUnit('');
       setShowAddForm(false);
     } catch (e) {
-      setError(describeError(e));
+      setError(describeAndLog(e));
     } finally {
       setSaving(false);
     }
@@ -240,7 +227,7 @@ export function WeekMetricsSettings({
       }));
       setEditingId(null);
     } catch (e) {
-      setError(describeError(e));
+      setError(describeAndLog(e));
     } finally {
       setSaving(false);
     }
@@ -268,7 +255,7 @@ export function WeekMetricsSettings({
         await persist({ enabledIds: nextIds });
       }
     } catch (e) {
-      setError(describeError(e));
+      setError(describeAndLog(e));
     } finally {
       setSaving(false);
     }

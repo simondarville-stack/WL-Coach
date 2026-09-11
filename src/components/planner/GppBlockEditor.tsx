@@ -16,25 +16,15 @@ import { Check, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { useSaveQueue } from '../../hooks/useSaveQueue';
 import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import type { Exercise, GppRow, GppSection } from '../../lib/database.types';
+import { describeError } from '../../lib/errorMessage';
 
-/** Supabase errors are plain objects (not Error). Pull the useful
- *  fields out so the modal shows the real reason — most often a missing
- *  column or RLS denial. Also logs the raw object for bug reports. */
-function describeError(e: unknown): string {
+/** Describe an error for the modal and log the raw object for bug reports.
+ *  The description comes from lib/errorMessage, which also maps unique-constraint
+ *  violations to coach-facing copy; this file kept a private copy of that logic
+ *  until 0.108.1 and so showed raw Postgres constraint text instead. */
+function describeAndLog(e: unknown): string {
   console.error('[GppBlockEditor]', e);
-  if (e instanceof Error) return e.message;
-  if (typeof e === 'string') return e;
-  if (e && typeof e === 'object') {
-    const obj = e as Record<string, unknown>;
-    const parts: string[] = [];
-    if (typeof obj.message === 'string') parts.push(obj.message);
-    if (typeof obj.details === 'string') parts.push(obj.details);
-    if (typeof obj.hint === 'string') parts.push(`hint: ${obj.hint}`);
-    if (typeof obj.code === 'string') parts.push(`code ${obj.code}`);
-    if (parts.length) return parts.join(' · ');
-    try { return JSON.stringify(obj); } catch { /* noop */ }
-  }
-  return String(e);
+  return describeError(e);
 }
 
 interface GppBlockEditorProps {
@@ -111,7 +101,7 @@ export function GppBlockEditor({
   sectionRef.current = section;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { enqueue, flush, status, error } = useSaveQueue<GppSection>(onSave, describeError);
+  const { enqueue, flush, status, error } = useSaveQueue<GppSection>(onSave, describeAndLog);
 
   /** Filter the catalogue down to '— System' free exercises, sorted
    *  by name so the suggestion list is predictable. Sentinels (TEXT /

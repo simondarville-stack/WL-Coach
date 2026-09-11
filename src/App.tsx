@@ -13,8 +13,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Route-level code splitting: every module surface is its own chunk, loaded
 // on first visit. Before this, the whole app (planner + macro + analysis +
-// athlete app + both chart libraries + xlsx + mathjs) shipped as one 3.9 MB
-// bundle that every visitor — athletes on phones included — parsed up front.
+// athlete app + both chart libraries + xlsx) shipped as one 3.9 MB bundle
+// that every visitor — athletes on phones included — parsed up front.
 const AthleteApp = lazy(() => import('./athlete/v2/AthleteApp').then(m => ({ default: m.AthleteApp })));
 const FieldApp = lazy(() => import('./field/FieldApp').then(m => ({ default: m.FieldApp })));
 const ExerciseLibrary = lazy(() => import('./components/exercise-library/ExerciseLibrary').then(m => ({ default: m.ExerciseLibrary })));

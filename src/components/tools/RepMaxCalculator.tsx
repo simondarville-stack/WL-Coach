@@ -1,48 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useDraggable } from '../../hooks/useDraggable';
-
-// ─── Formulas ────────────────────────────────────────────────────────────────
-
-const FORMULAS: Record<string, (w: number, r: number) => number> = {
-  'Epley':      (w, r) => w * (1 + r / 30),
-  'Brzycki':    (w, r) => w * (36 / (37 - r)),
-  'Adams':      (w, r) => w * (1 / (1 - 0.02 * r)),
-  'Baechle':    (w, r) => w * (1 + 0.033 * r),
-  'Berger':     (w, r) => w * (1 / (1.0261 * Math.exp(-0.0262 * r))),
-  'Brown':      (w, r) => w * (0.9849 + 0.0328 * r),
-  'Landers':    (w, r) => w * (1 / (1.013 - 0.0267123 * r)),
-  'Lombardi':   (w, r) => w * Math.pow(r, 0.10),
-  'Mayhew':     (w, r) => w * (1 / (0.522 + 0.419 * Math.exp(-0.055 * r))),
-  "O'Conner":   (w, r) => w * (1 + 0.025 * r),
-  'Wathen':     (w, r) => w * (1 / (0.4880 + 0.538 * Math.exp(-0.075 * r))),
-};
-
-const REVERSE_FORMULAS: Record<string, (m: number, r: number) => number> = {
-  'Epley':      (m, r) => m / (1 + r / 30),
-  'Brzycki':    (m, r) => m * (37 - r) / 36,
-  'Adams':      (m, r) => m * (1 - 0.02 * r),
-  'Baechle':    (m, r) => m / (1 + 0.033 * r),
-  'Berger':     (m, r) => m * (1.0261 * Math.exp(-0.0262 * r)),
-  'Brown':      (m, r) => m / (0.9849 + 0.0328 * r),
-  'Landers':    (m, r) => m * (1.013 - 0.0267123 * r),
-  'Lombardi':   (m, r) => m / Math.pow(r, 0.10),
-  'Mayhew':     (m, r) => m * (0.522 + 0.419 * Math.exp(-0.055 * r)),
-  "O'Conner":   (m, r) => m / (1 + 0.025 * r),
-  'Wathen':     (m, r) => m * (0.4880 + 0.538 * Math.exp(-0.075 * r)),
-};
-
-function estimateAvg1RM(weight: number, reps: number): number {
-  if (reps === 1) return weight;
-  const estimates = Object.values(FORMULAS).map(fn => fn(weight, reps));
-  return estimates.reduce((a, b) => a + b, 0) / estimates.length;
-}
-
-function estimateWeightAtReps(oneRM: number, targetReps: number): number {
-  if (targetReps === 1) return oneRM;
-  const reverses = Object.values(REVERSE_FORMULAS).map(fn => fn(oneRM, targetReps));
-  return reverses.reduce((a, b) => a + b, 0) / reverses.length;
-}
+import {
+  FORMULAS,
+  REVERSE_FORMULAS,
+  estimate1RM,
+  estimateWeightAtReps,
+} from '../../lib/xrmUtils';
 
 // ─── Confidence ──────────────────────────────────────────────────────────────
 
@@ -112,7 +76,7 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
   const r = parseInt(reps, 10);
   const hasValidInput = !isNaN(w) && w > 0 && !isNaN(r) && r >= 1 && r <= 10;
 
-  const oneRM = hasValidInput ? estimateAvg1RM(w, r) : null;
+  const oneRM = hasValidInput ? estimate1RM(w, r) : null;
 
   // Main summary rows (1–10RM, averaged across all formulas)
   const summaryRows = hasValidInput && oneRM !== null

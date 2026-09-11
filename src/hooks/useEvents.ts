@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
+import { logError } from '../lib/errorLogger';
 import type { Event, Athlete, EventAttempts, EventVideo } from '../lib/database.types';
 import {
   EVENT_VIDEO_MAX_BYTES,
@@ -50,15 +51,21 @@ export function useEvents() {
   const fetchEvents = async () => {
     try {
       setLoading(true);
-      const { data: eventsData } = await supabase
+      // Check `error` rather than inferring failure from null data: until
+      // 0.108.1 a failed query fell through `if (!eventsData) return` into an
+      // empty catch, so a broken connection rendered as "no events" — nothing
+      // on screen, nothing in the log.
+      const { data: eventsData, error } = await supabase
         .from('events')
         .select('*')
         .eq('owner_id', getOwnerId())
         .order('event_date', { ascending: true });
+      if (error) throw error;
 
       if (!eventsData) return;
       setEvents(await attachAthletes(eventsData));
     } catch (error) {
+      void logError(error, { source: 'manual', context: { at: 'useEvents/fetchEvents' } });
     } finally {
       setLoading(false);
     }
@@ -112,24 +119,20 @@ export function useEvents() {
     eventData: Partial<Omit<Event, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>,
     athleteIds: string[],
   ) => {
-    try {
-      const { data: newEvent, error: insertError } = await supabase
-        .from('events')
-        .insert({ ...eventData, owner_id: getOwnerId() })
-        .select()
-        .single();
-      if (insertError) throw insertError;
+    const { data: newEvent, error: insertError } = await supabase
+      .from('events')
+      .insert({ ...eventData, owner_id: getOwnerId() })
+      .select()
+      .single();
+    if (insertError) throw insertError;
 
-      if (athleteIds.length > 0 && newEvent) {
-        const { error: athletesError } = await supabase
-          .from('event_athletes')
-          .insert(athleteIds.map(athlete_id => ({ event_id: newEvent.id, athlete_id })));
-        if (athletesError) throw athletesError;
-      }
-      return newEvent as Event | null;
-    } catch (error) {
-      throw error;
+    if (athleteIds.length > 0 && newEvent) {
+      const { error: athletesError } = await supabase
+        .from('event_athletes')
+        .insert(athleteIds.map(athlete_id => ({ event_id: newEvent.id, athlete_id })));
+      if (athletesError) throw athletesError;
     }
+    return newEvent as Event | null;
   };
 
   const updateEvent = async (
@@ -137,35 +140,27 @@ export function useEvents() {
     eventData: Partial<Omit<Event, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>,
     athleteIds: string[],
   ) => {
-    try {
-      const { error: updateError } = await supabase
-        .from('events')
-        .update({ ...eventData, updated_at: new Date().toISOString() })
-        .eq('id', id);
-      if (updateError) throw updateError;
+    const { error: updateError } = await supabase
+      .from('events')
+      .update({ ...eventData, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (updateError) throw updateError;
 
-      await supabase.from('event_athletes').delete().eq('event_id', id);
+    await supabase.from('event_athletes').delete().eq('event_id', id);
 
-      if (athleteIds.length > 0) {
-        const { error: insertError } = await supabase
-          .from('event_athletes')
-          .insert(athleteIds.map(athlete_id => ({ event_id: id, athlete_id })));
-        if (insertError) throw insertError;
-      }
-    } catch (error) {
-      throw error;
+    if (athleteIds.length > 0) {
+      const { error: insertError } = await supabase
+        .from('event_athletes')
+        .insert(athleteIds.map(athlete_id => ({ event_id: id, athlete_id })));
+      if (insertError) throw insertError;
     }
   };
 
   const deleteEvent = async (id: string) => {
-    try {
-      const { data: existing } = await supabase.from('events').select('owner_id').eq('id', id).single();
-      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
-      const { error } = await supabase.from('events').delete().eq('id', id);
-      if (error) throw error;
-    } catch (error) {
-      throw error;
-    }
+    const { data: existing } = await supabase.from('events').select('owner_id').eq('id', id).single();
+    if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
+    const { error } = await supabase.from('events').delete().eq('id', id);
+    if (error) throw error;
   };
 
   interface AthleteWithAttempts extends Athlete {

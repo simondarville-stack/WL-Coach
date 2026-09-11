@@ -1,7 +1,7 @@
 {
   "name": "emos",
   "private": true,
-  "version": "0.108.0",
+  "version": "0.108.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,7 +24,6 @@
     "@techstark/opencv-js": "^5.0.0-release.1",
     "chart.js": "^4.5.1",
     "lucide-react": "^0.344.0",
-    "mathjs": "^15.2.0",
     "mediabunny": "^1.55.5",
     "react": "^18.3.1",
     "react-arborist": "^3.12.0",

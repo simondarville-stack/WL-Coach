@@ -5,6 +5,7 @@ import { getOwnerId } from '../lib/ownerContext';
 import { addDaysToISO, isoMonday, isoSunday } from '../lib/dateUtils';
 import { resolveScopeAthleteIds } from '../lib/macroTimelineData';
 import { unitFromDefaultUnit } from '../lib/macroTargetUnit';
+import { describeError } from '../lib/errorMessage';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
 /** Discriminated union identifying who a macrocycle belongs to */
@@ -21,11 +22,20 @@ export interface MacroActuals {
 // weekId → exerciseId → actuals
 export type MacroActualsMap = Record<string, Record<string, MacroActuals>>;
 
+/**
+ * Describe an error, falling back to the caller's copy when there is nothing
+ * useful to say. The `fallback` strings at each call site state what happened
+ * to the data ("Nothing was created", "Your changes are still on screen"), so
+ * they are kept — only the description is delegated.
+ *
+ * Until 0.108.1 this returned the raw `message` of any object that had one,
+ * which bypassed lib/errorMessage's unique-constraint copy, `details` and
+ * `hint` — so a duplicate name surfaced here as raw Postgres constraint text.
+ */
 function errMsg(err: unknown, fallback: string): string {
   if (!err) return fallback;
-  if (typeof err === 'object' && 'message' in err) return String((err as { message: unknown }).message);
-  if (err instanceof Error) return err.message;
-  return fallback;
+  const described = describeError(err);
+  return described === 'Unknown error' ? fallback : described;
 }
 
 export function useMacroCycles() {

@@ -5,6 +5,7 @@ import { useEvents } from '../hooks/useEvents';
 import { alertDialog, confirmDialog } from './ui';
 import { useClipEditor } from './planner/useClipEditor';
 import { EVENT_VIDEO_MAX_BYTES, VideoTooLargeError } from '../lib/videoLimits';
+import { logError } from '../lib/errorLogger';
 
 interface EventAttemptsModalProps {
   eventId: string;
@@ -73,6 +74,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
 
       setVideos(videosData);
     } catch (error) {
+      void logError(error, { source: 'manual', context: { at: 'EventAttemptsModal/loadData', eventId, athleteId: athlete.id } });
     } finally {
       setLoading(false);
     }
@@ -86,6 +88,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       onSave();
       onClose();
     } catch (error) {
+      void logError(error, { source: 'manual', context: { at: 'EventAttemptsModal/handleSave', eventId, athleteId: athlete.id } });
       void alertDialog({
         title: "Couldn't save the attempts",
         message: 'Your entries are still on screen. Check the connection and save again.',
@@ -157,6 +160,11 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       setShowVideoForm(false);
       loadData();
     } catch (error) {
+      void logError(error, { source: 'manual', context: { at: 'EventAttemptsModal/handleAddVideoUrl', eventId, athleteId: athlete.id } });
+      void alertDialog({
+        title: "Couldn't add the video",
+        message: 'The link is still in the form. Check the connection and try again.',
+      });
     }
   }
 
@@ -180,6 +188,11 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       await deleteEventVideo(videoId, videoUrl);
       loadData();
     } catch (error) {
+      void logError(error, { source: 'manual', context: { at: 'EventAttemptsModal/handleDeleteVideo', videoId } });
+      void alertDialog({
+        title: "Couldn't delete the video",
+        message: 'It is still attached. Check the connection and try again.',
+      });
     }
   }
 

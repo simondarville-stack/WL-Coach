@@ -442,8 +442,8 @@ export function aggregate(
   }
 
   const resolved = resolveMeasures(query, registry);
-  let records = recordsFrom(bucketFacts(filtered, rowDims, colDims, options), query, registry, true);
-  let rowKeys = distinctTuples(records, (r) => r.row);
+  const records = recordsFrom(bucketFacts(filtered, rowDims, colDims, options), query, registry, true);
+  const rowKeys = distinctTuples(records, (r) => r.row);
   const colKeys = distinctTuples(records, (r) => r.col).sort(naturalCompare);
 
   // Sort rows: by a measure (ranked from facts via row-only totals) or natural.
