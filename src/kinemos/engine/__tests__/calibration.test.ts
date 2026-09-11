@@ -272,3 +272,36 @@ describe('calibrateFromEllipse — a front view', () => {
     expect(ok.pathUsable).toBe(true);
   });
 });
+
+describe('calibrateFromEllipse — the coach declares the view', () => {
+  /** The 2009 archive's front-view clean: an 18 px plate seen edge-on that
+   *  the finder fitted at 28°, well inside the angle rule. */
+  const smallEdgeOn = { cx: 0, cy: 0, semiMajorPx: 18, semiMinorPx: 16, tiltDeg: 0 };
+
+  it('believes a front view the angle missed', () => {
+    const derived = calibrateFromEllipse(smallEdgeOn, 45);
+    expect(derived.frontView).toBe(false);
+    expect(derived.pathUsable).toBe(true);
+
+    const declared = calibrateFromEllipse(smallEdgeOn, 45, { frontView: true });
+    expect(declared.frontView).toBe(true);
+    expect(declared.frontViewSource).toBe('coach');
+    expect(declared.pathUsable).toBe(false);
+    expect(declared.reason).toMatch(/front view/);
+    // The vertical scale is untouched: that is the whole point.
+    expect(declared.cmPerPxV).toBeCloseTo(derived.cmPerPxV, 6);
+  });
+
+  it('believes a coach who says a wide shot is NOT a front view', () => {
+    const edgeOn = { cx: 0, cy: 0, semiMajorPx: 100, semiMinorPx: 30, tiltDeg: 0 };
+    expect(calibrateFromEllipse(edgeOn, 45).pathUsable).toBe(false);
+    const declared = calibrateFromEllipse(edgeOn, 45, { frontView: false });
+    expect(declared.frontView).toBe(false);
+    expect(declared.frontViewSource).toBe('coach');
+    expect(declared.pathUsable).toBe(true);
+  });
+
+  it('says the angle decided when the coach has not', () => {
+    expect(calibrateFromEllipse(smallEdgeOn, 45).frontViewSource).toBe('angle');
+  });
+});

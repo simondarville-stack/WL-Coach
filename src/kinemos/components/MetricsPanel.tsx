@@ -244,6 +244,13 @@ function MetricsPanelImpl({
               withDelta={withDelta}
             />
             <Row
+              term="Peak power / bodyweight"
+              value={metrics.peakPowerPerKgBwW === null ? '—' : `${num(metrics.peakPowerPerKgBwW, 1)} W/kg`}
+              hint="Barbell power per kilo of lifter · the power figure that survives a comparison across body sizes · needs the bar mass and the athlete's bodyweight"
+              delta={d('peakPowerPerKg')}
+              withDelta={withDelta}
+            />
+            <Row
               term="Peak height"
               value={summary.peakHeightCm ? `${num(summary.peakHeightCm, 1)} cm` : '—'}
               delta={d('peakHeight')}

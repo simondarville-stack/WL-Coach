@@ -71,6 +71,8 @@ export interface PersistRepArgs {
   model?: LiftModel;
   /** The lifter's standing height, cm, for the jerk's dip as a share of it. */
   heightCm?: number | null;
+  /** The lifter's bodyweight, kg, for power per kilo of lifter. */
+  bodyweightKg?: number | null;
 }
 
 /**
@@ -120,7 +122,7 @@ export async function persistRep(args: PersistRepArgs): Promise<string> {
   if (series) {
     const model = args.model ?? liftModelById('snatch');
     const proposal = proposePhasesFor(series, model);
-    const metrics = computeLiftMetrics(series, spansFrom(proposal.boundaries, model.phaseSet ?? []), { heightCm: args.heightCm ?? null });
+    const metrics = computeLiftMetrics(series, spansFrom(proposal.boundaries, model.phaseSet ?? []), { heightCm: args.heightCm ?? null, bodyweightKg: args.bodyweightKg ?? null });
     await saveAnalysisState(analysis.id, {
       massKg: args.massKg,
       massSource: args.massSource,
@@ -148,6 +150,8 @@ export interface AutoAnalyseOptions {
   liftModelId?: string | null;
   /** The athlete's standing height, cm, when the profile has it. */
   athleteHeightCm?: number | null;
+  /** The athlete's bodyweight, kg, when the profile has it. */
+  athleteBodyweightKg?: number | null;
   /** Which frame to look for the bar at rest on when the clip is tracked
    *  whole. Default: the start. */
   anchorIndex?: number;
@@ -331,6 +335,7 @@ async function storeReps(server: FrameServer, options: AutoAnalyseOptions, reps:
         // bar did; a plain model is its own part.
         model: partForKind(model, rep.segment.kind),
         heightCm: options.athleteHeightCm ?? null,
+        bodyweightKg: options.athleteBodyweightKg ?? null,
       }),
     );
   }

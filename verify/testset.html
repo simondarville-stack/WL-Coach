@@ -630,6 +630,26 @@
           await window.__bench.setAnchor(first, x, y, r);
           anchored = true;
         }
+        // Still nothing: the plate detector on the first frame. The scan
+        // looks for a rising motion centroid and misses a clip that opens
+        // close on the bar (the 2009 clean pull), and the automatic run on
+        // the library already falls back to the whole clip this way — the
+        // bench asked for an anchor instead, which is why that clip looked
+        // like a failure rather than a slower path.
+        if (!anchored) {
+          log('  no anchor yet — looking for the plate on the first frame');
+          const t1 = performance.now();
+          const found = await findPlateOnFrame(server, first);
+          B.timings.findMs = (B.timings.findMs ?? 0) + (performance.now() - t1);
+          if (found) {
+            B.ellipse = found.ellipse;
+            log(`  plate found on frame ${first} at ${fmt(found.ellipse.cx, 1)},${fmt(found.ellipse.cy, 1)}, semi-major ${fmt(found.ellipse.semiMajorPx, 1)} px, support ${fmt(found.support, 2)}`);
+            await window.__bench.setAnchor(first, found.ellipse.cx, found.ellipse.cy, r || found.ellipse.semiMajorPx * 1.08);
+            anchored = true;
+          } else {
+            log(`  no plate on frame ${first} either — pass anchor=x,y or click one`);
+          }
+        }
         if (anchored && params.get('auto')) {
           if (params.get('force') || !restore()) await runTrack();
           runAnalyse();

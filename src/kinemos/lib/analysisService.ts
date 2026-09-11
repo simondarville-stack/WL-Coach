@@ -218,6 +218,8 @@ export async function saveAnalysisState(
     phaseSetId?: string;
     /** Which lift model segmented the rep (P9). */
     liftModelId?: string | null;
+    /** The coach's word on a front view; null clears it back to the angle. */
+    frontView?: boolean | null;
     metrics?: unknown;
     grade?: 'A' | 'B' | 'C' | null;
     gradeErrorMs?: number | null;
@@ -234,6 +236,7 @@ export async function saveAnalysisState(
   if (state.phaseBoundaries !== undefined) patch.phase_boundaries = state.phaseBoundaries;
   if (state.phaseSetId !== undefined) patch.phase_set_id = state.phaseSetId;
   if (state.liftModelId !== undefined) patch.lift_model_id = state.liftModelId;
+  if (state.frontView !== undefined) patch.front_view = state.frontView;
   if (state.metrics !== undefined) patch.metrics = state.metrics;
   if (state.grade !== undefined) patch.grade = state.grade;
   if (state.gradeErrorMs !== undefined) patch.grade_error_ms = state.gradeErrorMs;

@@ -650,3 +650,28 @@ on the plate finder's ellipse):
 
 Not run: the other 85 archive clips (mostly *for* views and repeats of the
 same exercises). The recipe is one URL per clip on the bench.
+
+## 15. Follow-up — 0.106.0 (11/09/2026)
+
+The three gaps §14's clip table left open, closed:
+
+- **A front view is declared, not inferred.** The angle rule (past 60° off
+  perpendicular) needs a plate big enough to fit truthfully, and the
+  archive's front-view clean fitted an 18 px plate at 28°. So the
+  calibration panel carries a checkbox: it shows the effective answer, and
+  the coach's word overrides the angle **in both directions** — a wide shot
+  they know is side-on keeps its bar path. Stored as
+  `kinemos_analyses.front_view` (null = not declared).
+- **The bench finds the plate when the scan finds nothing.** The activity
+  scan looks for a rising motion centroid and misses a clip that opens
+  close on the bar (the 2009 clean pull). `autoAnalyse` already fell back to
+  the whole clip this way; the bench asked for an anchor instead, which is
+  why that clip read as a failure rather than as a slower path.
+- **Bodyweight-relative power, and the class band as the velocity
+  threshold.** `peakPowerPerKgBwW` divides barbell power by the lifter, so
+  a 55 kg and a 110 kg athlete can be compared at all. And the
+  load–velocity panel's 1RM estimate no longer assumes a flat 1,5 m/s when
+  the athlete has no near-maximal rep on record: it takes the BVDG band's
+  midpoint for their sex and weight class (a snatch maximum moves at
+  1,5–1,7 in the lower classes and 1,8–1,95 in the upper), and says so.
+  A measured threshold still wins, and the coach can still type their own.

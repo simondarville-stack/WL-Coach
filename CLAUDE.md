@@ -268,6 +268,16 @@ All modules are **active** — nothing is currently disabled or hidden:
   three / two) so the toggle needs no manual choice for a filled-in
   athlete, and a jerk's dip is read **as a share of the lifter's height**
   (`JerkAnalyzerMetrics.sDipPctHeight`, `computeLiftMetrics` options).
+  From 0.106.0: a **front view is the coach's word**, not the plate's
+  aspect — a checkbox on the calibration panel
+  (`kinemos_analyses.front_view`, migration 20260911100000) overrides the
+  60° rule in both directions, because a small plate seen edge-on fits at a
+  modest angle; **peak power per kilo of lifter** (`peakPowerPerKgBwW`,
+  from the athlete's bodyweight) is the power figure that compares across
+  body sizes; and the **load–velocity profile's assumed threshold comes
+  from the BVDG band** for the athlete's sex and class instead of a flat
+  1,5 m/s, labelled as the material's. The bench falls back to the plate
+  detector on the first frame when the activity scan finds no lift.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels, a trends bench with a Playwright screenshot driver,
   and `clip-edit-probe.html`, which measures the clip editor's geometry on
