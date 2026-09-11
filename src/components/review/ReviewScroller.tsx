@@ -50,7 +50,7 @@ import {
 import { emitInboxChanged } from '../../lib/inboxEvents';
 import { useSettings } from '../../hooks/useSettings';
 import { quickReactionsFrom, techniqueRatingEnabledFrom } from '../../lib/reviewSettings';
-import { EndCard, SessionCard, ThreadCard, VideoCard } from './ReviewCards';
+import { EndCard, SessionCard, ThreadCard, VideoCard, type ReviewCardTag } from './ReviewCards';
 import { Spinner } from '../ui';
 
 /** How long a card must stay in view before it counts as reviewed. */
@@ -577,28 +577,21 @@ export function ReviewScroller() {
   const activeCardIdx = (activeKey ? cardIndexByKey.get(activeKey) : undefined) ?? 0;
 
   /** One full-height snap section. History cards render as already-seen and
-   *  carry a corner tag; their composers still post for real. */
-  const renderCard = (item: ReviewFeedItem, tag: 'demo' | 'history' | null) => (
+   *  carry a tag in the header cluster (the card frame places it — a badge
+   *  floated over the section used to land on the seam between the header
+   *  and the content sheet); their composers still post for real. */
+  const renderCard = (item: ReviewFeedItem, tag: ReviewCardTag | null) => (
     <section
       key={item.key}
       ref={registerCard(item.key)}
       className="relative h-full snap-start snap-always"
     >
-      {tag === 'demo' && (
-        <div className="absolute top-11 right-3 z-10 text-[10px] uppercase tracking-wider font-medium bg-amber-400/90 text-black px-1.5 py-0.5 rounded pointer-events-none">
-          Example
-        </div>
-      )}
-      {tag === 'history' && (
-        <div className="absolute top-11 right-3 z-10 text-[10px] uppercase tracking-wider font-medium bg-white/10 text-white/60 px-1.5 py-0.5 rounded pointer-events-none">
-          History
-        </div>
-      )}
       {item.kind === 'video' && (
         <VideoCard
           item={item}
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
+          tag={tag}
           active={activeKey === item.key}
           near={Math.abs((cardIndexByKey.get(item.key) ?? 0) - activeCardIdx) <= 1}
           onComment={text => commentOnVideo(item, text)}
@@ -621,6 +614,7 @@ export function ReviewScroller() {
           item={item}
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
+          tag={tag}
           onReply={(text, tags) => replyToThread(item, text, tags)}
           onOpenSession={openSessionFor(item)}
         />
@@ -630,6 +624,7 @@ export function ReviewScroller() {
           item={item}
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
+          tag={tag}
           onComment={(text, tags) => commentOnSession(item, item.session.id, text, tags)}
           reactions={quickReactions}
           externalSent={keyboardSent[item.key]}

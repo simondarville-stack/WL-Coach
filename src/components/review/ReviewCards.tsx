@@ -230,10 +230,31 @@ function ComposeBar({
   );
 }
 
+/** Where a card came from when it is not a live item: an example card in
+ *  the empty reel, or a card walked back from history. */
+export type ReviewCardTag = 'demo' | 'history';
+
+/** Small chip in the header cluster. Lives in the row, not floated over
+ *  it: an absolutely placed badge lands on the seam between the header and
+ *  the content sheet and overlaps whatever sits there. */
+function CardTagChip({ tag }: { tag: ReviewCardTag }) {
+  return tag === 'demo' ? (
+    <span className="shrink-0 text-[10px] uppercase tracking-wider font-medium bg-amber-400/90 text-black px-1.5 py-0.5 rounded">
+      Example
+    </span>
+  ) : (
+    <span className="shrink-0 text-[10px] uppercase tracking-wider font-medium bg-white/10 text-white/60 px-1.5 py-0.5 rounded">
+      History
+    </span>
+  );
+}
+
 interface CardFrameProps {
   athlete: Athlete | undefined;
   context: string;
   seen: boolean;
+  /** Example / history marker, shown in the header cluster. */
+  tag?: ReviewCardTag | null;
   kindIcon: React.ReactNode;
   children: React.ReactNode;
   composer: ComposeBarProps;
@@ -244,12 +265,13 @@ interface CardFrameProps {
 }
 
 /** Common frame: header row, content area, composer pinned at the bottom. */
-function CardFrame({ athlete, context, seen, kindIcon, children, composer, accessory, onOpenSession }: CardFrameProps) {
+function CardFrame({ athlete, context, seen, tag, kindIcon, children, composer, accessory, onOpenSession }: CardFrameProps) {
   return (
     <div className="h-full flex flex-col px-3 py-3 gap-2">
       <div className="flex items-center justify-between gap-2 shrink-0">
         <AthleteBadge athlete={athlete} context={context} onOpenSession={onOpenSession} />
-        <div className="flex items-center gap-2 text-white/50">
+        <div className="flex items-center gap-2 shrink-0 text-white/50">
+          {tag && <CardTagChip tag={tag} />}
           <SeenDot seen={seen} />
           {kindIcon}
         </div>
@@ -342,6 +364,8 @@ interface VideoCardProps {
   item: ReviewVideoItem;
   athlete: Athlete | undefined;
   seen: boolean;
+  /** Example / history marker. */
+  tag?: ReviewCardTag | null;
   /** Card is the one currently in view — drives autoplay. */
   active: boolean;
   /** Card is the active one or its direct neighbour — the only cards that
@@ -368,6 +392,7 @@ export function VideoCard({
   item,
   athlete,
   seen,
+  tag,
   active,
   near,
   onComment,
@@ -397,6 +422,7 @@ export function VideoCard({
       athlete={athlete}
       context={context}
       seen={seen}
+      tag={tag}
       onOpenSession={onOpenSession}
       kindIcon={<Video size={16} />}
       composer={{
@@ -479,6 +505,8 @@ interface ThreadCardProps {
   item: ReviewThreadItem;
   athlete: Athlete | undefined;
   seen: boolean;
+  /** Example / history marker. */
+  tag?: ReviewCardTag | null;
   /** The reply plus the tags it carries (exercises / sets / metrics of the
    *  session behind the thread; always empty on the general thread). */
   onReply: (text: string, tags: MessageTag[]) => Promise<void>;
@@ -487,7 +515,7 @@ interface ThreadCardProps {
   onOpenSession?: (() => void) | null;
 }
 
-export function ThreadCard({ item, athlete, seen, onReply, onOpenSession }: ThreadCardProps) {
+export function ThreadCard({ item, athlete, seen, tag, onReply, onOpenSession }: ThreadCardProps) {
   const context = item.sessionId
     ? `Session ${item.sessionDate ? formatDateShort(item.sessionDate) : ''}`.trim()
     : 'Direct message';
@@ -504,6 +532,7 @@ export function ThreadCard({ item, athlete, seen, onReply, onOpenSession }: Thre
       athlete={athlete}
       context={context}
       seen={seen}
+      tag={tag}
       onOpenSession={onOpenSession}
       kindIcon={<MessageCircle size={16} />}
       composer={{
@@ -591,6 +620,8 @@ interface SessionCardProps {
   item: ReviewSessionItem;
   athlete: Athlete | undefined;
   seen: boolean;
+  /** Example / history marker. */
+  tag?: ReviewCardTag | null;
   /** The comment plus the tags it carries (exercises / metrics named in it). */
   onComment: (text: string, tags: MessageTag[]) => Promise<void>;
   /** The coach's quick-reaction chips. */
@@ -609,6 +640,7 @@ export function SessionCard({
   item,
   athlete,
   seen,
+  tag,
   onComment,
   reactions,
   externalSent,
@@ -648,6 +680,7 @@ export function SessionCard({
       athlete={athlete}
       context={`Session ${formatDateShort(s.date)}${s.session_label ? ` · ${s.session_label}` : ''}`}
       seen={seen}
+      tag={tag}
       onOpenSession={onOpenSession}
       kindIcon={<ClipboardList size={16} />}
       composer={{
@@ -664,7 +697,9 @@ export function SessionCard({
           without it, the dark coach app's token set leaks in and the
           notation renders near-white on the white card (unreadable). */}
       <div data-theme="light" className="h-full rounded-2xl bg-white overflow-y-auto">
-        <div className="px-3.5 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2">
+        {/* Sticky: the sheet scrolls under its own title, so a scrolled
+            card never shows a half-cut chip row at its rounded top edge. */}
+        <div className="sticky top-0 z-10 bg-white px-3.5 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2">
           <div className="text-sm font-medium text-gray-900">Completed session</div>
           {(s.session_rpe != null || s.duration_minutes != null) && (
             <div className="text-[11px] text-gray-500 flex items-center gap-1.5">
