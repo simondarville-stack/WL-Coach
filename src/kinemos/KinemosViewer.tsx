@@ -95,6 +95,7 @@ import { DEFAULT_DISPLAY_PREFS, heatScaleMs, velocityColour } from './lib/displa
 import { ColumnSplitter } from './components/ColumnSplitter';
 import { PATH_WIDTH_RANGE, VIDEO_WIDTH_RANGE, useColumnWidths } from './hooks/useColumnWidths';
 import { useElementWidth } from './hooks/useElementWidth';
+import { useAsyncTask } from './hooks/useAsyncTask';
 import { ViewerTransport } from './components/ViewerTransport';
 import {
   addAnnotation,
@@ -171,6 +172,14 @@ const STOPPED_MARKER_NOTE =
   'Stopped. The marker track was left as it was — nothing from this run was kept.';
 
 /** "12,4 s" — a clip time for a sentence. */
+/** Both share paths — to the athlete, to a colleague — fail the same two ways. */
+function describeShareFailure(error: unknown): string {
+  const text = (error as { message?: string } | null)?.message ?? '';
+  return /kinemos_shares/.test(text)
+    ? 'Sharing needs the kinemos_shares table — the 20260903120000 migration has not been applied.'
+    : 'The share could not be sent.';
+}
+
 function secs(t: number): string {
   return `${t.toFixed(1).replace('.', ',')} s`;
 }
@@ -213,13 +222,10 @@ export function KinemosViewer() {
   const [measurePoints, setMeasurePoints] = useState<PxPoint[]>([]);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [shares, setShares] = useState<KinemosShare[]>([]);
-  const [shareBusy, setShareBusy] = useState(false);
-  const [shareNote, setShareNote] = useState<string | null>(null);
-  const [exporting, setExporting] = useState<{ done: number; total: number } | null>(null);
-  const [exportNote, setExportNote] = useState<string | null>(null);
+  const shareTask = useAsyncTask();
+  const exportTask = useAsyncTask();
   const [talkover, setTalkover] = useState<TalkoverController | null>(null);
-  const [talkoverBusy, setTalkoverBusy] = useState(false);
-  const [talkoverNote, setTalkoverNote] = useState<string | null>(null);
+  const talkoverTask = useAsyncTask();
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const coaches = useCoachStore(s => s.coaches);
   const colleagues = useMemo(
@@ -294,12 +300,8 @@ export function KinemosViewer() {
   const [modelLabel, setModelLabel] = useState<string | null>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
   // The OpenCV assists: which is running, and what the last one said.
-  const [assist, setAssist] = useState<{ busy: 'find' | 'snap' | null; note: string | null }>({
-    busy: null,
-    note: null,
-  });
-  const [stabiliseProgress, setStabiliseProgress] = useState<{ done: number; total: number } | null>(null);
-  const [stabiliseNote, setStabiliseNote] = useState<string | null>(null);
+  const assist = useAsyncTask<'find' | 'snap'>();
+  const stabilise = useAsyncTask();
   /** How the plate outline is fitted: a free ellipse, or a circle for a round
    *  plate filmed square-on (see `OutlineFitOptions`). Not persisted — it
    *  describes how the next find or snap runs, and the outline it produces is
@@ -334,8 +336,7 @@ export function KinemosViewer() {
     () => JSON.stringify(display.prefs.plot) !== JSON.stringify(DEFAULT_DISPLAY_PREFS.plot),
     [display.prefs.plot],
   );
-  const [recentreProgress, setRecentreProgress] = useState<{ done: number; total: number } | null>(null);
-  const [recentreNote, setRecentreNote] = useState<string | null>(null);
+  const recentre = useAsyncTask();
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
   const [comparisonId, setComparisonId] = useState<string | null>(null);
   const [comparisonSubject, setComparisonSubject] = useState<ComparisonSubject | null>(null);
@@ -524,7 +525,7 @@ export function KinemosViewer() {
     setEllipse(null);
     setAnnotations([]);
     setShares([]);
-    setShareNote(null);
+    shareTask.reset();
     setMeasurePoints([]);
     setCoachBoundaries(null);
     setCamera('unknown');
@@ -532,8 +533,8 @@ export function KinemosViewer() {
     setIsReference(false);
     setIsModel(false);
     setModelLabel(null);
-    setAssist({ busy: null, note: null });
-    setStabiliseNote(null);
+    assist.reset();
+    stabilise.reset();
     setLiftModel(null);
     // The logged load is the best first guess at bar mass, and it is already on
     // the library row. A coach who filmed a different set overwrites it.
@@ -614,8 +615,13 @@ export function KinemosViewer() {
   // is computed from the corrected pair.
   const [lensK1, setLensK1] = useState(0);
   const [lensSource, setLensSource] = useState<DistortionSource>('none');
-  const [lensBusy, setLensBusy] = useState(false);
-  const [lensNote, setLensNote] = useState<string | null>(null);
+  const lens = useAsyncTask();
+  const resetLens = lens.reset;
+  /** Stable identity for CalibrationPanel — see KinemosViewer.renders.test.tsx. */
+  const assistProp = useMemo(
+    () => ({ busy: assist.busy, note: assist.note }),
+    [assist.busy, assist.note],
+  );
 
   const lensModel = useMemo(() => {
     const base = noDistortion(server?.displayWidth ?? 0, server?.displayHeight ?? 0);
@@ -1571,13 +1577,12 @@ export function KinemosViewer() {
   // what it found in the coach's terms, and none of them touches the video.
   const findPlateHere = useCallback(async () => {
     if (!server || currentT === null) return;
-    setAssist({ busy: 'find', note: null });
-    try {
+    await assist.run(async task => {
       const found = await findPlateOnFrame(server, index, undefined, { shape: plateShape }, {
         shouldStop: () => stopTrackRef.current,
       });
       if (!found) {
-        setAssist(a => ({ ...a, note: 'No plate found on this frame. Try a frame where the whole plate is in view, or outline it by hand.' }));
+        task.note('No plate found on this frame. Try a frame where the whole plate is in view, or outline it by hand.');
         return;
       }
       dirtyRef.current = true;
@@ -1585,83 +1590,62 @@ export function KinemosViewer() {
       // The plate's centre is the bar end: the anchor the tracker needs.
       const anchor: KinemosTrackPoint = { t: currentT, x: found.ellipse.cx, y: found.ellipse.cy, s: 'm' };
       setPoints(prev => [...prev.filter(p => Math.abs(p.t - currentT) > 1e-6), anchor].sort((a, b) => a.t - b.t));
-      // `busy` is KEPT across the track this starts. Clearing it here — as
-      // this did — re-enabled "Find the plate" while the ~90 s track it had
-      // just launched was still running, so a second track could start under
-      // the one stop flag and one press of Stop would half-work.
-      setAssist({
-        busy: 'find',
-        note: `Plate found, edge under ${Math.round(found.support * 100)} % of the outline. Tracking from its centre.`,
-      });
+      // `busy` is KEPT across the track this starts — run() holds it for the
+      // whole body, including the awaited track below. Clearing it early
+      // re-enabled "Find the plate" while the ~90 s track it had just launched
+      // was still running, so a second track could start under the one stop
+      // flag and one press of Stop would half-work.
+      task.note(`Plate found, edge under ${Math.round(found.support * 100)} % of the outline. Tracking from its centre.`);
       // A template exactly the plate's face lost the lock at the second pull
       // on real footage; a little context round the rim keeps it
       // (docs/KINEMOS_ACCURACY_STUDY.md §7).
       await trackFrom(index, found.ellipse.cx, found.ellipse.cy, found.ellipse.semiMajorPx * 1.08);
-    } catch (e) {
-      setAssist(a => ({ ...a, note: e instanceof Error ? e.message : 'The plate finder could not run.' }));
-    } finally {
-      setAssist(a => ({ ...a, busy: null }));
-    }
-  }, [server, currentT, index, trackFrom, plateShape]);
+    }, { kind: 'find', fallback: 'The plate finder could not run.' });
+  }, [server, currentT, index, trackFrom, plateShape, assist]);
 
   const snapHere = useCallback(async () => {
     if (!server || !ellipse) return;
-    setAssist({ busy: 'snap', note: null });
-    try {
+    await assist.run(async task => {
       const out = await snapEllipseOnFrame(server, index, ellipse, { shape: plateShape });
       if (!out) {
-        setAssist({ busy: null, note: 'No plate edge near the outline on this frame — nothing to snap to.' });
+        task.note('No plate edge near the outline on this frame — nothing to snap to.');
         return;
       }
       const moved = Math.hypot(out.ellipse.cx - ellipse.cx, out.ellipse.cy - ellipse.cy);
       const grew = out.ellipse.semiMajorPx - ellipse.semiMajorPx;
       dirtyRef.current = true;
       setEllipse(out.ellipse);
-      setAssist({
-        busy: null,
-        note:
-          `Snapped: centre moved ${num(moved, 1)} px, radius ${grew >= 0 ? '+' : '−'}${num(Math.abs(grew), 1)} px, ` +
-          `edge under ${Math.round(out.support * 100)} % of the outline${out.support < 0.6 ? ' — part of the plate is hidden; check it' : ''}.`,
-      });
-    } catch (e) {
-      setAssist({ busy: null, note: e instanceof Error ? e.message : 'The snap could not run.' });
-    }
-  }, [server, ellipse, index, plateShape]);
+      return (
+        `Snapped: centre moved ${num(moved, 1)} px, radius ${grew >= 0 ? '+' : '−'}${num(Math.abs(grew), 1)} px, ` +
+        `edge under ${Math.round(out.support * 100)} % of the outline${out.support < 0.6 ? ' — part of the plate is hidden; check it' : ''}.`
+      );
+    }, { kind: 'snap', fallback: 'The snap could not run.' });
+  }, [server, ellipse, index, plateShape, assist]);
 
   const stabiliseNow = useCallback(async () => {
     if (!server || points.length < 8 || currentT === null) return;
-    setStabiliseProgress({ done: 0, total: server.frameCount });
-    setStabiliseNote(null);
-    try {
+    await stabilise.run(async task => {
       // The anchor is the frame the coach marked, or the nearest to the playhead.
       const anchor = points.find(p => p.s === 'm') ?? points[0];
-      const out = await stabiliseTrack(server, anchor.t, points, ellipse?.semiMajorPx ?? 20, (done, total) =>
-        setStabiliseProgress({ done, total }),
-      );
+      const out = await stabiliseTrack(server, anchor.t, points, ellipse?.semiMajorPx ?? 20, task.progress);
       dirtyRef.current = true;
       setPoints(out.points);
       setCamera('stabilised');
-      setStabiliseNote(
+      return (
         `Camera moved up to ${num(out.maxShiftPx, 1)} px; the track was corrected by up to ${num(out.maxCorrectionPx, 1)} px` +
-          (out.weakFrames > 0 ? `, with ${out.weakFrames} frames where the background gave little to hold on to.` : '.'),
+        (out.weakFrames > 0 ? `, with ${out.weakFrames} frames where the background gave little to hold on to.` : '.')
       );
-    } catch (e) {
-      setStabiliseNote(e instanceof Error ? e.message : 'Stabilisation could not run.');
-    } finally {
-      setStabiliseProgress(null);
-    }
-  }, [server, points, currentT, ellipse]);
+    }, { total: server.frameCount, onError: () => 'Stabilisation could not run.' });
+  }, [server, points, currentT, ellipse, stabilise]);
 
   const recentreNow = useCallback(async () => {
     if (!server || !ellipse || points.length < 8) return;
-    setRecentreProgress({ done: 0, total: points.length });
-    setRecentreNote(null);
-    try {
+    await recentre.run(async task => {
       const out = await recentreTrackOnOutline(
         server,
         points,
         ellipse,
-        (done, total) => setRecentreProgress({ done, total }),
+        task.progress,
         { shape: plateShape },
       );
       dirtyRef.current = true;
@@ -1679,17 +1663,13 @@ export function KinemosViewer() {
           ` Scale re-read at mid-pull from ${out.midPull.frames} frames: plate ${num(2 * after, 1)} px across` +
           (Math.abs(after - before) >= 0.25 ? ` (was ${num(2 * before, 1)} px on the calibration frame).` : '.');
       }
-      setRecentreNote(
+      return (
         `${out.recentred} of ${points.length} points now sit on the fitted outline's centre, moved by up to ${num(out.largestMovePx, 1)} px` +
-          (out.kept > 0 ? `; ${out.kept} kept the tracker's point because too little rim was visible.` : '.') +
-          scaleNote,
+        (out.kept > 0 ? `; ${out.kept} kept the tracker's point because too little rim was visible.` : '.') +
+        scaleNote
       );
-    } catch (e) {
-      setRecentreNote(e instanceof Error ? e.message : 'Re-centring could not run.');
-    } finally {
-      setRecentreProgress(null);
-    }
-  }, [server, points, ellipse, plateShape, seek]);
+    }, { total: points.length, onError: () => 'Re-centring could not run.' });
+  }, [server, points, ellipse, plateShape, seek, recentre]);
 
   /** Seek to the next frame the tracker was unsure about, after the playhead.
    *  Wraps, so repeated presses walk the whole set. */
@@ -1822,7 +1802,7 @@ export function KinemosViewer() {
     let alive = true;
     setLensK1(0);
     setLensSource('none');
-    setLensNote(null);
+    resetLens();
     if (!server || !clip) return;
     profileForClip(clip.deviceMake, clip.deviceModel, server.displayWidth, server.displayHeight, clip.athleteId)
       .then(found => {
@@ -1834,7 +1814,7 @@ export function KinemosViewer() {
     return () => {
       alive = false;
     };
-  }, [server, clip]);
+  }, [server, clip, resetLens]);
 
   /**
    * Measure this clip's lens from the straight edges already in the gym, and
@@ -1844,13 +1824,11 @@ export function KinemosViewer() {
    */
   const measureLens = useCallback(async () => {
     if (!server) return;
-    setLensBusy(true);
-    setLensNote(null);
-    try {
+    await lens.run(async task => {
       const result = await fitClipDistortion(server);
       const fit = result.fit;
       if (!fit) {
-        setLensNote(describeRefusal(result));
+        task.note(describeRefusal(result));
         return;
       }
       setLensK1(fit.model.k1);
@@ -1859,7 +1837,7 @@ export function KinemosViewer() {
         // Still applied to this clip — it is measured, and it is right — but
         // there is nothing to file it under for the next one.
         setLensSource('profile');
-        setLensNote(`${describeFit(fit)} Applied here; not stored, because the clip does not say which phone shot it.`);
+        task.note(`${describeFit(fit)} Applied here; not stored, because the clip does not say which phone shot it.`);
         return;
       }
       await saveDeviceProfile({
@@ -1878,24 +1856,20 @@ export function KinemosViewer() {
         sourceId: id ?? null,
       });
       setLensSource('profile');
-      setLensNote(`${describeFit(fit)} Stored for ${key} — every clip from it is corrected from now on.`);
-    } catch (e) {
-      const text = (e as { message?: string } | null)?.message ?? '';
-      setLensNote(
-        /kinemos_device_profiles/.test(text)
+      return `${describeFit(fit)} Stored for ${key} — every clip from it is corrected from now on.`;
+    }, {
+      onError: e =>
+        /kinemos_device_profiles/.test((e as { message?: string } | null)?.message ?? '')
           ? 'Measuring needs the kinemos_device_profiles table — the 20260903140000 migration has not been applied.'
           : 'The lens could not be measured.',
-      );
-    } finally {
-      setLensBusy(false);
-    }
-  }, [server, clip, source, id]);
+    });
+  }, [server, clip, source, id, lens]);
 
   const clearLens = useCallback(() => {
     setLensK1(0);
     setLensSource('none');
-    setLensNote('Back to no correction for this clip. The stored profile is still there; measuring again replaces it.');
-  }, []);
+    lens.setNote('Back to no correction for this clip. The stored profile is still there; measuring again replaces it.');
+  }, [lens]);
 
   // ── Sharing ───────────────────────────────────────────────────────────────
   /** The most recent talkover of this rep, for a share to carry. */
@@ -1913,9 +1887,8 @@ export function KinemosViewer() {
   const shareNow = useCallback(
     async (message: string) => {
       if (!frame || !server || !clip?.athleteId || !repSummary) return;
-      setShareBusy(true);
-      setShareNote(null);
-      try {
+      const athleteId = clip.athleteId;
+      await shareTask.run(async task => {
         const analysisId = await ensureId();
         if (!analysisId) return;
         const caption = [clip.athleteName, clip.exerciseName, clip.date ? formatDateShort(clip.date) : null]
@@ -1931,14 +1904,14 @@ export function KinemosViewer() {
           caption,
         });
         const coachEnv = getOwnerId();
-        const ownerId = await fetchAthleteOwnerId(clip.athleteId, coachEnv ?? '');
+        const ownerId = await fetchAthleteOwnerId(athleteId, coachEnv ?? '');
         if (!ownerId) {
-          setShareNote('The athlete has no environment to send into.');
+          task.note('The athlete has no environment to send into.');
           return;
         }
         const share = await createShare({
           analysisId,
-          athleteId: clip.athleteId,
+          athleteId,
           ownerId,
           senderCoachId: activeCoachId,
           note: message,
@@ -1958,19 +1931,10 @@ export function KinemosViewer() {
           },
         });
         setShares(current => [share, ...current]);
-        setShareNote(`Sent to ${clip.athleteName ?? 'the athlete'} — it is in their coach thread now.`);
-      } catch (e) {
-        const text = (e as { message?: string } | null)?.message ?? '';
-        setShareNote(
-          /kinemos_shares/.test(text)
-            ? 'Sharing needs the kinemos_shares table — the 20260903120000 migration has not been applied.'
-            : 'The share could not be sent.',
-        );
-      } finally {
-        setShareBusy(false);
-      }
+        return `Sent to ${clip.athleteName ?? 'the athlete'} — it is in their coach thread now.`;
+      }, { onError: describeShareFailure });
     },
-    [frame, server, clip, repSummary, ensureId, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade, latestTalkover],
+    [frame, server, clip, repSummary, ensureId, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade, latestTalkover, shareTask],
   );
 
   /**
@@ -1980,9 +1944,7 @@ export function KinemosViewer() {
    */
   const exportNow = useCallback(async () => {
     if (!server || points.length < 2) return;
-    setExporting({ done: 0, total: 1 });
-    setExportNote(null);
-    try {
+    await exportTask.run(async task => {
       const caption = [
         clip?.athleteName,
         [clip?.exerciseName, massKg !== null ? `${num(massKg, Number.isInteger(massKg) ? 0 : 1)} kg` : null].filter(Boolean).join(' '),
@@ -2001,7 +1963,7 @@ export function KinemosViewer() {
               return v === null || t < series.t[0] || t > series.t[series.t.length - 1] ? null : `${num(v, 2)} m/s`;
             }
           : null,
-        onProgress: (done, total) => setExporting({ done, total }),
+        onProgress: task.progress,
       });
       const stem = [clip?.athleteName, clip?.exerciseName, clip?.date, `rep${repIndex}`]
         .filter(Boolean)
@@ -2016,16 +1978,12 @@ export function KinemosViewer() {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setExportNote(
+      return (
         `${name} — ${num(result.blob.size / 1_000_000, 1)} MB, ${result.frames} frames, ${num(result.durationS, 1)} s` +
-          (result.extension === 'webm' ? '. This browser has no H.264 encoder, so it is WebM; Chrome or Edge on a desktop writes MP4.' : '.'),
+        (result.extension === 'webm' ? '. This browser has no H.264 encoder, so it is WebM; Chrome or Edge on a desktop writes MP4.' : '.')
       );
-    } catch (e) {
-      setExportNote(e instanceof Error ? e.message : 'The export failed.');
-    } finally {
-      setExporting(null);
-    }
-  }, [server, points, clip, massKg, kinematics, repIndex]);
+    }, { total: 1, fallback: 'The export failed.' });
+  }, [server, points, clip, massKg, kinematics, repIndex, exportTask]);
 
   // ── Talkover ──────────────────────────────────────────────────────────────
   // The recorder reads the stage through refs, so scrubbing while it runs
@@ -2040,10 +1998,15 @@ export function KinemosViewer() {
   const toggleTalkover = useCallback(async () => {
     if (talkover) {
       // Stop, store, list.
-      setTalkoverBusy(true);
-      try {
-        const recording = await talkover.stop();
-        setTalkover(null);
+      await talkoverTask.run(async () => {
+        // setTalkover(null) must run even if stop() throws, or the UI stays
+        // showing a recording that has already ended.
+        let recording;
+        try {
+          recording = await talkover.stop();
+        } finally {
+          setTalkover(null);
+        }
         const analysisId = await ensureId();
         if (!analysisId) return;
         const key = await uploadTalkover(recording.blob, recording.mimeType);
@@ -2057,22 +2020,14 @@ export function KinemosViewer() {
           payload: { durationS: recording.durationS, mimeType: recording.mimeType, withAudio: recording.withAudio },
         });
         setAnnotations(current => [...current, row]);
-        setTalkoverNote(
-          recording.withAudio
-            ? `Saved — ${formatTalkoverLength(recording.durationS)}. It can go with the next share.`
-            : `Saved without sound — the microphone was not granted. ${formatTalkoverLength(recording.durationS)} of picture.`,
-        );
-      } catch (e) {
-        setTalkover(null);
-        setTalkoverNote(e instanceof Error ? e.message : 'The talkover could not be saved.');
-      } finally {
-        setTalkoverBusy(false);
-      }
+        return recording.withAudio
+          ? `Saved — ${formatTalkoverLength(recording.durationS)}. It can go with the next share.`
+          : `Saved without sound — the microphone was not granted. ${formatTalkoverLength(recording.durationS)} of picture.`;
+      }, { fallback: 'The talkover could not be saved.' });
       return;
     }
     if (!server) return;
-    setTalkoverNote(null);
-    try {
+    await talkoverTask.run(async () => {
       const caption = [clip?.athleteName, clip?.exerciseName, clip?.date ? formatDateShort(clip.date) : null]
         .filter(Boolean)
         .join(' · ');
@@ -2085,19 +2040,15 @@ export function KinemosViewer() {
         caption,
       });
       setTalkover(controller);
-      if (!controller.withAudio) setTalkoverNote('Recording the picture only — the microphone was not granted.');
-    } catch (e) {
-      setTalkoverNote(e instanceof Error ? e.message : 'Recording could not start.');
-    }
-  }, [talkover, server, ensureId, index, currentT, clip]);
+      if (!controller.withAudio) return 'Recording the picture only — the microphone was not granted.';
+    }, { fallback: 'Recording could not start.' });
+  }, [talkover, talkoverTask, server, ensureId, index, currentT, clip]);
 
   /** The same picture and numbers, to a colleague coach. */
   const shareWithCoach = useCallback(
     async (coachId: string, message: string) => {
       if (!frame || !server || !repSummary) return;
-      setShareBusy(true);
-      setShareNote(null);
-      try {
+      await shareTask.run(async task => {
         const analysisId = await ensureId();
         if (!analysisId) return;
         const caption = [clip?.athleteName, clip?.exerciseName, clip?.date ? formatDateShort(clip.date) : null]
@@ -2114,7 +2065,7 @@ export function KinemosViewer() {
         });
         const ownerId = getOwnerId();
         if (!ownerId) {
-          setShareNote('No environment to share within.');
+          task.note('No environment to share within.');
           return;
         }
         const share = await createClubShare({
@@ -2140,19 +2091,10 @@ export function KinemosViewer() {
         });
         setShares(current => [share, ...current]);
         const name = colleagues.find(c => c.id === coachId)?.name ?? 'your colleague';
-        setShareNote(`Sent to ${name} — it is on their video library under “Shared with you”.`);
-      } catch (e) {
-        const text = (e as { message?: string } | null)?.message ?? '';
-        setShareNote(
-          /kinemos_shares/.test(text)
-            ? 'Sharing needs the kinemos_shares table — the 20260903120000 migration has not been applied.'
-            : 'The share could not be sent.',
-        );
-      } finally {
-        setShareBusy(false);
-      }
+        return `Sent to ${name} — it is on their video library under “Shared with you”.`;
+      }, { onError: describeShareFailure });
     },
-    [frame, server, repSummary, ensureId, clip, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade, latestTalkover, colleagues],
+    [frame, server, repSummary, ensureId, clip, points, currentT, ellipse, activeCoachId, massKg, repIndex, grade, latestTalkover, colleagues, shareTask],
   );
 
   const removeShare = useCallback(async (shareId: string) => {
@@ -2160,9 +2102,9 @@ export function KinemosViewer() {
       await deleteShare(shareId);
       setShares(current => current.filter(s => s.id !== shareId));
     } catch {
-      setShareNote('That share could not be taken back.');
+      shareTask.setNote('That share could not be taken back.');
     }
-  }, []);
+  }, [shareTask]);
 
   const removeAnnotation = useCallback(async (annotationId: string) => {
     try {
@@ -2511,27 +2453,27 @@ export function KinemosViewer() {
         ? {
             athleteName: clip.athleteId ? clip.athleteName ?? 'the athlete' : null,
             shares,
-            busy: shareBusy,
-            note: shareNote,
+            busy: shareTask.isBusy,
+            note: shareTask.note,
             ready: points.length > 1 && calibration !== null && repSummary !== null,
             onShare: on.share,
             onDelete: on.removeShare,
             onExport: on.export,
-            exporting,
-            exportNote,
+            exporting: exportTask.progress,
+            exportNote: exportTask.note,
             talkoverIncluded: latestTalkover !== null,
             colleagues,
             onShareWithCoach: on.shareWithCoach,
           }
         : null,
-    [clip, shares, shareBusy, shareNote, points.length, calibration, repSummary, exporting, exportNote, latestTalkover, colleagues, on.share, on.removeShare, on.export, on.shareWithCoach],
+    [clip, shares, shareTask.isBusy, shareTask.note, points.length, calibration, repSummary, exportTask.progress, exportTask.note, latestTalkover, colleagues, on.share, on.removeShare, on.export, on.shareWithCoach],
   );
   const talkoverState = useMemo<TalkoverState | null>(
     () =>
       talkoverMimeType() === null
         ? null
-        : { recording: talkover !== null, startedAt: talkover?.startedAt ?? null, busy: talkoverBusy, note: talkoverNote, onToggle: on.toggleTalkover },
-    [talkover, talkoverBusy, talkoverNote, on.toggleTalkover],
+        : { recording: talkover !== null, startedAt: talkover?.startedAt ?? null, busy: talkoverTask.isBusy, note: talkoverTask.note, onToggle: on.toggleTalkover },
+    [talkover, talkoverTask.isBusy, talkoverTask.note, on.toggleTalkover],
   );
   const liftMarks = useMemo(
     () => ({
@@ -2562,20 +2504,20 @@ export function KinemosViewer() {
       source: lensSource,
       k1: lensK1,
       device: [clip?.deviceMake, clip?.deviceModel].filter(Boolean).join(' ') || null,
-      busy: lensBusy,
-      note: lensNote,
+      busy: lens.isBusy,
+      note: lens.note,
       onMeasure: on.measureLens,
       onClear: clearLens,
     }),
-    [lensSource, lensK1, clip?.deviceMake, clip?.deviceModel, lensBusy, lensNote, clearLens, on.measureLens],
+    [lensSource, lensK1, clip?.deviceMake, clip?.deviceModel, lens.isBusy, lens.note, clearLens, on.measureLens],
   );
   const stabiliseState = useMemo(
-    () => (points.length >= 8 ? { onRun: on.stabilise, progress: stabiliseProgress, note: stabiliseNote } : undefined),
-    [points.length, stabiliseProgress, stabiliseNote, on.stabilise],
+    () => (points.length >= 8 ? { onRun: on.stabilise, progress: stabilise.progress, note: stabilise.note } : undefined),
+    [points.length, stabilise.progress, stabilise.note, on.stabilise],
   );
   const recentreState = useMemo(
-    () => (points.length >= 8 && ellipse ? { onRun: on.recentre, progress: recentreProgress, note: recentreNote } : undefined),
-    [points.length, ellipse, recentreProgress, recentreNote, on.recentre],
+    () => (points.length >= 8 && ellipse ? { onRun: on.recentre, progress: recentre.progress, note: recentre.note } : undefined),
+    [points.length, ellipse, recentre.progress, recentre.note, on.recentre],
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -3271,7 +3213,7 @@ export function KinemosViewer() {
               onClear={on.clearCalibration}
               onFind={on.findPlate}
               onSnap={on.snap}
-              assist={assist}
+              assist={assistProp}
               shape={plateShape}
               onShape={setPlateShape}
               frontView={frontView}
