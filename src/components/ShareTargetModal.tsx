@@ -1,35 +1,111 @@
 /**
- * ShareAthleteModal — host-side UI to invite another coach to co-coach
- * or view-only access an athlete. Lists every coach in coach_profiles
- * except the active one and those who already have an active row, with
- * a role picker per invite. Shows current collaborators so the host can
- * revoke at any time.
+ * ShareTargetModal — host-side UI to invite another coach to co-coach or view
+ * an athlete or a training group.
+ *
+ * One component for both, because they were the same screen twice: 619 lines
+ * across ShareAthleteModal and ShareGroupModal that differed only in which
+ * collaborator hook they called, which FK the row carried (`athlete_id` vs
+ * `group_id` — every other column is identical), and four strings of copy.
+ * Four separate blocks of duplicated markup had already drifted apart in
+ * wording by 0.108.2.
+ *
+ * What genuinely differs lives in COPY below, keyed by kind. The group variant
+ * says more, and has to: sharing a group also grants access to its member
+ * athletes (the group→athlete cascade in accessScope), and a co_coach can add
+ * their own athletes to the group. The host should understand that blast
+ * radius before inviting, so that callout is not boilerplate to be unified
+ * away.
  */
 import { useEffect, useState } from 'react';
-import { X, UserPlus, Check, Clock, Slash } from 'lucide-react';
-import type { Athlete, CoachProfile, AthleteCollaborator, CollaboratorRole } from '../lib/database.types';
+import { UserPlus, Check, Clock, Slash } from 'lucide-react';
+import type { CoachProfile, CollaboratorRole } from '../lib/database.types';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
 import { useAthleteCollaborators } from '../hooks/useAthleteCollaborators';
+import { useTrainingGroupCollaborators } from '../hooks/useTrainingGroupCollaborators';
 import { useCoachStore } from '../store/coachStore';
 import { useAthleteStore } from '../store/athleteStore';
+import { AdaptiveDialog } from './ui/AdaptiveDialog';
+import { describeError } from '../lib/errorMessage';
 
-interface Props {
-  athlete: Athlete;
-  onClose: () => void;
+export type ShareTargetKind = 'athlete' | 'group';
+
+export interface ShareTarget {
+  kind: ShareTargetKind;
+  id: string;
+  name: string;
+  /** The host coach — only they can invite or revoke. */
+  ownerId: string;
 }
 
-export function ShareAthleteModal({ athlete, onClose }: Props) {
+/**
+ * The columns both collaborator tables share. Structural rather than a union,
+ * so neither the row component nor the list logic has to know which table a
+ * row came from.
+ */
+interface Collaborator {
+  id: string;
+  coach_id: string;
+  role: CollaboratorRole;
+  accepted_at: string | null;
+  revoked_at: string | null;
+}
+
+const COPY: Record<ShareTargetKind, {
+  subtitle: string;
+  /** Extra warning above the invite controls. Group only. */
+  cascade: string | null;
+  inboxLabel: string;
+  inbox: (name: string) => React.ReactNode;
+}> = {
+  athlete: {
+    subtitle: 'Invite other coaches to co-coach or view this athlete.',
+    cascade: null,
+    inboxLabel: 'Inbox is shared',
+    inbox: name => (
+      <>
+        <strong>Inbox is shared.</strong> Every message between you and {name} — general
+        thread and session comments — is visible to the invited coach. New replies show
+        the sender's name on each bubble so the athlete can see who wrote what.
+      </>
+    ),
+  },
+  group: {
+    subtitle:
+      'Co-coaches can edit the group programme and add their own athletes; viewers get read-only supervision.',
+    cascade:
+      'Sharing this group also grants access to its member athletes. A co-coach can add ' +
+      'their own athletes into the group, which then become shared with you too.',
+    inboxLabel: 'Inboxes are shared',
+    inbox: () => (
+      <>
+        <strong>Athlete inboxes are shared.</strong> If a member athlete is also shared with
+        this coach, their general thread and session comments are visible to both coaches.
+        New replies show the sender's name so each athlete can see which coach wrote what.
+      </>
+    ),
+  },
+};
+
+export function ShareTargetModal({ target, onClose }: { target: ShareTarget; onClose: () => void }) {
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const refreshAthletes = useAthleteStore(s => s.fetchAthletes);
   const { fetchCoaches } = useCoachProfiles();
-  const { listCollaboratorsFor, inviteCoach, revokeAccess } = useAthleteCollaborators();
+
+  // Both hooks run every render — hooks cannot be called conditionally — and
+  // the kind picks which one this modal actually drives. Neither fetches
+  // anything until one of its functions is called.
+  const athleteCollaborators = useAthleteCollaborators();
+  const groupCollaborators = useTrainingGroupCollaborators();
+  const api = target.kind === 'athlete' ? athleteCollaborators : groupCollaborators;
 
   const [coaches, setCoaches] = useState<CoachProfile[]>([]);
-  const [collaborators, setCollaborators] = useState<AthleteCollaborator[]>([]);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [role, setRole] = useState<CollaboratorRole>('co_coach');
   const [error, setError] = useState<string | null>(null);
+
+  const copy = COPY[target.kind];
 
   useEffect(() => {
     let cancelled = false;
@@ -37,29 +113,32 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
       try {
         const [allCoaches, existing] = await Promise.all([
           fetchCoaches(),
-          listCollaboratorsFor(athlete.id),
+          api.listCollaboratorsFor(target.id),
         ]);
         if (cancelled) return;
         setCoaches(allCoaches);
         setCollaborators(existing);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Couldn’t load coaches. Check your connection and try again.');
+        if (!cancelled) setError(describeError(e));
       }
     })();
     return () => { cancelled = true; };
-  }, [athlete.id]);
+    // `api` and `fetchCoaches` are rebuilt every render by their hooks, so
+    // depending on them would refetch forever. The target is what this load
+    // actually keys on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.id, target.kind]);
 
-  const hostId = athlete.owner_id;
-  const isHost = activeCoachId === hostId;
+  const isHost = activeCoachId === target.ownerId;
 
-  // Coaches eligible to be invited: not the host, not already in an
-  // active (non-revoked) relationship. We still show revoked rows in
-  // the list so the host can re-invite by clicking through the picker.
+  // Coaches eligible to be invited: not the host, not already in an active
+  // (non-revoked) relationship. Revoked rows still show in the list so the host
+  // can re-invite by clicking through the picker.
   const activeCollaboratorIds = new Set(
     collaborators.filter(c => c.revoked_at == null).map(c => c.coach_id),
   );
   const inviteCandidates = coaches.filter(
-    c => c.id !== hostId && !activeCollaboratorIds.has(c.id),
+    c => c.id !== target.ownerId && !activeCollaboratorIds.has(c.id),
   );
 
   const coachName = (id: string) => coaches.find(c => c.id === id)?.name ?? '(unknown coach)';
@@ -69,17 +148,16 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const row = await inviteCoach({
-        athleteId: athlete.id,
-        coachId,
-        inviterId: activeCoachId,
-        role,
-      });
+      // The one shape difference between the two tables: which FK the invite
+      // carries. Everything past this point is identical.
+      const row = await (target.kind === 'athlete'
+        ? athleteCollaborators.inviteCoach({ athleteId: target.id, coachId, inviterId: activeCoachId, role })
+        : groupCollaborators.inviteCoach({ groupId: target.id, coachId, inviterId: activeCoachId, role }));
       // Optimistic local update — replace any existing row for this pair.
       setCollaborators(prev => [row, ...prev.filter(c => c.coach_id !== coachId)]);
       setPickerOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t send invite. Nothing was sent.');
+      setError(describeError(e));
     } finally {
       setBusy(false);
     }
@@ -89,41 +167,28 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await revokeAccess(id);
+      await api.revokeAccess(id);
       setCollaborators(prev =>
         prev.map(c => (c.id === id ? { ...c, revoked_at: new Date().toISOString() } : c)),
       );
       await refreshAthletes(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t revoke access. Access is unchanged.');
+      setError(describeError(e));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-[480px] max-h-[80vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">Share {athlete.name}</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {isHost
-                ? 'Invite other coaches to co-coach or view this athlete.'
-                : 'Only the host coach can manage sharing.'}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-gray-100 text-gray-500"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
+    <AdaptiveDialog onClose={onClose} panel="bare" ariaLabel={`Share ${target.name}`}>
+      <div className="bg-white rounded-xl shadow-xl w-[480px] max-w-full max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="px-4 py-3 border-b border-gray-200">
+          <h2 className="text-base font-semibold text-gray-900">Share {target.name}</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {isHost ? copy.subtitle : 'Only the host coach can manage sharing.'}
+          </p>
         </div>
 
-        {/* Body */}
         <div className="px-4 py-3 flex-1 overflow-y-auto space-y-3">
           {error && (
             <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
@@ -131,23 +196,24 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
             </div>
           )}
 
-          {/* Current collaborators */}
+          {copy.cascade && (
+            <div className="text-[11px] text-[color:var(--color-accent)] bg-[var(--color-accent-subtle)] border border-[color:var(--color-accent-border)] rounded px-2.5 py-1.5">
+              {copy.cascade}
+            </div>
+          )}
+
           <section>
             <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
               People with access
             </h3>
             <div className="border border-gray-200 rounded overflow-hidden">
               <div className="px-3 py-2 bg-gray-50 flex items-center gap-2 text-xs text-gray-700 border-b border-gray-200">
-                <span className="w-5 h-5 rounded-full bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] flex items-center justify-center text-[10px] font-medium">
-                  {coachName(hostId).split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()}
-                </span>
-                <span className="font-medium">{coachName(hostId)}</span>
+                <Initials name={coachName(target.ownerId)} tone="accent" />
+                <span className="font-medium">{coachName(target.ownerId)}</span>
                 <span className="text-[10px] text-gray-500 ml-auto">Host</span>
               </div>
               {collaborators.length === 0 ? (
-                <div className="px-3 py-2.5 text-xs text-gray-500 italic">
-                  No other coaches yet.
-                </div>
+                <div className="px-3 py-2.5 text-xs text-gray-500 italic">No other coaches yet.</div>
               ) : (
                 collaborators.map(c => (
                   <CollaboratorRow
@@ -163,7 +229,6 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
             </div>
           </section>
 
-          {/* Invite */}
           {isHost && (
             <section>
               <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
@@ -175,14 +240,9 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
                   checked
                   readOnly
                   className="mt-0.5 flex-shrink-0 accent-blue-600"
-                  aria-label="Inbox is shared"
+                  aria-label={copy.inboxLabel}
                 />
-                <span>
-                  <strong>Inbox is shared.</strong> Every message between you and{' '}
-                  {athlete.name} — general thread and session comments — is visible to
-                  the invited coach. New replies show the sender's name on each bubble
-                  so the athlete can see who wrote what.
-                </span>
+                <span>{copy.inbox(target.name)}</span>
               </div>
               <div className="flex items-center gap-2 mb-2">
                 <label className="text-xs text-gray-600">Role:</label>
@@ -245,7 +305,23 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
+  );
+}
+
+/** Up to two initials in a circle — the host row and every collaborator row. */
+function Initials({ name, tone = 'plain' }: { name: string; tone?: 'plain' | 'accent' }) {
+  const letters = name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+  return (
+    <span
+      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium ${
+        tone === 'accent'
+          ? 'bg-[var(--color-accent-muted)] text-[color:var(--color-accent)]'
+          : 'bg-gray-100 text-gray-600'
+      }`}
+    >
+      {letters}
+    </span>
   );
 }
 
@@ -256,7 +332,7 @@ function CollaboratorRow({
   onRevoke,
   busy,
 }: {
-  collaborator: AthleteCollaborator;
+  collaborator: Collaborator;
   coachName: string;
   canManage: boolean;
   onRevoke: () => void;
@@ -270,9 +346,7 @@ function CollaboratorRow({
 
   return (
     <div className="px-3 py-2 flex items-center gap-2 text-xs text-gray-700 border-b border-gray-200 last:border-b-0">
-      <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-[10px] font-medium">
-        {coachName.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()}
-      </span>
+      <Initials name={coachName} />
       <span className="font-medium">{coachName}</span>
       <span className="text-[10px] text-gray-500">
         {collaborator.role === 'co_coach' ? 'co-coach' : 'viewer'}

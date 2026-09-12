@@ -22,7 +22,8 @@ import { SourceBadge } from './SourceBadge';
 import { requestRevertToGroup } from './revertToGroup';
 import { expandForCounting } from '../../lib/comboExpansion';
 import { ExerciseFormModal } from '../ExerciseFormModal';
-import { Button } from '../ui';
+import { Button, alertDialog } from '../ui';
+import { logError } from '../../lib/errorLogger';
 import { plannedRowLabel } from '../../lib/plannedRowLabel';
 
 interface MacroTargetData {
@@ -95,6 +96,7 @@ export function DayEditor({
   saveNotes,
   saveGppSection,
   deletePlannedExercise,
+  reorderExercises,
 }: DayEditorProps) {
   const { createExercise } = useExercises();
   const [macroTargets, setMacroTargets] = useState<Map<string, MacroTargetData>>(new Map());
@@ -275,8 +277,21 @@ export function DayEditor({
   }
 
   async function handleDragEnd(orderedIds: string[]) {
-    for (let i = 0; i < orderedIds.length; i++) {
-      await supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', orderedIds[i]);
+    // Use the service the parent already passes in rather than a private copy.
+    // This wrote its own loop — one sequential round trip per row, ten of them
+    // on a full day, with every error discarded — while `reorderExercises`
+    // (useWeekPlans) did the same work in parallel and is the one definition.
+    try {
+      await reorderExercises(weekPlan.id, orderedIds);
+    } catch (e) {
+      void logError(e, {
+        source: 'manual',
+        context: { at: 'DayEditor/handleDragEnd', count: orderedIds.length },
+      });
+      void alertDialog({
+        title: "Couldn't save the new order",
+        message: 'The exercises are back in their previous order. Check the connection and try again.',
+      });
     }
     await onRefresh();
   }

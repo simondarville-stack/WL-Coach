@@ -17,8 +17,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Plus, Eye, EyeOff } from 'lucide-react';
 import type { AthleteHiddenKey, Exercise, PlannedExercise } from '../../lib/database.types';
-import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
-import { formatSeconds, parseTimeInput, timeEditValue, parseTempoInput } from '../../lib/exerciseFeatures';
+import type { ExerciseFeatures, NumericFeatureKey } from '../../lib/exerciseFeatures';
+import { FEATURE_REGISTRY, formatSeconds, parseTimeInput, timeEditValue, parseTempoInput } from '../../lib/exerciseFeatures';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useRepeatOnHold } from '../../hooks/useRepeatOnHold';
 import { gestureDelta, SHIFT_STEP_MULTIPLIER } from '../../lib/stepGesture';
@@ -200,46 +200,41 @@ export function AnalysisColumn({
 
   // Numeric-feature patcher for the summary overrides and durations; tempo
   // (a string) goes through onSaveFeatures directly.
-  const patchFeatures = (patch: Partial<Record<'totalTime' | 'restTime' | 'totalReps' | 'totalSets' | 'highestLoad' | 'avgLoad', number | undefined>>) => {
+  const patchFeatures = (patch: Partial<Record<NumericFeatureKey, number | undefined>>) => {
     const next: ExerciseFeatures = { ...features };
     for (const [k, v] of Object.entries(patch)) {
-      const key = k as 'totalTime' | 'restTime' | 'totalReps' | 'totalSets' | 'highestLoad' | 'avgLoad';
+      const key = k as NumericFeatureKey;
       if (v == null) delete next[key];
       else next[key] = v;
     }
     onSaveFeatures(next);
   };
 
+  /**
+   * What a feature starts at when the coach adds it. The key, icon and label
+   * come from FEATURE_REGISTRY — only the seed is local, because it reads this
+   * row's computed summary. Until 0.108.3 this list restated the registry's
+   * icons and labels inline, so the registry was authoritative in name only
+   * and the two could drift silently.
+   */
+  const addFeature: Record<keyof ExerciseFeatures, () => void> = {
+    totalTime: () => patchFeatures({ totalTime: 600 }),
+    restTime: () => patchFeatures({ restTime: 120 }),
+    tempo: () => onSaveFeatures({ ...features, tempo: '3-0-1-0' }),
+    totalReps: () => patchFeatures({ totalReps: ex.summary_total_reps ?? 0 }),
+    totalSets: () => patchFeatures({ totalSets: ex.summary_total_sets ?? 0 }),
+    highestLoad: () => patchFeatures({ highestLoad: ex.summary_highest_load ?? 0 }),
+    avgLoad: () => patchFeatures({ avgLoad: ex.summary_avg_load ?? ex.summary_highest_load ?? 0 }),
+  };
+
   const featureItems: FeatureMenuItem[] = [
     ...extraFeatureItems,
-    ...(features.totalTime == null ? [{
-      key: 'totalTime', icon: '⏱', label: 'Total time',
-      onAdd: () => patchFeatures({ totalTime: 600 }),
-    }] : []),
-    ...(features.restTime == null ? [{
-      key: 'restTime', icon: '⏸', label: 'Rest time',
-      onAdd: () => patchFeatures({ restTime: 120 }),
-    }] : []),
-    ...(features.tempo == null ? [{
-      key: 'tempo', icon: '⧖', label: 'Tempo (TUT)',
-      onAdd: () => onSaveFeatures({ ...features, tempo: '3-0-1-0' }),
-    }] : []),
-    ...(features.totalReps == null ? [{
-      key: 'totalReps', icon: 'Σ', label: 'Total reps — overwrites summation',
-      onAdd: () => patchFeatures({ totalReps: ex.summary_total_reps ?? 0 }),
-    }] : []),
-    ...(features.totalSets == null ? [{
-      key: 'totalSets', icon: 'S', label: 'Total sets — overwrites summation',
-      onAdd: () => patchFeatures({ totalSets: ex.summary_total_sets ?? 0 }),
-    }] : []),
-    ...(features.highestLoad == null ? [{
-      key: 'highestLoad', icon: 'Hi', label: 'Highest load — overwrites',
-      onAdd: () => patchFeatures({ highestLoad: ex.summary_highest_load ?? 0 }),
-    }] : []),
-    ...(features.avgLoad == null ? [{
-      key: 'avgLoad', icon: 'Ø', label: 'Avg load — overwrites',
-      onAdd: () => patchFeatures({ avgLoad: ex.summary_avg_load ?? ex.summary_highest_load ?? 0 }),
-    }] : []),
+    ...FEATURE_REGISTRY.filter(def => features[def.key] == null).map(def => ({
+      key: def.key,
+      icon: def.icon,
+      label: def.label,
+      onAdd: addFeature[def.key],
+    })),
   ];
 
   const parseCount = (t: string) => { const n = parseInt(t, 10); return isNaN(n) || n < 0 ? null : n; };

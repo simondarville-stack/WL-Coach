@@ -30,6 +30,7 @@ import {
 import { resolveLibraryScope } from '../../lib/libraryScope';
 import { matchExercise, type MatchBy } from '../../lib/exerciseMatching';
 import { Button } from '../ui';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 
 interface AdoptLibraryWizardProps {
   targetLibrary: { id: string; name: string };
@@ -230,7 +231,7 @@ export function AdoptLibraryWizard({ targetLibrary, isEditor, onClose, onComplet
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <AdaptiveDialog onClose={onClose} panel="bare" ariaLabel="Adopt a shared catalogue">
       <div
         className="rounded-lg w-full max-h-[90vh] flex flex-col"
         style={{ maxWidth: 780, backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}
@@ -402,6 +403,6 @@ export function AdoptLibraryWizard({ targetLibrary, isEditor, onClose, onComplet
           )}
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }

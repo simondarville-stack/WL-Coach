@@ -540,6 +540,10 @@ export function ExerciseTree({
     const isCat = d.kind === 'category';
     const carried = isCat ? d.childCount : d.descendantCount;
     return (
+      // Not a dialog: this is the ghost that follows the cursor during a
+      // drag. It is inert (pointerEvents: 'none'), has no dismissal contract
+      // and must not trap focus — AdaptiveDialog would be actively wrong here.
+      // eslint-disable-next-line no-restricted-syntax
       <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 200 }}>
         <div
           style={{

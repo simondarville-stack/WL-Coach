@@ -20,6 +20,7 @@ import type { MatchBy } from '../../lib/exerciseMatching';
 import { LibraryChip } from './LibraryChip';
 import { Button } from '../ui';
 import { confirmDialog } from '../ui';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 
 export interface DuplicatePair {
   personal: Exercise;
@@ -83,7 +84,7 @@ export function DuplicatesPanel({ pairs, personalLibraryId, onClose, onChanged }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <AdaptiveDialog onClose={onClose} panel="bare" ariaLabel="Merge duplicate exercises">
       <div
         className="rounded-lg w-full max-h-[85vh] flex flex-col"
         style={{ maxWidth: 640, backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}
@@ -170,6 +171,6 @@ export function DuplicatesPanel({ pairs, personalLibraryId, onClose, onChanged }
           )}
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }

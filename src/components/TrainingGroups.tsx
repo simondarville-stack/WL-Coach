@@ -4,7 +4,7 @@ import { Users, Plus, CreditCard as Edit2, Trash2, X, UserPlus, UserMinus, Share
 import { useTrainingGroups } from '../hooks/useTrainingGroups';
 import { useAthletes } from '../hooks/useAthletes';
 import { useCoachStore } from '../store/coachStore';
-import { ShareGroupModal } from './ShareGroupModal';
+import { ShareTargetModal } from './ShareTargetModal';
 import { Button } from './ui';
 import { confirmDialog, promptDialog, EmptyState } from './ui';
 import { Spinner } from './ui';
@@ -496,7 +496,10 @@ export function TrainingGroups() {
         )}
 
         {shareTarget && (
-          <ShareGroupModal group={shareTarget} onClose={() => setShareTarget(null)} />
+          <ShareTargetModal
+            target={{ kind: 'group', id: shareTarget.id, name: shareTarget.name, ownerId: shareTarget.owner_id }}
+            onClose={() => setShareTarget(null)}
+          />
         )}
       </div>
     </div>

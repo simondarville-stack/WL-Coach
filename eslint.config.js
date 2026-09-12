@@ -54,8 +54,6 @@ const LEGACY_OVERLAYS = [
   'src/components/EventOverviewModal.tsx',
   'src/components/ExerciseBulkImportModal.tsx',
   'src/components/ExerciseFormModal.tsx',
-  'src/components/ShareAthleteModal.tsx',
-  'src/components/ShareGroupModal.tsx',
   'src/components/TrainingGroups.tsx',
   'src/components/calendar/EventDetailModal.tsx',
   'src/components/calendar/EventFormModal.tsx',

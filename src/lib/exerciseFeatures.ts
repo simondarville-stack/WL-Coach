@@ -21,6 +21,15 @@ import type { PrescriptionSummary } from './prescriptionParser';
 
 export type { ExerciseFeatures };
 
+/**
+ * Every feature in the bag whose value is a number — i.e. all of them except
+ * `tempo`, which is the canonical "A-B-C-D" string. Derived rather than listed,
+ * so a new numeric feature needs no edit at the call sites that patch them.
+ */
+export type NumericFeatureKey = {
+  [K in keyof ExerciseFeatures]-?: ExerciseFeatures[K] extends number | undefined ? K : never;
+}[keyof ExerciseFeatures];
+
 export interface FeatureDefinition {
   key: keyof ExerciseFeatures;
   icon: string;         // registry glyph shown in the menu / chips

@@ -516,12 +516,51 @@ errors (Batch C).
    Worth doing opportunistically when a module is already being edited. Not worth a project.
    Say so if you want it done anyway and I will.
 
-### Batch C — contained refactors (~2 days)
+### Batch C — **SHIPPED in 0.108.3**
 
-9. `useAsyncTask` hook + migrate `KinemosViewer`'s ~20 status hooks (§3.1) ← **highest leverage**
-10. Merge the two Share modals (§3.3)
-11. Clear the 6 `AdaptiveDialog` errors (§3.2)
-12. Batch `DayEditor.handleDragEnd`; check errors in the top 3 N+1 loops (§2.3)
+9. ✅ `useAsyncTask` (`src/kinemos/hooks/useAsyncTask.ts`, 14 tests) replaces **seven**
+   hand-rolled busy/note pairs — not the ~8 estimated, and not ~20 `useState`: the honest
+   count is **12** removed (59 → 47). `snapshotBusy`, `referenceBusy` and
+   `comparisonLoading` were deliberately left alone — they are lone booleans with no note
+   that route errors elsewhere, so they are not instances of this pattern and wrapping them
+   would only add indirection. The hook also guards something no copy did: a superseded
+   run's progress, note and busy-clear are dropped.
+10. ✅ `ShareTargetModal` replaces `ShareAthleteModal` + `ShareGroupModal`: 619 → 380 lines,
+    and it uses `AdaptiveDialog`, so both files left the legacy-overlay list too.
+11. ✅ Four of the six `AdaptiveDialog` errors converted (`AdoptLibraryWizard`,
+    `CatalogueSharingModal`, `DuplicatesPanel`, `PrunePanel` — all the same
+    `fixed inset-0` + own-chrome shape, so `panel="bare"` fit as-is).
+    **The other two were false positives and were exempted with a stated reason, not
+    converted:**
+    - `ExerciseTree:543` is the ghost that follows the cursor during a drag —
+      `pointerEvents: 'none'`, no dismissal contract. A focus trap here would be a bug.
+    - `PrintWeekDesigner:425` is the scrim behind the options *drawer*, which is an inline
+      sidebar on a wide viewport and only slides over on a narrow one. `AdaptiveDialog`'s
+      sidebar mode is right-edge and renders its own backdrop, so adopting it means
+      restructuring both layouts inside a print surface. Worth doing against a real print
+      check rather than blind — left as a follow-up.
+12. ✅ The `DayEditor` reorder turned out **not** to need a better loop. The component is
+    *passed* a `reorderExercises` service prop, declared in `DayEditorProps` and never
+    destructured, so it had silently re-implemented it worse — sequentially, discarding
+    every error, while `useWeekPlans.reorderExercises` already did the same work in
+    parallel. It now calls the service.
+
+    That exposed the actual bug: **`reorderExercises` swallowed its errors, which made its
+    callers' recovery dead code.** `WeeklyPlanner:570` has always written
+    `.catch(() => handleRefresh())` against it and that catch had never once run — a failed
+    drag kept showing the new order until something else refetched. The service throws now,
+    so both call sites recover.
+
+Also shipped: **`FEATURE_REGISTRY` is wired up** (§3.4b). `ExerciseFeatureControls` derives
+its "+" menu from the registry instead of restating every icon and label inline, and the
+numeric-key union — previously spelled out twice by hand — is derived as `NumericFeatureKey`.
+`Record<keyof ExerciseFeatures, …>` now makes TypeScript *require* a seed for every registry
+entry, so the two cannot drift again. Three tests pin the registry's shape.
+
+> Lint 14 errors → **8**, all `no-explicit-any` and none in Batch C's scope. 1680 tests pass
+> (17 new). One regression was caught rather than shipped: passing `assist` as an inline
+> object literal gave `CalibrationPanel` a new prop identity every render and re-rendered it
+> on every frame step — `KinemosViewer.renders.test.tsx` failed, and the prop is memoised now.
 
 ### Batch D — deliberate projects (schedule separately)
 

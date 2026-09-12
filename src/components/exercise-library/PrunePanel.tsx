@@ -22,6 +22,7 @@ import { formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { buildChildrenIndex } from '../../lib/exerciseHierarchy';
 import { LibraryChip } from './LibraryChip';
 import { Button } from '../ui';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 
 interface PrunePanelProps {
   /** Exercises with no planned and no logged use in the window. */
@@ -132,7 +133,7 @@ export function PrunePanel({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <AdaptiveDialog onClose={onClose} panel="bare" ariaLabel="Archive unused exercises">
       <div
         className="rounded-lg w-full max-h-[86vh] flex flex-col"
         style={{ maxWidth: 700, backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}
@@ -309,6 +310,6 @@ export function PrunePanel({
           </Button>
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }

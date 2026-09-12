@@ -19,6 +19,7 @@ import { resolveLibraryScope, invalidateLibraryScope, type CoachLibraryScope } f
 import { Button } from '../ui';
 import type { CoachProfile, ExerciseLibrary, ExerciseLibraryMember, LibraryRole } from '../../lib/database.types';
 import { confirmDialog } from '../ui';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 
 interface CatalogueSharingModalProps {
   onClose: () => void;
@@ -136,7 +137,7 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
   const roleLabel = (role: LibraryRole) => (role === 'editor' ? 'Editor' : 'Viewer');
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <AdaptiveDialog onClose={onClose} panel="bare" ariaLabel="Shared catalogues">
       <div
         className="rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
         style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}
@@ -389,6 +390,6 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
           onComplete={() => { void load(); onChanged(); }}
         />
       )}
-    </div>
+    </AdaptiveDialog>
   );
 }

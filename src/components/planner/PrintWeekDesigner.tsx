@@ -421,7 +421,14 @@ export function PrintWeekDesigner({
         </button>
       )}
       {isNarrow && sidebarOpen && (
+        // Not a dialog: the scrim behind the options *drawer*, which is an
+        // inline sidebar on a wide viewport and only slides over on a narrow
+        // one. AdaptiveDialog's sidebar mode is right-edge and renders its own
+        // backdrop, so adopting it here means restructuring both layouts —
+        // inside a print surface. Worth doing with a real print check, not
+        // blind. See SIMPLIFY_REVIEW.md §3.2.
         <div
+          // eslint-disable-next-line no-restricted-syntax
           className="print:hidden fixed inset-0 bg-black/30 z-20"
           onClick={() => setSidebarOpen(false)}
           aria-hidden

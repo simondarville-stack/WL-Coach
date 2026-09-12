@@ -359,10 +359,24 @@ export function useWeekPlans() {
     }
   };
 
+  /**
+   * Compact a day's rows to 1..n. Parallel is safe here — planned_exercises
+   * carries no unique constraint on (weekplan_id, day_index, position);
+   * migration 20260216123451 dropped it so combo members could share a
+   * position. Set lines are the opposite case: see normalizeSetLinePositions.
+   *
+   * Throws on the first failure. It used to discard every error, which made
+   * the callers' own recovery dead code — WeeklyPlanner has always written
+   * `.catch(() => handleRefresh())` against this, and it had never once run,
+   * so a failed drag kept showing the new order until something else
+   * refetched.
+   */
   const reorderExercises = async (_weekPlanId: string, orderedIds: string[]) => {
-    await Promise.all(
+    const results = await Promise.all(
       orderedIds.map((id, i) => supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', id))
     );
+    const failed = results.find(r => r.error);
+    if (failed?.error) throw failed.error;
   };
 
   const moveExercise = async (

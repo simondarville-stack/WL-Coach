@@ -5,7 +5,7 @@ import {
   MapPin, Trophy, Share2, Lock, Link2, Check,
 } from 'lucide-react';
 import { PRTrackingPanel } from './planner/PRTrackingPanel';
-import { ShareAthleteModal } from './ShareAthleteModal';
+import { ShareTargetModal } from './ShareTargetModal';
 import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
@@ -829,8 +829,8 @@ export function Athletes() {
       )}
 
       {shareTarget && (
-        <ShareAthleteModal
-          athlete={shareTarget}
+        <ShareTargetModal
+          target={{ kind: 'athlete', id: shareTarget.id, name: shareTarget.name, ownerId: shareTarget.owner_id }}
           onClose={() => setShareTarget(null)}
         />
       )}
