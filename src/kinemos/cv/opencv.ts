@@ -105,12 +105,6 @@ export function loadOpenCv(): Promise<CV> {
   return loading;
 }
 
-/** Whether OpenCV has already been loaded — for a surface that wants to say
- *  "this will take a moment the first time" honestly. */
-export function isOpenCvLoaded(): boolean {
-  return loading !== null;
-}
-
 /** A greyscale image as the engine passes it around (see engine/tracker.ts). */
 export interface GrayLike {
   width: number;

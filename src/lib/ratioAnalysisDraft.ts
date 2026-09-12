@@ -58,11 +58,3 @@ export function saveRatioDraft<T>(sheet: T): void {
     /* quota / private mode — the sheet just won't survive a remount */
   }
 }
-
-export function clearRatioDraft(): void {
-  try {
-    localStorage.removeItem(DRAFT_KEY);
-  } catch {
-    /* best-effort */
-  }
-}

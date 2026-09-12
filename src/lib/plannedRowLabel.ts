@@ -46,9 +46,3 @@ export function plannedRowLabel(row: PlannedRowNaming, opts: LabelOptions = {}):
 
   return opts.exerciseName?.trim() || opts.fallback || 'Exercise';
 }
-
-/** True when this row shows a coach-typed name rather than its catalogue one,
- *  so a surface can mark it (the underlying exercise is not obvious). */
-export function hasNameOverride(row: PlannedRowNaming): boolean {
-  return !!row.display_name?.trim();
-}

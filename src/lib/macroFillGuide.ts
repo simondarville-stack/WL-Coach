@@ -69,8 +69,6 @@ export interface TrendModel {
   waypoints?: TrendWaypoint[];
 }
 
-export const DEFAULT_TREND: TrendModel = { shape: 'linear', bend: 50 };
-
 export const TREND_SHAPE_LABELS: Record<TrendShape, string> = {
   linear: 'Linear',
   accelerate: 'Late jump',

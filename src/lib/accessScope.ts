@@ -64,10 +64,6 @@ export async function resolveGroupAccess(coachId: string): Promise<Map<string, A
   return access;
 }
 
-export async function getAccessibleGroupIds(coachId: string): Promise<string[]> {
-  return Array.from((await resolveGroupAccess(coachId)).keys());
-}
-
 export interface AccessibleGroups {
   groups: TrainingGroup[];
   accessById: Record<string, AccessRole>;
@@ -150,10 +146,6 @@ export async function resolveAthleteAccess(
   }
 
   return access;
-}
-
-export async function getAccessibleAthleteIds(coachId: string): Promise<string[]> {
-  return Array.from((await resolveAthleteAccess(coachId)).keys());
 }
 
 export interface AccessibleAthletes {

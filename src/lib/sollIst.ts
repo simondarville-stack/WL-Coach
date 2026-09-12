@@ -27,7 +27,7 @@
  */
 import { supabase } from './supabase';
 import { getOwnerId } from './ownerContext';
-import { buildPRRows, REP_COUNTS, type RepCount } from './prTable';
+import { buildPRRows } from './prTable';
 import { roundToHalf } from './xrmUtils';
 import type { AthletePRHistory, Exercise } from './database.types';
 
@@ -224,9 +224,6 @@ export function captureIndividualRows(
 
 /** Round kg values for display/storage the way the PR table does. */
 export const roundKg = roundToHalf;
-
-/** Valid rep counts for model rows (mirrors the PR table). */
-export const SOLLIST_REP_COUNTS: readonly RepCount[] = REP_COUNTS;
 
 /** Stable-enough key for a new reference (sheet-local uniqueness suffices). */
 export function newRefKey(label: string, taken: Iterable<string>): string {

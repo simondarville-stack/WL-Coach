@@ -312,29 +312,82 @@ picker, avatar initials, section chrome).
 **Fix:** one `ShareTargetModal` parameterised by `{ kind, targetId, targetName, …verbs }`.
 Net ≈ −270 lines. **Effort: 2–3 h. Risk: low** — both are self-contained modals.
 
-### 3.4 Orphaned pre-rebuild Analysis module · **909 LOC, zero references**
+### 3.4 Orphaned pre-rebuild Analysis module · **REMOVED in 0.108.2**
 
-Four components and one helper have **zero references anywhere** in `src`, `scripts` or `verify`:
+> **The original estimate here (909 LOC, 5 files) was wrong — it was 1,646 LOC across 13
+> files.** The first count came from a symbol-level scan, which only sees what nothing
+> *names*. A module-level reachability trace from `src/main.tsx` found the rest: the seven
+> `presets/*.tsx` components and `PlannedVsPerformed.tsx` were referenced, but only by
+> `QuickAnalyses.tsx`, which was itself dead. The whole cluster was one orphaned subtree.
 
-| File | LOC |
-|---|---|
-| `src/components/analysis/PivotBuilder.tsx` | 312 |
-| `src/components/analysis/IntensityZones.tsx` | 202 |
-| `src/components/analysis/LiftRatios.tsx` | 183 |
-| `src/components/analysis/QuickAnalyses.tsx` | 144 |
-| `src/components/analysis/builder/coachMetrics.ts` (`loadCoachMetrics`) | 68 |
+Removed (every file last touched **02/09/2026**, one day before the rebuilt
+`builder/AnalysisModule.tsx` that `App.tsx` actually routes to landed on **03/09/2026**):
 
-History confirms these are the superseded module, not work-in-progress: all four were last
-touched **02/09/2026**, and `builder/AnalysisModule.tsx` — the rebuilt Analysis that `App.tsx`
-actually routes to — landed **03/09/2026**.
+| File | LOC | | File | LOC |
+|---|---|---|---|---|
+| `analysis/PivotBuilder.tsx` | 313 | | `analysis/presets/CompetitionLiftTrends.tsx` | 97 |
+| `analysis/PlannedVsPerformed.tsx` | 246 | | `analysis/presets/BodyweightTrend.tsx` | 77 |
+| `analysis/IntensityZones.tsx` | 203 | | `analysis/presets/SquatToLiftTransfer.tsx` | 75 |
+| `analysis/LiftRatios.tsx` | 184 | | `analysis/presets/TrainingPatterns.tsx` | 60 |
+| `analysis/QuickAnalyses.tsx` | 145 | | `analysis/presets/VolumeDistribution.tsx` | 60 |
+| `lib/analysisInsights.ts` | 90 | | `analysis/presets/PRTimeline.tsx` | 48 |
+| | | | `analysis/presets/ReadinessVsPerformance.tsx` | 48 |
 
-This is the "rebuilt" Analysis module CLAUDE.md describes; the old one was never removed.
+**Then a second cascade.** With those gone, `src/hooks/useAnalysis.ts` (829 lines, 12 exports)
+had exactly **one** live consumer: `useCoachDashboardV2` imports
+`fetchWeeklyAggregatesForAthletes`. Everything else — `fetchWeeklyAggregates`,
+`fetchExerciseTimeSeries`, `fetchIntensityZones`, `fetchLiftRatios`, `fetchBodyweightSeries`,
+`fetchPRTimeline`, and the `AnalysisParams` / `IntensityZone` / `LiftRatio` interfaces — served
+only the deleted components. (`fetchWeeklyAggregates` looked live to a grep; its one remaining
+mention is inside a *comment* in `useCoachDashboardV2`.) The file is now **552 lines** and
+exports the one function plus the two interfaces describing its return shape.
 
-**Fix:** delete. **This needs your explicit instruction** under the deletion policy — which is
-why it is listed rather than done. Note the carve-out likely applies (superseded, not a live
-experiment), but the call is yours. **Effort: 5 min once approved.**
+**Total removed: 1,923 LOC.** No test referenced any of it — the suite is 1663 tests before
+and after.
 
-### 3.5 Dead and over-exported symbols
+**This saves zero bundle bytes, and that is expected.** The code was unreachable, so Rollup
+was already tree-shaking it: the `AnalysisModule` chunk measures 227.9 kB after versus
+227.4 kB before (the difference is the version string). The return here is entirely
+maintenance — 1,923 fewer lines to read, grep through, and be misled by. Anyone hunting a bug
+in Analysis had five plausible-looking components to rule out first, one of them a 313-line
+`PivotBuilder` that has not run since 02/09.
+
+### 3.4b Two registries that are bypassed, not dead — **kept deliberately**
+
+The dead-symbol scan flagged `FEATURE_REGISTRY` (`src/lib/exerciseFeatures.ts`) and
+`COPYABLE_TARGET_FIELDS` (`src/lib/macroColumnCopy.ts`). **Neither was deleted, because
+neither is really dead** — they are canonical declarations the UI has stopped consulting:
+
+```ts
+// src/lib/exerciseFeatures.ts — the registry, exactly where CLAUDE.md wants it
+export const FEATURE_REGISTRY: FeatureDefinition[] = [
+  { key: 'totalTime', icon: '⏱', label: 'Total time', coachOnly: false },
+  { key: 'restTime',  icon: '⏸', label: 'Rest time',  coachOnly: false }, …
+
+// src/components/planner/ExerciseFeatureControls.tsx:215 — the same data, hardcoded
+...(features.totalTime == null ? [{ key: 'totalTime', icon: '⏱', label: 'Total time', …
+// …and the key union spelled out by hand at lines 203 and 206.
+```
+
+Deleting the registry would have cemented the hardcoding and destroyed the better version.
+This is the coach-flexibility principle failing quietly: a coach-configurable feature list
+exists and the component ignores it.
+
+**Fix (Batch C):** wire `ExerciseFeatureControls` to `FEATURE_REGISTRY`, deriving the key
+union from it (`typeof FEATURE_REGISTRY[number]['key']`) instead of restating it twice.
+**Effort: ~1 h.** Same question, less sharply, for `COPYABLE_TARGET_FIELDS` vs the partial
+field lists inlined across `MacroExcelIO`.
+
+### 3.5 Dead and over-exported symbols · **dead ones removed in 0.108.2**
+
+> **Method note, learned the hard way.** The first scan here read only `.ts`/`.tsx`/`.mjs`.
+> But `verify/*.html` — the browser harnesses — import engine modules directly
+> (`from '/src/kinemos/engine/tracker.ts'`). Re-running with `.html` included cleared several
+> symbols off the dead list that were never dead: `cutTemplateAt`, `blendTemplates`,
+> `DEFAULT_ACTIVITY_OPTIONS`, `canvasThumbReader`, `SCAN_MAX_EDGE`, `K1_LIMIT` and others.
+> Deleting them would have broken `npm run bench` and the harnesses while leaving
+> `npm test`, `tsc` and `vite build` all green. **Any future dead-code sweep must treat
+> `verify/*.html` as a root.**
 
 - **33 exported values with zero references anywhere**, including `restorePlannedSet`,
   `fetchInboxUnreadCount`, `fetchAthleteGeneralUnreadCount`, `updateAnalysis`,
@@ -435,11 +488,33 @@ errors (Batch C).
    `docs/history/agents/`; the file itself was left in place rather than moved, since
    relocating a tracked artifact is your call.
 
-### Batch B — needs your decision (~1 h once approved)
+### Batch B — **SHIPPED in 0.108.2** (items 6–7); item 8 declined
 
-6. Delete the 909 LOC orphaned Analysis module (§3.4) — *awaiting your instruction*
-7. Remove the 33 dead exports, after confirming the two access-scope helpers (§3.5)
-8. Drop `export` from the 87 file-local symbols
+6. ✅ Deleted the orphaned Analysis module — **1,923 LOC**, not the 909 estimated (§3.4).
+7. ✅ Removed 34 dead declarations across 19 files, plus 4 follow-on unused imports the
+   compiler surfaced. **Two flagged symbols were deliberately kept** — `FEATURE_REGISTRY`
+   and `COPYABLE_TARGET_FIELDS` are bypassed registries, not dead code (§3.4b). The five
+   unused joined-row types in `database.types.ts` were also kept: that file is a schema
+   mirror, and unused join shapes are its purpose, not debris.
+
+   The two access-scope helpers flagged for confirmation (`getAccessibleGroupIds`,
+   `getAccessibleAthleteIds`) **were** removed — reading them settled it. They are one-line
+   `Array.from((await resolve…).keys())` wrappers over `resolveGroupAccess` /
+   `resolveAthleteAccess`, both of which are live. Nothing lost a call site; any caller
+   needing ids calls the resolver.
+
+8. ❌ **Declined: dropping `export` from the file-local symbols.** Recommend striking it
+   from the roadmap. The real count is **378**, not 87 (84 values + 294 types), across ~165
+   files. It buys no speed and no reliability: TypeScript erases the types entirely, and the
+   values are already effectively module-scoped. Against that, it is a 378-line diff that
+   makes `git blame` worse on 165 files, carries real risk of a mechanical slip, and fights
+   the grain of a codebase in a fuzzy front end where modules are actively gaining
+   consumers. The one concrete upside considered — fewer
+   `react-refresh/only-export-components` warnings — evaporated on measurement: only **6**
+   of the 84 values are in `.tsx` files at all.
+
+   Worth doing opportunistically when a module is already being edited. Not worth a project.
+   Say so if you want it done anyway and I will.
 
 ### Batch C — contained refactors (~2 days)
 

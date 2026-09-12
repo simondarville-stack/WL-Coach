@@ -3,7 +3,7 @@
 // same registry interface). A spec composes two existing metrics with an
 // operator — the "guided composer" (no free-text formula parsing, no cycles).
 
-import type { DerivedMetricDef, MetricDef } from '../../../lib/analysis';
+import type { DerivedMetricDef } from '../../../lib/analysis';
 
 const KEY = 'emos.analysis.coachMetrics.v1';
 
@@ -61,8 +61,4 @@ export function specToMetric(spec: CoachMetricSpec): DerivedMetricDef {
       return a - b;
     },
   };
-}
-
-export function loadCoachMetrics(): MetricDef[] {
-  return loadCoachMetricSpecs().map(specToMetric);
 }

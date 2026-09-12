@@ -473,21 +473,6 @@ export function formatPrescription(lines: ParsedSetLine[], unit: string | null):
 }
 
 /**
- * Formats a prescription string for display with proper × symbols
- * Applies the display rule: sets = 1 → hide sets part
- */
-export function formatPrescriptionDisplay(prescription: string | null, unit: string | null = null): string {
-  if (!prescription || prescription.trim() === '') return '';
-
-  const parsed = parsePrescription(prescription);
-  if (parsed.length === 0) {
-    return prescription;
-  }
-
-  return formatPrescription(parsed, unit);
-}
-
-/**
  * Generates a compact preview for display
  */
 export function formatPrescriptionPreview(prescription: string | null): string {

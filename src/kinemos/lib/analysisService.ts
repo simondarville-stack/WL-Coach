@@ -186,17 +186,6 @@ export async function ensureAnalysis(
   return data as KinemosAnalysis;
 }
 
-export async function updateAnalysis(
-  analysisId: string,
-  patch: Partial<Pick<KinemosAnalysis, 'label' | 'mass_kg' | 'mass_source' | 'notes' | 'status'>>,
-): Promise<void> {
-  const { error } = await supabase
-    .from('kinemos_analyses')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', analysisId);
-  if (error) throw error;
-}
-
 /**
  * Store the analysis-level state the P2 pipeline produces: the mass it used,
  * how the clip was filmed, the phase edges as the coach has them, and the
@@ -393,14 +382,6 @@ export async function addAnnotation(
     .single();
   if (error) throw error;
   return data as KinemosAnnotation;
-}
-
-export async function updateAnnotationBody(id: string, body: string): Promise<void> {
-  const { error } = await supabase
-    .from('kinemos_annotations')
-    .update({ body, updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) throw error;
 }
 
 export async function deleteAnnotation(id: string): Promise<void> {

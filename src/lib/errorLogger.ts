@@ -66,14 +66,6 @@ export function addBreadcrumb(crumb: Omit<ErrorBreadcrumb, 'ts'>): void {
   }
 }
 
-export function getBreadcrumbs(): ReadonlyArray<ErrorBreadcrumb> {
-  return breadcrumbs;
-}
-
-export function clearBreadcrumbs(): void {
-  breadcrumbs = [];
-}
-
 export interface ActorContext {
   role: 'coach' | 'athlete' | 'unknown';
   id: string | null;

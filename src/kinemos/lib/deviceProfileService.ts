@@ -129,18 +129,3 @@ export async function saveDeviceProfile(args: SaveProfileArgs): Promise<KinemosD
   if (error) throw error;
   return data as KinemosDeviceProfile;
 }
-
-/** Every lens this environment has measured, newest first. */
-export async function listDeviceProfiles(): Promise<KinemosDeviceProfile[]> {
-  const { data, error } = await supabase
-    .from('kinemos_device_profiles')
-    .select('*')
-    .order('updated_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as KinemosDeviceProfile[];
-}
-
-export async function deleteDeviceProfile(id: string): Promise<void> {
-  const { error } = await supabase.from('kinemos_device_profiles').delete().eq('id', id);
-  if (error) throw error;
-}

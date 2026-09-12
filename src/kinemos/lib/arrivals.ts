@@ -36,7 +36,7 @@
  */
 import { openFrameServer } from '../engine/frameServer';
 import { autoAnalyse, describeAutoAnalysis, type AutoAnalyseResult } from './autoAnalyse';
-import { clipKeyOf, listRecentAnalyses } from './analysisService';
+import { clipKeyOf } from './analysisService';
 import type { KinemosAnalysis } from '../../lib/database.types';
 import type { LibrarySource, LibraryVideo } from './videoLibrary';
 
@@ -236,12 +236,6 @@ export async function runArrivalQueue(
  */
 export function unanalysedClips(rows: LibraryVideo[], analysed: Set<string>): LibraryVideo[] {
   return rows.filter(row => !row.isEmbed && !analysed.has(clipKeyOf(row.source, row.sourceId)));
-}
-
-/** The clip keys that already have at least one stored rep. */
-export async function analysedClipKeys(): Promise<Set<string>> {
-  const analyses = await listRecentAnalyses();
-  return new Set(analyses.map(a => clipKeyOf(a.source_kind as LibrarySource, a.source_id)));
 }
 
 /** Reps stored for a clip and the best grade among them. */

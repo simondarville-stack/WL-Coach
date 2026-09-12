@@ -66,8 +66,6 @@ export const DAYS_OF_WEEK = [
   { index: 7, name: 'Sunday' },
 ];
 
-export const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
 /**
  * Default label for a training unit when the coach hasn't named it.
  * Numbered by position in the week's display order ("Unit 1", "Unit 2", …)

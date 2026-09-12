@@ -1,6 +1,5 @@
 import { useCoachStore } from '../store/coachStore';
 import { useAthleteStore } from '../store/athleteStore';
-import type { Athlete, TrainingGroup } from './database.types';
 
 /**
  * Get the active coach's owner_id.
@@ -27,16 +26,5 @@ export function getContextOwnerId(): string {
   const state = useAthleteStore.getState();
   if (state.selectedAthlete) return state.selectedAthlete.owner_id;
   if (state.selectedGroup) return state.selectedGroup.owner_id;
-  return getOwnerId();
-}
-
-/**
- * Owner-id for an explicit athlete or group, without touching the store.
- * Use this in write paths where the target is already known so we don't
- * race the store. Falls back to getOwnerId() when both args are nullish.
- */
-export function ownerIdForTarget(athlete: Athlete | null, group: TrainingGroup | null): string {
-  if (athlete) return athlete.owner_id;
-  if (group) return group.owner_id;
   return getOwnerId();
 }

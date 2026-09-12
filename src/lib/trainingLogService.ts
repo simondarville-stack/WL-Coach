@@ -864,33 +864,6 @@ export async function setLogExerciseText(
   return data as TrainingLogExercise;
 }
 
-/**
- * Inverse of removePlannedSet — re-introduces a previously dropped
- * planned set (currently unused, but useful for future "undo remove").
- */
-export async function restorePlannedSet(
-  logExerciseId: string,
-  setNumber: number,
-): Promise<TrainingLogExercise> {
-  const { data: row, error: rErr } = await supabase
-    .from('training_log_exercises')
-    .select('metadata')
-    .eq('id', logExerciseId)
-    .single();
-  if (rErr) throw rErr;
-  const current = ((row as { metadata: { removed_set_numbers?: number[] } } | null)?.metadata
-    ?.removed_set_numbers ?? []) as number[];
-  const next = current.filter(n => n !== setNumber);
-  const { data, error } = await supabase
-    .from('training_log_exercises')
-    .update({ metadata: { ...((row as { metadata: object } | null)?.metadata ?? {}), removed_set_numbers: next } } as never)
-    .eq('id', logExerciseId)
-    .select()
-    .single();
-  if (error) throw error;
-  return data as TrainingLogExercise;
-}
-
 export interface SetPatch {
   logExerciseId: string;
   setNumber: number;
@@ -1979,10 +1952,6 @@ export async function fetchInboxUnreadSummary(ownerId: string): Promise<InboxUnr
   return { threads: keys.size, athleteIds: Array.from(athletes) };
 }
 
-export async function fetchInboxUnreadCount(ownerId: string): Promise<number> {
-  return (await fetchInboxUnreadSummary(ownerId)).threads;
-}
-
 // ─── General (no-session) thread helpers ─────────────────────────────────
 
 /** Every message in the general thread between this coach and athlete,
@@ -2060,22 +2029,6 @@ export async function markGeneralThreadRead(
     await markCoachThreadRead(getOwnerId(), coachThreadKey(null, athleteId));
   }
   emitInboxChanged();
-}
-
-/** Lightweight unread count for one athlete's general thread, used by
- *  the athlete-app badge on the Coach tab. */
-export async function fetchAthleteGeneralUnreadCount(
-  athleteId: string,
-): Promise<number> {
-  const { data, error } = await supabase
-    .from('training_log_messages')
-    .select('id')
-    .eq('athlete_id', athleteId)
-    .is('session_id', null)
-    .eq('sender_type', 'coach')
-    .is('athlete_read_at', null);
-  if (error) throw error;
-  return (data ?? []).length;
 }
 
 /**

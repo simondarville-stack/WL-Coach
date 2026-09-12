@@ -157,15 +157,6 @@ export function buildQuery(state: BuilderState, registry: MetricRegistry, today:
   };
 }
 
-/** Coach-facing labels for compare facets (used in viz/legends). */
-export const COMPARE_LABEL: Record<MeasureState, string> = {
-  planned: 'Planned',
-  performed: 'Performed',
-  both: 'Planned vs Performed',
-  delta: 'Delta (performed − planned)',
-  adherence: 'Adherence %',
-};
-
 export const VIZ_LABEL: Record<VizType, string> = {
   table: 'Table',
   line: 'Line',

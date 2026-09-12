@@ -17,15 +17,6 @@ import type {
 
 // ─── Status enums ──────────────────────────────────────────────────────────
 
-export const SESSION_STATUSES = ['pending', 'in_progress', 'completed', 'skipped'] as const;
-export type SessionStatus = (typeof SESSION_STATUSES)[number];
-
-export const EXERCISE_STATUSES = ['pending', 'in_progress', 'completed', 'skipped'] as const;
-export type ExerciseStatus = (typeof EXERCISE_STATUSES)[number];
-
-export const SET_STATUSES = ['pending', 'completed', 'skipped', 'failed'] as const;
-export type SetStatus = (typeof SET_STATUSES)[number];
-
 // ─── Metric tracking defaults ──────────────────────────────────────────────
 
 /**
@@ -139,17 +130,6 @@ export function sumPerformedReps(sets: TrainingLogSet[]): number {
   return sets
     .filter(s => s.status === 'completed')
     .reduce((total, s) => total + (s.performed_reps ?? 0), 0);
-}
-
-export function avgPerformedLoad(sets: TrainingLogSet[]): number {
-  const done = sets.filter(s => s.status === 'completed' && s.performed_load != null);
-  if (done.length === 0) return 0;
-  const weightedSum = done.reduce(
-    (total, s) => total + (s.performed_load ?? 0) * (s.performed_reps ?? 0),
-    0,
-  );
-  const totalReps = done.reduce((total, s) => total + (s.performed_reps ?? 0), 0);
-  return totalReps > 0 ? weightedSum / totalReps : 0;
 }
 
 // ─── RAW score: Eleiko Readiness and Wellbeing model ───────────────────────
@@ -329,34 +309,6 @@ export function parseRepsInput(text: string): number | null {
 }
 
 // ─── Delta colour helpers ────────────────────────────────────────────────────
-
-/**
- * Map a DeltaState to the Tailwind border-left colour class used in
- * LogExerciseRow and SessionPreview exercise rows.
- * Extracted from three inline ternary chains (E-10 / UF-28).
- */
-export function getDeltaBorderClass(state: DeltaState): string {
-  switch (state) {
-    case 'matched': return 'border-l-emerald-500';
-    case 'amber':   return 'border-l-amber-500';
-    case 'red':     return 'border-l-red-500';
-    case 'pending': return 'border-l-gray-300';
-  }
-}
-
-/**
- * Map a DeltaState to the Tailwind chip background+text colour classes used
- * in the performed ratio badge (e.g. "87%").
- * Extracted from three inline ternary chains (E-10 / UF-28).
- */
-export function getDeltaChipClass(state: DeltaState): string {
-  switch (state) {
-    case 'matched': return 'bg-emerald-100 text-emerald-800';
-    case 'amber':   return 'bg-amber-100 text-amber-800';
-    case 'red':     return 'bg-red-100 text-red-800';
-    case 'pending': return 'bg-gray-100 text-gray-500';
-  }
-}
 
 export interface DeltaResult {
   state: DeltaState;

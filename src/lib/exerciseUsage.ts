@@ -30,16 +30,9 @@ export interface UsageRollup {
   family: UsageCounts;
 }
 
-export const ZERO_USAGE: UsageRollup = {
-  own: { planned: 0, logged: 0 },
-  family: { planned: 0, logged: 0 },
-};
-
 /** Window options offered in the toolbar. Weeks, because coaches think in
  *  weeks (a mesocycle is 4, a macro block ~12). */
 export const USAGE_WINDOWS = [4, 12, 26, 52] as const;
-export type UsageWindow = (typeof USAGE_WINDOWS)[number];
-
 /** ISO date (YYYY-MM-DD) `weeks` before today — the RPC's `p_since`. */
 export function usageSinceDate(weeks: number, today = new Date()): string {
   const d = new Date(today);
